@@ -107,7 +107,7 @@ This round (GitHub issues #1 to #3, built by agent engineers from briefs, each c
 - Checks on the combined build: fuzz 0 errors; saves and a save from before this round load; head_swap 0; balance on eight seeds: no house ended, world population 2.6% above the old game in total.
 
 Still open or worth doing next:
-- The map is crowded once many peoples exist (issue #5, a declutter change, follows this round).
+- The map now shows less the farther out you zoom (issue #5): one mark per people and realm names at whole-isles zoom, joined camps in the middle, everything close in, and an "Every camp" layer switch for the old view. At whole-isles zoom in a big world only a handful of peoples get a name; tap a mark to see which people it is.
 - A realm only marches on a people at most 1/1.6 of its strength and within 90 km of its host, so the "send our men or keep them home" card nearly always shows about 0% both ways, and the player's own war deed is rarely reachable in honest play. Realm wars need a rule that makes them closer and more common.
 - Late game is slow: about 1.2 seconds a year at year 250 on seed 2 in the text front-end, growing faster than population (per-month loops over all tribes and clans: `kultYear`, `marriages`, `revenge`, `traderMonth`, `slaveMonth`). `stepEnv` was made cheaper but saves only a few percent.
 - Seeds whose nearest people is beyond 340 km or across the sea without boats still get no sign (seed 6 met no one by year 19).

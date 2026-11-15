@@ -6,7 +6,8 @@
   const R = 600, SC = R / N;
   const base = document.createElement('canvas'); base.width = base.height = R;
   const bctx = base.getContext('2d'), img = bctx.createImageData(R, R), landL = new Float32Array(R * R);
-  const show = { people: true, names: true, res: true, wild: true, roads: true, kult: false };
+  const show = { people: true, names: true, res: true, wild: true, roads: true, kult: false, every: false };
+  const LOD_FAR = 8, LOD_MID = 28; // zoomed = screen px per 10 km: a phone's whole-isles view is about 5, the default about 16, a close look 60
   let lastTab = 'log', sheet = 'half', lastTopB = 0, modalDismiss = null;
   let houseTab = 'overview', tribeTab = 'overview', W, shade, jx, jy, layer = 'terrain', running = true, speedIx = 1, tide = '', tideAt = 0, tideN = -1, sel = null, selCell = null, panel = 'log', expanded = false;
   const SPEEDS = [{ l: '½×', wps: 4 }, { l: '1×', wps: 13 }, { l: '4×', wps: 52 }, { l: '16×', wps: 208 }];
@@ -560,6 +561,7 @@
   const HERD_BY_BIOME = { 2: ['reindeer'], 3: ['deer', 'reindeer'], 4: ['deer', 'boar', 'hind'], 5: ['boar', 'deer', 'aurochs'], 6: ['aurochs', 'horse', 'hind'], 7: ['horse', 'hind'], 8: ['duck', 'deer'], 9: ['hind'] };
   const GROVE_ICON = [null, 'hazel', 'apple', 'cherry', 'berry'];
   const MON_SPRITE = { 'carved rocks': 'rockart', 'stone circle': 'stones', 'long barrow': 'barrow', 'shrine of the Mother': 'shrine', 'sacred grove': 'grove', 'totem pole': 'pole' };
+  let grpOf = new Map(), mkOf = new Map(), crowdOn = false; // per frame, kept out of the world so a save never carries them
   let herdCache = { key: '', list: [] }, foodCache = { key: '', list: [] };
   const blockFor = minPx => { const px = CELL * cam.s; let B = 1; while (B * px < minPx && B < 32) B *= 2; return B; };
   function herds() {
@@ -609,13 +611,21 @@
     const P = W.player, pc = P && !P.over && P.head.alive ? P.head.clan : null, now = performance.now();
     const icons = [], on = (x, y, m = 30) => x > -m && y > -m && x < w + m && y < h + m;
     const sites = [], mons = [], vills = [], camps = [];
+    // less detail the farther out: with more than 25 camps and villages in view, the whole-isles view shows one mark for each people,
+    // and the middle view joins the camps of one people that stand close together. The 'Every camp' switch turns it all off.
+    // only camps the player knows and can see count (not the fog, not what lies under the sheet); it turns on above 25 and off again at 20 or fewer, so a drag does not make the map flip
+    let nOn = 0; const VR0 = viewRect(); if (!show.every && zoomed < LOD_MID) for (const c of W.clans) if (c.people.length && SIM.knows(W, c.x, c.y)) { const [x, y] = cs(c); if (x >= VR0.x0 && x <= VR0.x1 && y >= VR0.y0 && y <= VR0.y1) nOn++; }
+    crowdOn = !show.every && zoomed < LOD_MID && (nOn > 25 || (crowdOn && nOn > 20));
+    const crowd = crowdOn, far = crowd && zoomed < LOD_FAR, mid = crowd && !far, marks = [], tmk = new Map(); mkOf = tmk; grpOf = new Map();
+    const hovE = hover && hover.e, own = c => c === sc || c === pc || c === hovE;
     try {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     if (selCell != null) { const [x, y] = cellS(selCell); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, Math.max(5, cam.s * CELL * 0.55), 0, Math.PI * 2); ctx.stroke(); }
     // herds, shoals and seals
-    if (show.wild || layer === 'game') {
+    if ((show.wild && !far) || layer === 'game') {
       const ah = clamp(12 + zoomed * 0.75, 15, 26), t = now / 1000;
       for (const hd of herds()) {
+        if (mid && layer !== 'game' && hd.cnt < 2 && hd.h < 0.6) continue; // the middle view keeps only the larger herds
         let [x, y] = cellS(hd.i); if (!on(x, y)) continue;
         const drift = hd.sea ? 5 : 2.4;
         const nm = 'a_' + hd.sp + (hd.h > 0.5 ? '_l' : '');
@@ -632,15 +642,29 @@
       }
     }
     // monuments
-    for (const m of W.monuments || []) { const [x, y] = toScreen(m.x, m.y); m._sx = null; if (!on(x, y)) continue;
+    for (const m of W.monuments || []) { const [x, y] = toScreen(m.x, m.y); m._sx = null; if (far || !on(x, y)) continue;
       if (zoomed <= 2.5 && m.kind !== 'stone circle' && m.kind !== 'long barrow') continue;
       const ms = clamp(13 + zoomed * 0.6, 16, 24); ART.put(ctx, MON_SPRITE[m.kind] || 'stones', x, y, ms); m._sx = x; m._sy = y; if (SIM.knows(W, m.x, m.y)) mons.push([m, x, y, ms]); }
+    if (far) { const acc = new Map(); // one mark for each people we know: where its camps are on the whole, as big as its numbers
+      for (const c of W.clans) { if (!c.people.length || !show.people || (st && c.tribe === st) || !SIM.knows(W, c.x, c.y)) continue; const [x, y] = cs(c), m = c.people.length;
+        let a = acc.get(c.tribe); if (!a) acc.set(c.tribe, a = { t: c.tribe, x: 0, y: 0, n: 0, v: 0 }); a.x += x * m; a.y += y * m; a.n += m; if (c.settled) a.v += m; }
+      const list = [...acc.values()].filter(a => a.n > 0 && SIM.knowsTribe(W, a.t)).sort((a, b) => a.y - b.y);
+      for (const a of list) { a.px = a.x / a.n; a.py = a.y / a.n; a.M = clamp(6 + Math.sqrt(a.n) * 1.0, 13, 24); }
+      const big = list.slice().sort((a, b) => b.n - a.n); // the larger peoples keep their place; a smaller mark is moved aside, a little, where two would lie on each other
+      for (let k = 1; k < big.length; k++) { const a = big[k]; for (let it = 0; it < 4; it++) { let moved = false; for (let j = 0; j < k; j++) { const o = big[j], dx = a.px - o.px, dy = a.py - o.py, d = Math.hypot(dx, dy) || 0.01, want = (a.M + o.M) * 0.62; if (d < want) { a.px += dx / d * (want - d); a.py += dy / d * (want - d) * 0.8; moved = true; } } if (!moved) break; } }
+      for (const a of list) { const x = a.px, y = a.py; if (!on(x, y, 30)) continue; const t = a.t, M = a.M, hov = hovE === t, col = `hsla(${show.kult && t.kult ? t.kult.hue : t.hue},40%,52%,1)`;
+        if (hov) { ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.beginPath(); ctx.arc(x, y, M * 0.9 + 4, 0, Math.PI * 2); ctx.fill(); }
+        if (a.v * 2 > a.n) { ctx.beginPath(); ctx.ellipse(x, y + M * 0.08, M * 0.78, M * 0.62, 0, 0, Math.PI * 2); ctx.fillStyle = 'rgba(150,118,66,0.28)'; ctx.fill(); ctx.strokeStyle = hov ? '#fff' : `hsla(${t.hue},50%,34%,0.9)`; ctx.lineWidth = hov ? 2.4 : 1.5; ctx.stroke();
+          const hs = M * 0.4; ART.hut(ctx, x - hs * 0.9, y + hs * 0.28, hs, ''); ART.hut(ctx, x + hs * 0.9, y + hs * 0.3, hs, ''); ART.hut(ctx, x, y - hs * 0.22, hs * 1.1, ''); }
+        else { const n = a.n > 120 ? 3 : a.n > 45 ? 2 : 1; if (n > 1) ART.tent(ctx, x - M * 0.6, y + M * 0.14, M * 0.76, col); if (n > 2) ART.tent(ctx, x + M * 0.6, y + M * 0.18, M * 0.7, col); ART.tent(ctx, x, y, M, col); }
+        a.mk = [x, y, M]; tmk.set(t, a); marks.push([x, y, M * 0.8, M * 0.6]); } }
     // villages: permanent places
     const vpos = []; for (const S of W.settlements || []) { if (!S.clans || !S.clans.length) continue; let sx = 0, sy = 0; for (const c of S.clans) { const p = cs(c); sx += p[0]; sy += p[1]; } vpos.push([S, sx / S.clans.length, sy / S.clans.length]); }
     for (const [S, sx, sy] of vpos) S._sx = null;
     for (const [S, sx, sy] of vpos) {
       if (!on(sx, sy, 60) || (!show.people && sel !== S)) continue;
-      let gap = 1e9; for (const [O, ox, oy] of vpos) if (O !== S) { const d = Math.hypot(ox - sx, oy - sy); if (d < gap) gap = d; }
+      if (far && sel !== S && hovE !== S && !(pc && S.clans.includes(pc)) && !(st && S.tribe === st)) continue; // far out, a village is part of its people's one mark
+      let gap = 1e9; if (!far) for (const [O, ox, oy] of vpos) if (O !== S) { const d = Math.hypot(ox - sx, oy - sy); if (d < gap) gap = d; }
       const R2 = Math.max(6, Math.min(clamp(Math.sqrt(S.pop) * clamp(zoomed / 6, 0.9, 3.2), 11, 42), gap / 2 / 1.25 - 1)); S._sx = sx; S._sy = sy; S._r = R2;
       let hsh = 0; for (const ch of S.name) hsh = (hsh * 31 + ch.charCodeAt(0)) | 0;
       const fishing = S.type === 'fishing', hov = hover && hover.e === S;
@@ -660,24 +684,37 @@
       if (SIM.knows(W, S.clans[0].x, S.clans[0].y)) vills.push([S, sx, sy, R2]);
     }
     // wandering camps (tents); canoes on the water
+    let gl = null, gskip = null;
+    if (mid) { gskip = new Set(); const cell = new Map(); // camps of one people within about 28 px of each other (one square of a grid) are drawn as one mark
+      const vt = new Map(); for (const v of vills) { let a = vt.get(v[0].tribe); if (!a) vt.set(v[0].tribe, a = []); a.push(v); }
+      for (const c of W.clans) { if (c.settled || !c.people.length || own(c) || (st && c.tribe === st)) continue;
+        const [x, y] = cs(c); if (!on(x, y, 40) || !W.land[SIM.cellAt(c.rx ?? c.x, c.ry ?? c.y)]) continue;
+        const vs = vt.get(c.tribe); if (vs && vs.some(v => Math.hypot(v[1] - x, v[2] - y) < v[3] + 6)) { gskip.add(c); continue; } // a camp lying on a village of its own people is part of the village
+        const k = c.tribe.id + ':' + Math.floor((x - cam.ox) / 28) + ":" + Math.floor((y - cam.oy) / 28); let g = cell.get(k); if (!g) cell.set(k, g = { t: c.tribe, cl: [], n: 0, x: 0, y: 0, lead: null });
+        const m = c.people.length; g.cl.push(c); g.n += m; g.x += x * m; g.y += y * m; if (!g.lead || m > g.lead.people.length) g.lead = c; }
+      gl = new Map();
+      for (const g of cell.values()) if (g.cl.length > 1) { g.x /= g.n; g.y /= g.n; gl.set(g.lead, g); for (const c of g.cl) if (c !== g.lead) gskip.add(c); } }
     for (const c of W.clans) {
       if (c.settled) { c._r = 0; continue; }
-      const [x, y] = cs(c); c._r = 0; if (!on(x, y, 40) || (!show.people && c !== sc && c !== pc)) continue;
+      if (gskip && gskip.has(c)) { c._r = 0; continue; }
+      let [x, y] = cs(c); c._r = 0; if (!on(x, y, 40) || (!show.people && c !== sc && c !== pc)) continue;
+      if (far && !own(c) && !(st && c.tribe === st)) continue; // far out, only your own clan, the one you chose and the chosen people's camps are drawn one by one
+      const grp = gl && gl.get(c); if (grp) { x = grp.x; y = grp.y; grpOf.set(c, grp); }
       if (!W.land[SIM.cellAt(c.rx ?? c.x, c.ry ?? c.y)]) { ART.canoe(ctx, x, y, Math.atan2(c.ty - c.y, c.tx - c.x), clanCol(c)); c._r = 9; continue; }
-      const size = c.people.length, ts = clamp(9 + Math.sqrt(size) * 0.9 * clamp(zoomed / 7, 0.8, 1.9), 12, 25); c._r = ts * 0.62;
+      const size = grp ? grp.n : c.people.length, ts = clamp(9 + Math.sqrt(size) * 0.9 * clamp(zoomed / 7, 0.8, 1.9), 12, 25); c._r = ts * 0.62;
       if (hover && hover.e === c) { ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.beginPath(); ctx.arc(x, y, ts * 0.9 + 5, 0, Math.PI * 2); ctx.fill(); }
       if (c === sc || (zoomed > 14 && st && c.tribe === st)) { ctx.strokeStyle = clanCol(c, 0.8); ctx.lineWidth = 1.2; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(x, y, FORAGE_R * cam.s, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
       if (c === sc && Math.hypot(c.tx - c.x, c.ty - c.y) > 1) { const [tx, ty] = toScreen(c.tx, c.ty); ctx.strokeStyle = clanCol(c); ctx.lineWidth = 1.5; ctx.setLineDash([2, 4]); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(tx, ty); ctx.stroke(); ctx.setLineDash([]); }
-      const n = size > 34 ? 3 : size > 16 ? 2 : 1, ring = c === sc ? '#ffffff' : c.cond < 0.7 ? '#ff5a4a' : null, col = clanCol(c);
+      const n = size > 34 ? 3 : size > 16 ? 2 : 1, ring = c === sc ? '#ffffff' : (grp ? grp.cl.some(q => q.cond < 0.7) : c.cond < 0.7) ? '#ff5a4a' : null, col = clanCol(c);
       if (n > 1) ART.tent(ctx, x - ts * 0.6, y + ts * 0.14, ts * 0.76, col); if (n > 2) ART.tent(ctx, x + ts * 0.6, y + ts * 0.18, ts * 0.7, col);
       ART.tent(ctx, x, y, ts, col, ring);
-      if (SIM.knows(W, c.x, c.y)) camps.push([c, x, y, ts]);
+      if (SIM.knows(W, c.x, c.y)) camps.push([grp ? { name: grp.cl.length + ' camps,', people: { length: grp.n } } : c, x, y, ts]);
     }
     // traders on the road
-    for (const r of W.traders || []) { const [x, y] = toScreen(r.x, r.y); r._sx = null; if (!on(x, y) || !SIM.knows(W, r.x, r.y)) continue; ART.put(ctx, pc && r.home === pc ? 'trader_me' : 'trader', x, y - 4, 19); r._sx = x; r._sy = y - 4; }
+    for (const r of W.traders || []) { const [x, y] = toScreen(r.x, r.y); r._sx = null; if (!on(x, y) || !SIM.knows(W, r.x, r.y) || (far && !(pc && r.home === pc))) continue; ART.put(ctx, pc && r.home === pc ? 'trader_me' : 'trader', x, y - 4, 19); r._sx = x; r._sy = y - 4; }
     // gathering places: a fire in a ring of stones
     for (const s of W.sites) {
-      const [x, y] = toScreen(s.x, s.y); if (!on(x, y)) continue; const active = W.gathering && W.clans.some(c => c.atGathering && c.tribe.site === s), r = clamp(15 + zoomed * 0.6, 18, 26);
+      const [x, y] = toScreen(s.x, s.y); s._sx = null; if (!on(x, y) || (far && sel !== s)) continue; s._sx = x; const active = W.gathering && W.clans.some(c => c.atGathering && c.tribe.site === s), r = clamp(15 + zoomed * 0.6, 18, 26);
       if (active) { const gl = ctx.createRadialGradient(x, y, 2, x, y, r * 1.4); gl.addColorStop(0, 'rgba(255,200,90,0.5)'); gl.addColorStop(1, 'rgba(255,200,90,0)'); ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(x, y, r * 1.4, 0, Math.PI * 2); ctx.fill(); }
       if (sel === s) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r * 0.62, 0, Math.PI * 2); ctx.stroke(); }
       ART.put(ctx, 'fire', x, y, r); if (SIM.knows(W, s.x, s.y)) sites.push([s, x, y, r, active]);
@@ -685,7 +722,7 @@
     // wild foods (closer in, or always on the Food view) and the resources: always on top of the people
     if (show.res && (layer === 'food' || zoomed > 15)) { const fz = layer === 'food' ? 19 : 17; for (const f of wildFoods()) { const [x, y] = cellS(f.i); if (!on(x, y)) continue; ART.put(ctx, f.ic, x, y, fz); icons.push([x, y, fz, fz]); } }
     for (const d of W.deposits) d._sx = null;
-    if (show.res) { const rz = clamp(11 + zoomed * 0.9, 18, 30), mine = new Set(P && P.claims ? P.claims.map(k => k.d) : []);
+    if (show.res && !far) { const rz = clamp(11 + zoomed * 0.9, 18, 30), mine = new Set(P && P.claims ? P.claims.map(k => k.d) : []);
       for (const d of W.deposits) {
         let [x, y] = toScreen(d.x, d.y); if (!on(x, y)) continue;
         for (const [, vx, vy, vr] of vills) if (Math.hypot(vx - x, vy - y) < vr * 0.9 + rz * 0.4) { x = vx + vr * 0.9 + rz * 0.35; y = vy - vr * 0.6; break; }
@@ -695,19 +732,20 @@
         d._sx = x; d._sy = y; icons.push([x, y, rz, rz]);
       } }
     // your house
-    if (pc) { const [x, y] = cs(pc), bob = Math.sin(now / 320) * 1.6, r0 = pc.settled ? 12 : (pc._r || 8) + 4; ART.put(ctx, 'star', x, y - r0 - 11 - bob, 19); }
+    if (pc) { const [x, y] = cs(pc), bob = Math.sin(now / 320) * 1.6, r0 = pc.settled ? 12 : (pc._r || 8) + 4; ART.put(ctx, 'star', x, y - r0 - 11 - bob, 19); icons.push([x, y - r0 - 11, 19, 19]); }
     } catch (err) { window.__drawErr = (window.__drawErr || 0) + 1; window.__lastDrawErr = String(err && err.stack || err); const dpr = cv.width / Math.max(1, cv.clientWidth); for (let k = 0; k < 8; k++) ctx.restore(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
     ctx.setLineDash([]); ctx.globalAlpha = 1; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     drawFog(); // always: never let a hiccup reveal the unknown
     drawPlacePick();
     // ---- names, written last and kept clear of icons and of each other ----
     const km = cam.s * 1000, opts = [10, 25, 50, 100, 200], L = opts.find(v => v * km > 50) || 200, VR = viewRect(), by = VR.y1 - 10, bx = wide() ? 14 : 12;
-    icons.push([bx + L * km / 2, by - 7, L * km + 12, 24]);
-    const placed = icons.slice(), fits = (cx, cy, tw, th) => !placed.some(p => Math.abs(p[0] - cx) < (p[2] + tw) / 2 + 2 && Math.abs(p[1] - cy) < (p[3] + th) / 2 + 1);
+    icons.push([bx + L * km / 2, by - 7, L * km + 12, 24]); if (far) icons.push([bx + 24, by - 52, 60, 60]); // the compass
+    const placed = icons.slice(), fits = (cx, cy, tw, th) => cx - tw / 2 >= VR.x0 + 2 && cx + tw / 2 <= VR.x1 - 2 && !placed.some(p => Math.abs(p[0] - cx) < (p[2] + tw) / 2 + 2 && Math.abs(p[1] - cy) < (p[3] + th) / 2 + 1);
+    { const tb = $('.tools'), tr = tb && tb.getBoundingClientRect(); if (tr && tr.width) placed.push([(tr.left + tr.right) / 2, (tr.top + tr.bottom) / 2, tr.width + 6, tr.height + 6]); } // names are kept clear of the buttons
     const inkCol = f => { const m = /hsl\(([\d.]+),\s*([\d.]+)%/.exec(f || ''); return m ? `hsl(${m[1]},${Math.min(62, +m[2])}%,24%)` : '#3a2a14'; };
     const ink = (label, x, y, font, fill, lw = 3.4) => { ctx.font = font; ctx.lineWidth = lw; ctx.strokeStyle = 'rgba(247,238,206,0.94)'; ctx.strokeText(label, x, y); ctx.fillStyle = inkCol(fill); ctx.fillText(label, x, y); };
     if (W.beasts) { const bh = clamp(20 + zoomed * 1.1, 24, 40), SP = { bear: 'bear', boar: 'boar', aurochs: 'aurochs', wolf: 'wolf', stag: 'wstag', whale: 'whale' }, tt = now / 1000;
-      for (const b of W.beasts) { b._sx = null; if (!b.alive || !(b.name || b.kills) || !SIM.knows(W, b.x, b.y)) continue; let [x, y] = toScreen(b.x, b.y); if (!on(x, y)) continue;
+      for (const b of W.beasts) { b._sx = null; if (!b.alive || !(b.name || b.kills) || !SIM.knows(W, b.x, b.y) || (far && !(pc && (pc.tribe.myths || []).some(m => m.beast === b.id)))) continue; let [x, y] = toScreen(b.x, b.y); if (!on(x, y)) continue;
         ART.put(ctx, 'a_' + SP[b.kind] + (b.id % 2 ? '_l' : ''), x, y, bh);
         const nm = SIM.beastNm(b); ink(nm[0].toUpperCase() + nm.slice(1), x, y + bh * 0.62 + 6, `italic 600 ${zoomed > 8 ? 13 : 11}px Georgia, serif`, '#5a1e12', 3); icons.push([x, y, bh, bh]); b._sx = x; b._sy = y; b._r = bh * 0.6; } }
     for (const t of W.tribes) t._lab = null; for (const cf of W.confeds) cf._lab = null;
@@ -716,33 +754,39 @@
       for (const cf of W.confeds) {
         if (!show.names && cf !== scf) continue;
         const ts = SIM.confedTribes(W, cf); if (!ts.length || !cf.capital.clans.length || !cf.capital.clans.some(c => SIM.knows(W, c.x, c.y))) continue;
-        let [cx, cy] = anchor(cf.capital); cy -= 40;
-        const label = cf.name.replace(/^the /, 'The '), lf = `italic ${cf.kingdom ? 700 : 600} ${cf.kingdom ? 17 : 15}px ${SERIF}`; ctx.font = lf; const tw = ctx.measureText(label).width + 26;
-        if (!fits(cx, cy, tw, 20) && cf !== scf) continue; placed.push([cx, cy, tw, 20]); cf._lab = [cx, cy, tw, 20];
-        ART.put(ctx, 'crown', cx - tw / 2 + 9, cy - 1, 15); ctx.textAlign = 'left'; ink(label, cx - tw / 2 + 21, cy, lf, cf === scf ? '#fff' : '#ffe3a0', 4); ctx.textAlign = 'center';
+        let [cx, cy] = anchor(cf.capital), big = false; cy -= 40;
+        if (far) { let sx = 0, sy = 0, sn = 0; for (const t of ts) { const a = tmk.get(t); if (a) { sx += a.x; sy += a.y; sn += a.n; } } if (sn) { cx = sx / sn; cy = sy / sn; big = true; } } // far out, the realm's name is written once over the middle of its peoples' lands
+        const label = cf.name.replace(/^the /, 'The '), lf = `italic ${cf.kingdom ? 700 : 600} ${big ? (cf.kingdom ? 19 : 17) : cf.kingdom ? 17 : 15}px ${SERIF}`; ctx.font = lf; const tw = ctx.measureText(label).width + 26, th = big ? 24 : 20;
+        if (big) { cx = clamp(cx, VR.x0 + tw / 2 + 6, VR.x1 - tw / 2 - 6); cy = clamp(cy, VR.y0 + th / 2 + 4, VR.y1 - th / 2 - 4); const tb = $('.tools'), tr = tb && tb.getBoundingClientRect(); if (tr && tr.width && cy > tr.top - 14 && cy < tr.bottom + 14) cx = Math.min(cx, tr.left - tw / 2 - 6); }
+        if (big) { let ok = false; for (const [dx, dy] of [[0, 0], [0, -26], [0, 26], [0, -52], [0, 52]]) if (fits(cx + dx, cy + dy, tw, th)) { cx += dx; cy += dy; ok = true; break; } if (!ok && cf !== scf) continue; }
+        else if (!fits(cx, cy, tw, th) && cf !== scf) continue;
+        placed.push([cx, cy, tw, th]); cf._lab = [cx, cy, tw, th];
+        ART.put(ctx, 'crown', cx - tw / 2 + 9, cy - 1, big ? 18 : 15); ctx.textAlign = 'left'; ink(label, cx - tw / 2 + 21, cy, lf, cf === scf ? '#fff' : '#ffe3a0', 4); ctx.textAlign = 'center';
       }
+      for (const m of marks) placed.push(m); // the people's marks are kept clear of the banners, but not of the realm names written over them
       // with the map coloured by culture, each people's name sits over its lands
       if (show.kult) { const acc = new Map();
         for (const t of W.tribes) { if (!t.kult) continue; for (const c of t.clans) { if (!SIM.knows(W, c.x, c.y)) continue; const [x, y] = cs(c), n = c.people.length, a = acc.get(t.kult) || [0, 0, 0]; a[0] += x * n; a[1] += y * n; a[2] += n; acc.set(t.kult, a); } }
         for (const [K, a] of acc) { if (a[2] < 1) continue; const x = a[0] / a[2], y = a[1] / a[2] - 34, f = `italic 600 17px ${SERIF}`; ctx.font = f; const tw = ctx.measureText(K.name).width + 10;
           if (!on(x, y, 40) || !fits(x, y, tw, 22)) continue; placed.push([x, y, tw, 22]); ink(K.name, x, y, f, `hsl(${K.hue},80%,82%)`, 4.5); } }
-      const showAll = zoomed > 5 || W.tribes.length <= 14;
-      for (const t of W.tribes.slice().sort((a, b) => (b === st) - (a === st) || SIM.tribeSize(b) - SIM.tribeSize(a))) {
+      const showAll = zoomed > 5 || W.tribes.length <= 14, tsz = new Map(W.tribes.map(t => [t, SIM.tribeSize(t)])), mine = pc && pc.tribe, cap = t => t.confed && t.confed.capital === t ? 1 : 0;
+      for (const t of W.tribes.slice().sort((a, b) => (b === st) - (a === st) || (b === mine) - (a === mine) || cap(b) - cap(a) || tsz.get(b) - tsz.get(a))) {
         if (!show.names && t !== st) continue;
-        if (!showAll && t !== st && SIM.tribeSize(t) < 100 && !(t.confed && t.confed.capital === t)) continue;
+        if (!showAll && t !== st && t !== mine && tsz.get(t) < 100 && !(t.confed && t.confed.capital === t)) continue;
         if (!t.clans.some(c => SIM.knows(W, c.x, c.y))) continue;
-        const [ax, ay] = anchor(t), name = t.name, num = String(SIM.tribeSize(t)), hov = hover && hover.e === t, fN = `italic 600 ${t === st ? 15 : 13.5}px ${SERIF}`, fS = '600 10.5px system-ui,sans-serif';
-        ctx.font = fN; const wN = ctx.measureText(name).width; ctx.font = fS; const wS = ctx.measureText(num).width, tw = 17 + wN + 5 + wS;
-        let cy = null; for (const dy of [-19, 21, -35, 37]) if (fits(ax, ay + dy, tw, 17)) { cy = ay + dy; break; }
-        if (cy == null) { if (t !== st) continue; cy = ay - 19; }
-        placed.push([ax, cy, tw, 17]); t._lab = [ax, cy, tw, 19];
+        const mk = (tmk.get(t) || {}).mk, [ax0, ay] = mk ? mk : anchor(t), name = t.name, num = String(tsz.get(t)), hov = hover && hover.e === t, fN = `italic 600 ${t === st ? 15 : 13.5}px ${SERIF}`, fS = '600 10.5px system-ui,sans-serif';
+        ctx.font = fN; const wN = ctx.measureText(name).width; ctx.font = fS; const wS = ctx.measureText(num).width; let tw = 17 + wN + 5 + wS, cmpct = false;
+        let ax = ax0; let cy = null, bx2 = ax; for (const [dx, dy] of mk ? [[0, -19 - mk[2] * 0.4], [0, 21 + mk[2] * 0.4], [0, -35 - mk[2] * 0.4], [0, 37 + mk[2] * 0.4], [-(tw / 2 + mk[2] * 0.5), 0], [tw / 2 + mk[2] * 0.5, 0], [-(tw / 2 + mk[2] * 0.5), -17], [tw / 2 + mk[2] * 0.5, -17], [-(tw / 2 + mk[2] * 0.5), 17], [tw / 2 + mk[2] * 0.5, 17], [0, -51 - mk[2] * 0.4], [0, 53 + mk[2] * 0.4], [-(tw / 2 + mk[2] * 0.5), -34], [tw / 2 + mk[2] * 0.5, -34], [-(tw / 2 + mk[2] * 0.5), 34], [tw / 2 + mk[2] * 0.5, 34]] : [[0, -19], [0, 21], [0, -35], [0, 37], ...(t === mine ? [[0, -51], [0, 53], [tw / 2 + 12, -19], [-tw / 2 - 12, -19], [tw / 2 + 12, 21], [-tw / 2 - 12, 21]] : [])]) if (fits(ax + dx, ay + dy, tw + 30, 17)) { cy = ay + dy; bx2 = ax + dx; break; }
+        if (cy == null && mk && t !== st) { tw = 17 + wN; cmpct = true; for (const [dx, dy] of [[0, -19 - mk[2] * 0.4], [0, 21 + mk[2] * 0.4], [-(tw / 2 + mk[2] * 0.5), 0], [tw / 2 + mk[2] * 0.5, 0], [0, -35 - mk[2] * 0.4], [0, 37 + mk[2] * 0.4], [-(tw / 2 + mk[2] * 0.5), -15], [tw / 2 + mk[2] * 0.5, -15], [-(tw / 2 + mk[2] * 0.5), 15], [tw / 2 + mk[2] * 0.5, 15]]) if (fits(ax + dx, ay + dy, tw, 17)) { cy = ay + dy; bx2 = ax + dx; break; } if (cy == null) { tw = 17 + wN + 5 + wS; cmpct = false; } } // crowded: the number is left off so the name may still be written
+        if (cy == null) { if (t !== st && t !== mine) continue; cy = t === mine && t !== st ? ay + 21 : ay - 19; } // your own people's name is always written
+        const pw = cmpct ? 0 : 30; ax = clamp(bx2, VR.x0 + tw / 2 + pw / 2 + 2, VR.x1 - tw / 2 - pw / 2 - 2); placed.push([ax, cy, tw + pw, 17]); t._lab = [ax, cy, tw, 19];
         const x0 = ax - tw / 2;
-        { // a ribbon behind the name of each people
+        if (!cmpct) { // a ribbon behind the name of each people
           const bx0 = Math.round(x0 - 8), bx1 = Math.round(x0 + tw + 8), by0 = Math.round(cy - 10), by1 = Math.round(cy + 10);
           ctx.beginPath(); ctx.moveTo(bx0 - 7, by0 + 3); ctx.lineTo(bx0, by0 + 3); ctx.lineTo(bx0, by0); ctx.lineTo(bx1, by0); ctx.lineTo(bx1, by0 + 3); ctx.lineTo(bx1 + 7, by0 + 3); ctx.lineTo(bx1 + 3, cy + 1); ctx.lineTo(bx1 + 7, by1); ctx.lineTo(bx1 - 4, by1); ctx.lineTo(bx1 - 4, by1 - 3); ctx.lineTo(bx0 + 4, by1 - 3); ctx.lineTo(bx0 + 4, by1); ctx.lineTo(bx0 - 7, by1); ctx.lineTo(bx0 - 3, cy + 1); ctx.closePath();
           ctx.fillStyle = t === st || hov ? '#f4e6b4' : '#e0c98c'; ctx.fill(); ctx.strokeStyle = '#5e4624'; ctx.lineWidth = t === st ? 2 : 1.4; ctx.stroke(); }
         ART.put(ctx, SIM.faithOf(t), x0 + 7, cy, 14);
-        ctx.textAlign = 'left'; ink(name, x0 + 17, cy - 1, fN, `hsl(${t.hue},78%,86%)`, 0.01); ink(num, x0 + 17 + wN + 5, cy - 0.5, fS, '', 0.01); ctx.textAlign = 'center';
+        ctx.textAlign = 'left'; ink(name, x0 + 17, cy - 1, fN, `hsl(${t.hue},78%,86%)`, cmpct ? 3.4 : 0.01); if (!cmpct) ink(num, x0 + 17 + wN + 5, cy - 0.5, fS, '', 0.01); ctx.textAlign = 'center';
       }
     }
     if (show.names) {
@@ -1316,9 +1360,10 @@
   let hover = null;
   function pickAll(sx, sy) {
     const out = [];
-    for (const c of W.clans) { if (c.settled || !c._r) continue; const [x, y] = cs(c), d = Math.hypot(x - sx, y - sy); if (d < Math.max(16, (c._r || 4) + 8)) out.push({ e: c, d, kind: 'clan' }); }
-    for (const s of W.sites) { const [x, y] = toScreen(s.x, s.y), d = Math.hypot(x - sx, y - sy); if (d < 16) out.push({ e: s, d: d + 1, kind: 'site' }); }
+    for (const c of W.clans) { if (c.settled || !c._r) continue; const g = grpOf.get(c), [x, y] = g ? [g.x, g.y] : cs(c), d = Math.hypot(x - sx, y - sy); if (d < Math.max(16, (c._r || 4) + 8)) out.push(g ? { e: c.tribe, d, kind: 'tribe', grp: g } : { e: c, d, kind: 'clan' }); }
+    for (const s of W.sites) { if (s._sx == null) continue; const [x, y] = toScreen(s.x, s.y), d = Math.hypot(x - sx, y - sy); if (d < 16) out.push({ e: s, d: d + 1, kind: 'site' }); }
     for (const S of W.settlements || []) { if (S._sx == null) continue; const d = Math.hypot(S._sx - sx, S._sy - sy); if (d < Math.max(14, S._r + 4)) out.push({ e: S, d: Math.max(0, d - S._r * 0.5), kind: 'place' }); }
+    for (const t of W.tribes) { const M = (mkOf.get(t) || {}).mk; if (M) { const dd = Math.hypot(M[0] - sx, M[1] - sy); if (dd < Math.max(14, M[2] * 0.7 + 4)) out.push({ e: t, d: Math.max(0, dd - M[2] * 0.3), kind: 'tribe' }); } }
     for (const t of W.tribes) { const L = t._lab; if (L && Math.abs(sx - L[0]) < L[2] / 2 && Math.abs(sy - L[1]) < L[3] / 2) out.push({ e: t, d: 0, kind: 'tribe' }); }
     for (const cf of W.confeds) { const L = cf._lab; if (L && Math.abs(sx - L[0]) < L[2] / 2 && Math.abs(sy - L[1]) < L[3] / 2) out.push({ e: cf, d: 0, kind: 'confed' }); }
     for (const d of W.deposits) { if (d._sx == null) continue; const dd = Math.hypot(d._sx - sx, d._sy - sy); if (dd < 14) out.push({ e: d, d: dd + 3, kind: 'deposit' }); }
@@ -1327,10 +1372,10 @@
     for (const b of W.beasts || []) { if (b._sx == null || !b.alive) continue; const dd = Math.hypot(b._sx - sx, b._sy - sy); if (dd < Math.max(18, b._r + 6)) out.push({ e: b, d: Math.max(0, dd - 6), kind: 'beast' }); }
     // inside a tribe's territory (lowest priority)
     if (!out.length && show.people && !unknownPt(sx, sy)) for (const t of W.tribes) { const H = hull(t.clans.map(cs)), rad = Math.max(7, FORAGE_R * 0.75 * cam.s); blobPath(ctx, H, rad); if (ctx.isPointInPath(sx * (window.devicePixelRatio || 1), sy * (window.devicePixelRatio || 1))) out.push({ e: t, d: 40, kind: 'tribe', area: true }); }
-    return out.filter(p => { const e = p.e, x = e.x != null ? e.x : e.clans && e.clans[0] ? (p.kind === 'tribe' ? null : e.clans[0].x) : null; if (p.kind === 'tribe') return SIM.knowsTribe(W, e) && e.clans.some(c => SIM.knows(W, c.x, c.y)); if (p.kind === 'confed') return SIM.knowsTribe(W, e.capital); if (p.kind === 'place') return e.clans && e.clans[0] && SIM.knows(W, e.clans[0].x, e.clans[0].y); return x == null || SIM.knows(W, x, e.y); }).sort((a, b) => a.d - b.d);
+    return out.filter(p => { const e = p.e, x = e.x != null ? e.x : e.clans && e.clans[0] ? (p.kind === 'tribe' ? null : e.clans[0].x) : null; if (p.kind === 'tribe') return SIM.knowsTribe(W, e) && e.clans.some(c => SIM.knows(W, c.x, c.y)); if (p.kind === 'confed') return SIM.knowsTribe(W, e.capital); if (p.kind === 'place') return e.clans && e.clans[0] && SIM.knows(W, e.clans[0].x, e.clans[0].y); return x == null || SIM.knows(W, x, e.y); }).sort((a, b) => a.d - b.d).filter((p, i, a) => p.kind !== 'tribe' || a.findIndex(q => q.kind === 'tribe' && q.e === p.e) === i); // a people's mark, its banner and its joined camps are one choice
   }
   const pickLabel = p => p.kind === 'clan' ? `<b>${esc(p.e.name)} clan</b> <span class="muted">· the ${esc(p.e.tribe.name)} · ${p.e.people.length} people</span>`
-    : p.kind === 'tribe' ? `<b>The ${esc(p.e.name)}</b> <span class="muted">· tribe · ${SIM.tribeSize(p.e)} people${p.area ? ' (territory)' : ''}</span>`
+    : p.kind === 'tribe' ? `<b>The ${esc(p.e.name)}</b> <span class="muted">· ${p.grp ? p.grp.cl.length + ' camps, ' + p.grp.n + ' people · tribe of' : 'tribe ·'} ${SIM.tribeSize(p.e)} people${p.area ? ' (territory)' : ''}</span>`
     : p.kind === 'confed' ? `<b>${ART.img('crown', 15)}${esc(p.e.name)}</b> <span class="muted">· ${rulerWord(p.e, p.e.king)} ${esc(p.e.king.name)}</span>`
     : p.kind === 'site' ? `<b>${ART.img('fire', 16)}${esc(p.e.name)}</b> <span class="muted">gathering place</span>`
     : p.kind === 'place' ? `<b>${esc(p.e.name)}</b> <span class="muted">· ${p.e.type === 'fishing' ? 'fishing village' : p.e.type === 'mixed' ? 'farming & fishing village' : 'farming village'} · ${p.e.pop} people</span>`
@@ -1679,5 +1724,5 @@
   resize();
   STORE.get().then(v => { savedGame = v && v.str ? v : null; }).catch(() => {}).then(() => newWorld(Math.floor(Math.random() * 1e9)));
   requestAnimationFrame(frame);
-  window.__dbg = { get W() { return W; }, herdsN: () => { herdCache.key = ''; return herds().reduce((n, h) => n + (h.sea || h.sp === 'duck' || h.sp === 'sealion' ? 0 : h.cnt), 0); }, probe: (sx, sy) => { const [x, y] = toWorld(sx, sy), gx = Math.floor(x / CELL), gy = Math.floor(y / CELL), P = W.player; const fx = Math.floor((sx - cam.ox) / cam.s / WORLD * FR), fy = Math.floor((sy - cam.oy) / cam.s / WORLD * FR); return { x, y, gx, gy, known: P.known[gy * N + gx], fogA: fogImg ? fogImg.data[(fy * FR + fx) * 4 + 3] : -1, land: W.land[gy * N + gx], dpr: window.devicePixelRatio, cssW: cv.clientWidth, cvW: cv.width }; }, check: (sx, sy) => { if (!placePick) return false; const [x, y] = toWorld(sx, sy); return !SIM.checkPlace(W, placePick.id, x, y); }, reset: () => { modalEv = null; $('#modal').style.display = 'none'; W.pending = []; running = false; wasRunning = false; $('#play').textContent = '▶'; }, open: e => open(e, true), fit: () => fit(), paint: () => { paint(); }, zoom: (x, y, f) => zoomAt(x, y, f), center: (x, y, s) => { cam.s = s; centerOn(x, y); } };
+  window.__dbg = { get W() { return W; }, get cam() { return cam; }, get show() { return show; }, get grp() { return grpOf; }, get mk() { return mkOf; }, get crowd() { return crowdOn; }, herdsN: () => { herdCache.key = ''; return herds().reduce((n, h) => n + (h.sea || h.sp === 'duck' || h.sp === 'sealion' ? 0 : h.cnt), 0); }, probe: (sx, sy) => { const [x, y] = toWorld(sx, sy), gx = Math.floor(x / CELL), gy = Math.floor(y / CELL), P = W.player; const fx = Math.floor((sx - cam.ox) / cam.s / WORLD * FR), fy = Math.floor((sy - cam.oy) / cam.s / WORLD * FR); return { x, y, gx, gy, known: P.known[gy * N + gx], fogA: fogImg ? fogImg.data[(fy * FR + fx) * 4 + 3] : -1, land: W.land[gy * N + gx], dpr: window.devicePixelRatio, cssW: cv.clientWidth, cvW: cv.width }; }, check: (sx, sy) => { if (!placePick) return false; const [x, y] = toWorld(sx, sy); return !SIM.checkPlace(W, placePick.id, x, y); }, reset: () => { modalEv = null; $('#modal').style.display = 'none'; W.pending = []; running = false; wasRunning = false; $('#play').textContent = '▶'; }, open: e => open(e, true), fit: () => fit(), paint: () => { paint(); }, zoom: (x, y, f) => zoomAt(x, y, f), center: (x, y, s) => { cam.s = s; centerOn(x, y); } };
 })();
