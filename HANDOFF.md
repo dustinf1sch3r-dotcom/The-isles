@@ -22,6 +22,9 @@ The player leads one house (a dynasty) inside a clan inside a tribe, generation 
 | `tools/fuzz.js` | Randomised play: random answers, random deeds. `node tools/fuzz.js 2,7,14 130` (seeds, years) must end with `errors 0` and print no `BAD TEXT` lines. |
 | `tools/balance.js` | Unattended play, always option 0. `node tools/balance.js 5,8,11,14 120` prints houses that died out, the share of years the player's clan was dangerously small, and world population. Compare before and after any rule change. |
 | `tools/save_roundtrip.js` | Save, load and play on. |
+| `tools/head_swap.js` | Ten games: counts head changes while the old head lives, heads moving clan, and heads changing household (a child head fostered after the household breaks up is expected). |
+| `tools/discovery.js`, `raids.js`, `wars.js`, `stops.js` | Feature measures: how soon a house meets another people (passive and exploring), raids and paybacks in raid-every-chance play, realm wars and their outcomes, cards that stop play by type. Each takes `ISLES_SIM=<path to a sim.js>` to measure another build (for example the one before a change). `balance.js`, `fuzz.js` and `head_swap.js` always use `../build/sim.js`. |
+| `tools/same.js` | `SIM_A=<sim.js> SIM_B=<sim.js> node tools/same.js 5,11,14` proves two builds give bit-identical worlds (for speed work that must not change results). |
 | `play/server.js`, `play/isles` | A text front-end for play-testing from a shell: `node play/server.js &` then `./play/isles 1 "new 5; adv 5; state; deeds"`. `docs/TESTER.md` documents its commands. It also has `testsetup` commands that jump to the late game for testing. |
 | `docs/` | Briefs used for agent engineers and testers, and the last test reports. |
 
@@ -117,7 +120,8 @@ Do all of these before committing:
 - **Build:** `./build.sh` (must print `built`).
 - **Fuzz:** `node tools/fuzz.js 2,7,14 130`.
 - **Saves:** `node tools/save_roundtrip.js`.
-- **Balance:** `node tools/balance.js 5,8,11,14 120`, compared with the result from before the change.
+- **Balance:** `node tools/balance.js 5,8,11,14 120` and `node tools/balance.js 2,7,21,33 120`, compared with the result from before the change. Single seeds swing by chance (a change that adds any `W.rand()` call reorders every later roll), so judge the eight together.
+- **Old saves:** make a save with the build from before the change (seed 9, year 60, always option 0), load it with the new build and play 30 more years.
 - **Interface changes:** load `index.html` at phone size with Playwright (Chromium), and look at the screenshots.
 - **Family or succession changes:** `node tools/head_swap.js` counts head changes while the old head is alive over ten games. It must say 0.
 
