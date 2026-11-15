@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="The Isles">
+<meta name="theme-color" content="#e9ddc1">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<title>The Isles</title>
+<style>
+  :root {
+    --peat:#cdbb8e; --hide:#efe4c3; --hide2:#e2d3a8; --rule:rgba(84,58,30,0.3); --chalk:#2f2218; --dust:#6c563c;
+    --amber:#7c2f1e; --amber-ink:#f8efd6; --lichen:#476428; --blood:#a83a22; --flint:#2c5878;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+    --surface:rgb(240,229,197); --topb:74px; --sheet:42vh;
+    /* names the older rules use */
+    --bg:var(--peat); --card:var(--surface); --line:var(--rule); --txt:var(--chalk); --muted:var(--dust); --acc:var(--amber);
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--peat); color:var(--chalk); font:15px/1.42 var(--serif); overflow:hidden; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
+  #map, #bg { position:fixed; inset:0; width:100%; height:100%; touch-action:none; cursor:grab; }
+  #bg { pointer-events:none; }
+  button { font:inherit; color:var(--chalk); background:var(--surface); border:1px solid var(--rule); border-radius:12px; padding:0 12px; height:40px; min-width:40px; cursor:pointer; backdrop-filter:blur(6px); }
+  button:active { transform:scale(0.97); }
+  button:focus-visible, a:focus-visible, [role=button]:focus-visible { outline:2px solid var(--amber); outline-offset:2px; }
+  img.ic { vertical-align:-0.28em; margin-right:3px; }
+  .muted { color:var(--dust); font-size:12px; }
+
+  /* ---- top: almanac and controls ---- */
+  .top { position:fixed; left:8px; right:8px; top:8px; display:flex; gap:8px; align-items:flex-start; pointer-events:none; z-index:3; }
+  .top > * { pointer-events:auto; }
+  .pill { background:var(--surface); border:1px solid var(--rule); border-radius:14px; padding:8px 12px; backdrop-filter:blur(6px); }
+  #status { flex:1; min-width:0; cursor:pointer; }
+  #date { font:600 16px/1.25 var(--serif); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #date small { font:400 12px system-ui,sans-serif; color:var(--dust); margin-left:6px; }
+  #hud { display:flex; gap:4px 14px; flex-wrap:wrap; margin-top:3px; font-size:12.5px; }
+  #hud span { white-space:nowrap; } #hud i { font-style:normal; color:var(--dust); margin-right:4px; } #hud b { font-weight:650; }
+  #hud .bad b { color:var(--blood); } #hud .warn b { color:var(--amber); } #hud .good b { color:var(--lichen); }
+  #popcount { color:var(--dust); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+  .ctl { display:flex; gap:6px; }
+  #play { font-size:13px; letter-spacing:-1px; }
+  #skipBtn { font-size:20px; line-height:1; padding-bottom:3px; }
+  #popcount.tide { color:#5a3a1e; font-style:italic; }
+  .myth { padding:7px 0 8px; border-bottom:1px solid rgba(84,58,30,0.102); line-height:1.4; }
+  .myth b { font-family:var(--serif, Georgia, serif); font-size:15px; }
+  .counsel { margin:6px 0 10px; padding:9px 11px; border-left:3px solid #8a5a2a; background:rgba(138,90,42,0.11); border-radius:0 8px 8px 0; font-size:14px; line-height:1.4; }
+  .counsel .k { display:block; margin-bottom:2px; }
+  .amb { width:11px; height:11px; border:1.5px solid #7a5a30; border-radius:2px; margin-right:8px; flex:none; display:inline-block; }
+  .amb.done { background:#7a5a30; }
+  #skipBtn.on { background:#8a5a2a; color:#f8efd6; }
+  img.ic { image-rendering:auto; }
+  #actBtn { background:var(--amber); border-color:var(--amber); color:var(--amber-ink); font-weight:700; padding:0 18px; }
+  .tools { position:fixed; left:8px; top:calc(var(--topb) + 8px); display:flex; flex-direction:column; gap:6px; z-index:3; }
+  .tools button { width:40px; padding:0; display:flex; align-items:center; justify-content:center; }
+  .tools svg { width:19px; height:19px; stroke:currentColor; fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+  .tools button.on { border-color:var(--amber); color:var(--amber); }
+
+  /* ---- popovers: map menu and game menu ---- */
+  .pop { position:fixed; z-index:8; display:none; background:var(--hide); border:1px solid var(--rule); border-radius:14px; padding:12px 14px; box-shadow:0 10px 34px rgba(54,36,14,0.385); max-height:calc(100vh - var(--topb) - 30px); overflow-y:auto; }
+  .pop.open { display:block; }
+  .pop h4, h4.grp { font:600 14px var(--serif); margin:12px 0 6px; color:var(--chalk); }
+  .pop h4:first-child { margin-top:0; }
+  #mapMenu { left:56px; top:calc(var(--topb) + 8px); width:310px; }
+  #menu { left:56px; top:calc(var(--topb) + 146px); width:230px; padding:6px; }
+  #menu button { display:block; width:100%; text-align:left; background:transparent; border:none; height:38px; border-radius:9px; }
+  #menu button:hover { background:rgba(84,58,30,0.102); }
+  #layers, .togs { display:flex; flex-wrap:wrap; gap:6px; }
+  #layers button, .togs button { height:32px; border-radius:16px; font-size:12.5px; white-space:nowrap; background:transparent; }
+  #layers button.on { background:var(--amber); color:var(--amber-ink); border-color:var(--amber); font-weight:650; }
+  .togs button { color:var(--dust); }
+  .togs button.on { color:var(--chalk); border-color:rgba(124,47,30,0.7); background:rgba(124,47,30,0.12); }
+  .togs button.on::before { content:'✓ '; color:var(--amber); }
+  #legend { display:grid; grid-template-columns:1fr 1fr; gap:5px 10px; font-size:12.5px; color:var(--chalk); }
+  #legend span { display:flex; align-items:center; gap:5px; min-width:0; }
+  #legend .sw { width:14px; height:14px; border-radius:4px; flex:none; border:1px solid rgba(54,36,14,0.28); }
+  #legend .note { grid-column:1/-1; color:var(--dust); font-size:12px; }
+
+  /* ---- the ledger: side panel (wide) or bottom sheet (phone) ---- */
+  .panel { position:fixed; left:0; right:0; bottom:0; height:var(--sheet); background:var(--surface); border:1px solid var(--rule); border-bottom:none; border-radius:18px 18px 0 0; backdrop-filter:blur(8px); display:flex; flex-direction:column; z-index:4; transition:height .22s ease; }
+  .grab { height:20px; flex:none; display:flex; align-items:center; justify-content:center; cursor:grab; touch-action:none; }
+  .grab i { width:38px; height:4px; border-radius:2px; background:rgba(84,58,30,0.6); }
+  .tabs { display:flex; gap:2px; padding:0 8px; border-bottom:1px solid var(--rule); flex:none; }
+  .tabs button { height:36px; font-size:13px; border:none; border-bottom:2px solid transparent; border-radius:0; background:transparent; color:var(--dust); padding:0 10px; backdrop-filter:none; }
+  .tabs button.on { color:var(--chalk); border-bottom-color:var(--amber); font-weight:650; }
+  #panelBody { overflow-y:auto; padding:10px 14px 18px; flex:1; -webkit-user-select:text; user-select:text; overscroll-behavior:contain; }
+  body.sheet-peek { --sheet:57px; } body.expanded { --sheet:82vh; }
+  body.sheet-peek #panelBody { display:none; }
+  .selbar { display:flex; align-items:center; gap:6px; margin:-2px 0 8px; }
+  .selbar button { height:30px; min-width:30px; padding:0 10px; font-size:12.5px; border-radius:9px; background:rgba(84,58,30,0.085); }
+  .selbar .sp { flex:1; }
+  .ph { display:flex; align-items:baseline; gap:4px 10px; flex-wrap:wrap; margin-bottom:6px; }
+  .ph b { font:600 19px/1.2 var(--serif); }
+  .lede { color:var(--dust); font-size:13px; margin:-2px 0 8px; }
+  .lede b { color:var(--chalk); font-weight:600; }
+  .dot { width:11px; height:11px; border-radius:50%; display:inline-block; border:1.5px solid var(--chalk); align-self:center; flex:none; }
+  .k { color:var(--dust); font-size:11.5px; }
+  .v { font-size:15.5px; font-weight:620; line-height:1.25; }
+  .k.sec, .sec { font:600 14.5px var(--serif); color:var(--chalk); margin:16px 0 4px; padding-bottom:4px; border-bottom:1px solid var(--rule); }
+  .k.sec .muted { font:400 12px system-ui,sans-serif; }
+  .tiles, .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:0 18px; margin:2px 0; }
+  .tile, .grid2 > div { padding:7px 0 8px; border-bottom:1px solid var(--rule); min-width:0; }
+  .tile .muted, .grid2 .muted { font-size:11.5px; line-height:1.35; }
+  .tiles2 { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:8px; font-size:12.5px; }
+  .bar { height:4px; background:rgba(84,58,30,0.228); border-radius:2px; margin-top:4px; overflow:hidden; }
+  .bar i { display:block; height:100%; border-radius:2px; }
+  .alerts { display:flex; flex-wrap:wrap; gap:6px; margin:2px 0 10px; }
+  .alert { font-size:12.5px; padding:5px 10px; border-radius:9px; background:rgba(216,102,78,0.16); color:#7a2414; border-left:3px solid var(--blood); }
+  .alert.warn { background:rgba(124,47,30,0.13); color:#5e4310; border-left-color:var(--amber); }
+  .alert.ok { background:rgba(143,184,124,0.13); color:#33501c; border-left-color:var(--lichen); }
+  .actbig { width:100%; margin:2px 0 10px; height:44px; border-radius:12px; background:var(--amber); border-color:var(--amber); color:var(--amber-ink); font-weight:700; font-size:14.5px; }
+  .setline { display:flex; gap:8px; align-items:flex-start; margin:10px 0 2px; font-size:12.5px; color:var(--dust); }
+  .tabs2 { display:flex; gap:2px; margin:0 0 8px; border-bottom:1px solid var(--rule); overflow-x:auto; scrollbar-width:none; }
+  .tabs2::-webkit-scrollbar { display:none; }
+  .tabs2 button { height:32px; border:none; border-bottom:2px solid transparent; border-radius:0; background:transparent; font-size:12.5px; padding:0 10px; color:var(--dust); backdrop-filter:none; white-space:nowrap; flex:none; }
+  .tabs2 button.on { color:var(--chalk); border-bottom-color:var(--amber); font-weight:650; }
+  canvas#pyr, canvas#chart, canvas#spark { width:100%; height:auto; display:block; margin-top:4px; }
+  .ev { padding:6px 0; border-bottom:1px solid var(--rule); font-size:13px; cursor:pointer; line-height:1.4; }
+  .ev .yr { color:var(--amber); font-weight:650; font-size:11.5px; margin-right:8px; font-variant-numeric:tabular-nums; }
+  .ev.k-blood .yr { color:#a8301c; } .ev.k-peace .yr { color:var(--lichen); } .ev.k-big .yr { color:#256a86; } .ev.k-conflict .yr { color:#a8601a; } .ev.k-hunger .yr { color:#6b3f8c; }
+  .ev.k-gather .yr { color:#8a6a10; } .ev.k-trade .yr { color:#4a5a66; } .ev.k-king .yr { color:#a03a20; }
+  .ev.k-grain .yr { color:#8a6f12; } .ev.k-sea .yr { color:#1f6f8e; } .ev.k-settle .yr { color:#7a5a26; } .ev.k-metal .yr { color:#9a4e16; }
+  .ev.k-big, .ev.k-king, .ev.k-settle, .ev.k-metal { font-weight:600; }
+  .crumbs { font-size:12px; color:var(--dust); margin-bottom:2px; }
+  .crumbs span { opacity:0.6; margin:0 2px; }
+  a[data-e] { color:#2c5878; text-decoration:none; cursor:pointer; font-weight:600; }
+  .row2 { padding:6px 0; border-bottom:1px solid var(--rule); font-size:13px; display:flex; flex-wrap:wrap; gap:2px 8px; align-items:baseline; }
+  .rel { padding:7px 0; border-bottom:1px solid var(--rule); font-size:13px; }
+  .rh { display:flex; justify-content:space-between; gap:8px; align-items:baseline; }
+  .rh span { font-size:12px; white-space:nowrap; }
+  .rbar { position:relative; height:4px; background:rgba(84,58,30,0.19); border-radius:2px; margin:4px 0; }
+  .rbar::after { content:''; position:absolute; left:50%; top:-2px; bottom:-2px; width:1px; background:rgba(84,58,30,0.6); }
+  .rbar i { position:absolute; top:0; bottom:0; border-radius:2px; }
+  .pp { padding:6px 0; border-bottom:1px solid var(--rule); font-size:13px; cursor:pointer; }
+  table.mx { border-collapse:separate; border-spacing:2px; font-size:11px; }
+  table.mx th { color:var(--dust); font-weight:500; text-align:left; padding:2px 4px; }
+  table.mx td { text-align:center; padding:3px 4px; border-radius:4px; min-width:30px; }
+  .chip { display:inline-flex; align-items:center; border:1px solid var(--rule); border-radius:11px; padding:2px 9px 2px 5px; margin:3px 5px 2px 0; font-size:12.5px; background:rgba(84,58,30,0.051); }
+  .chip b { margin-left:5px; font-weight:650; }
+  .stack { display:flex; height:9px; border-radius:5px; overflow:hidden; margin:4px 0; background:rgba(84,58,30,0.19); }
+  .stack i { display:block; height:100%; }
+  .ties { font-size:11.5px; color:#6c5326; margin:1px 0; }
+  .badge { display:inline-block; border:1px solid var(--rule); border-radius:9px; padding:0 7px; font-size:11.5px; color:#4f1f12; }
+  .card { padding:8px 0; border-bottom:1px solid var(--rule); font-size:13px; }
+  .mini { display:grid; grid-template-columns:auto 1fr auto 1fr; gap:4px 8px; align-items:center; font-size:11px; color:var(--dust); margin:4px 0 0; }
+  .mini .bar, .mini .rbar { margin:0; }
+  .bid { border:1px solid rgba(124,47,30,0.35); border-radius:10px; padding:8px 10px; margin:8px 0; background:rgba(124,47,30,0.05); font-size:12.5px; }
+  .bidparts { display:grid; grid-template-columns:repeat(3,1fr); gap:3px 8px; margin-top:6px; font-size:11px; color:var(--dust); }
+  .bidparts span { position:relative; padding-top:5px; }
+  .bidparts i { position:absolute; left:0; top:0; height:3px; background:#8a5a2a; border-radius:2px; }
+  .ord { padding:8px 0 10px; border-bottom:1px solid var(--rule); }
+  .ord .k { margin-bottom:6px; font-size:12.5px; color:var(--chalk); }
+  .seg { display:flex; flex-wrap:wrap; gap:5px; }
+  .seg button { height:32px; padding:0 11px; border-radius:16px; font-size:12.5px; background:transparent; color:var(--dust); backdrop-filter:none; }
+  .seg button.on { color:var(--amber-ink); background:var(--amber); border-color:var(--amber); font-weight:650; }
+  .seg.sm button { height:28px; font-size:12px; padding:0 10px; }
+  .dealrow { display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center; margin-top:7px; }
+  button.lnk { height:28px; padding:0 10px; border-radius:14px; font-size:12px; background:rgba(84,58,30,0.085); backdrop-filter:none; }
+  .scale { position:relative; height:6px; border-radius:3px; background:linear-gradient(90deg,#c46aa0,#6a8fc4); margin-top:6px; }
+  .scale i { position:absolute; top:-3px; width:4px; height:12px; border-radius:2px; background:#fff; }
+
+  /* ---- floating bits ---- */
+  #tip { position:fixed; pointer-events:none; display:none; z-index:6; background:rgba(245,236,208,0.98); border:1px solid var(--rule); border-radius:10px; padding:7px 10px; font-size:12.5px; max-width:290px; }
+  #picker { position:fixed; display:none; z-index:7; background:var(--hide); border:1px solid var(--rule); border-radius:12px; padding:4px; min-width:210px; max-width:310px; box-shadow:0 8px 28px rgba(54,36,14,0.385); }
+  #picker .pick { padding:8px 9px; border-radius:8px; cursor:pointer; font-size:13px; }
+  #picker .pick:hover { background:rgba(84,58,30,0.119); }
+  #loading { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(226,212,172,0.94); font:italic 17px var(--serif); color:var(--dust); z-index:20; }
+  #toasts { position:fixed; left:50%; transform:translateX(-50%); bottom:16px; z-index:11; display:flex; flex-direction:column; gap:6px; width:min(440px,92vw); pointer-events:none; }
+  .toast { pointer-events:auto; background:var(--hide); border:1px solid rgba(124,47,30,0.4); border-radius:12px; padding:9px 12px; font-size:13px; line-height:1.4; color:#33261a; box-shadow:0 6px 24px rgba(54,36,14,0.35); transition:opacity .7s; cursor:pointer; }
+  .toast b { color:#4f1f12; } .toast.out { opacity:0; }
+  #pickbar { position:fixed; top:calc(var(--topb) + 8px); z-index:12; max-width:92vw; left:50%; transform:translateX(-50%); display:none; gap:10px; align-items:center; background:var(--hide); border:1px solid rgba(124,47,30,0.6); border-radius:12px; padding:8px 12px; font-size:13px; color:#4f1f12; box-shadow:0 6px 24px rgba(54,36,14,0.35); }
+  #pickbar button { height:30px; padding:0 10px; }
+
+  /* ---- cards: decisions, deeds, start, help ---- */
+  #modal, #help { position:fixed; inset:0; z-index:12; display:none; align-items:center; justify-content:center; background:rgba(46,32,16,0.45); padding:14px; }
+  #modal .card2, #help .box { position:relative; background:var(--hide); border:1px solid rgba(124,47,30,0.32); border-radius:16px; width:min(560px,100%); max-height:88vh; overflow-y:auto; padding:18px 18px 14px; box-shadow:0 14px 44px rgba(54,36,14,0.42); -webkit-user-select:text; user-select:text; }
+  #modal .card2.nudge { animation:nudge .3s; }
+  @keyframes nudge { 0%,100% { transform:none; } 30% { transform:translateX(-5px); } 70% { transform:translateX(5px); } }
+  #modal h2, #help h2 { margin:2px 28px 8px 0; font:600 22px/1.2 var(--serif); color:#4f1f12; }
+  #modal p { color:#33261a; font-size:14px; line-height:1.5; margin:6px 0 10px; }
+  .xbtn { position:absolute; right:10px; top:10px; width:32px; height:32px; min-width:0; padding:0; border-radius:10px; background:rgba(84,58,30,0.085); font-size:15px; line-height:1; }
+  .evhead { font-size:12px; color:var(--dust); }
+  .opt { display:flex; gap:10px; align-items:flex-start; text-align:left; width:100%; height:auto; padding:10px 12px; margin:7px 0; border-radius:12px; background:rgba(84,58,30,0.0595); }
+  .opt:hover { background:rgba(124,47,30,0.12); border-color:rgba(124,47,30,0.5); }
+  .opt.off { opacity:0.45; cursor:default; }
+  .opt .num { flex:none; width:24px; height:24px; border-radius:50%; background:rgba(124,47,30,0.18); color:#4f1f12; display:flex; align-items:center; justify-content:center; font-size:12.5px; font-weight:700; }
+  .tribeblk { border-top:1px solid var(--rule); padding:10px 0 4px; margin-top:8px; }
+  .tribeblk .pick { padding:8px 9px; border-radius:9px; cursor:pointer; font-size:13.5px; border:1px solid transparent; }
+  .tribeblk .pick:hover { background:rgba(124,47,30,0.1); border-color:rgba(124,47,30,0.4); }
+  .row { display:flex; gap:6px; align-items:center; }
+  #help { z-index:13; background:rgba(46,32,16,0.6); }
+  #help h3 { margin:16px 0 4px; font:600 15.5px var(--serif); color:var(--amber); }
+  #help p, #help li { color:#3a2c1e; font-size:13.5px; line-height:1.5; }
+  #help ul { padding-left:18px; margin:4px 0; }
+
+  @media (min-width:820px) {
+    .panel { left:auto; right:10px; top:10px; bottom:10px; width:410px; height:auto; border:1px solid var(--rule); border-radius:16px; }
+    .grab { display:none; }
+    .tabs { padding-top:4px; }
+    .top { right:430px; }
+    body.sheet-peek #panelBody { display:block; }
+    #toasts { left:calc((100vw - 430px) / 2); }
+  }
+  @media (max-width:819px) {
+    #popcount, #hud .r { display:none; }
+    .ctl #actBtn { position:fixed; right:12px; bottom:calc(var(--sheet) + 14px); height:48px; border-radius:24px; padding:0 22px; font-size:15px; box-shadow:0 6px 20px rgba(54,36,14,0.35); z-index:5; transition:bottom .22s ease; }
+    body.expanded .ctl #actBtn { display:none; }
+    .tools { left:auto; right:8px; }
+    #mapMenu, #menu { left:8px; right:56px; width:auto; top:calc(var(--topb) + 8px); }
+    #toasts { bottom:auto; top:calc(var(--topb) + 12px); }
+    .ph b { font-size:18px; }
+  }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; animation:none !important; } }
+
+  /* ---- parchment, ink and a frame: the whole interface is a written page ---- */
+  :root { --paper:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n' x='0' y='0' width='100%25' height='100%25'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' seed='4'/><feColorMatrix values='0 0 0 0 0.36  0 0 0 0 0.25  0 0 0 0 0.1  0 0 0 0.16 0'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>"); --frame:#8a6a3c; }
+  button, .pill, .pop, .panel, #picker, .toast, #pickbar, #modal .card2, #help .box, #tip { background-image:var(--paper); backdrop-filter:none; }
+  .panel, #modal .card2, #help .box, .pop { border:1px solid var(--frame); box-shadow:inset 0 0 0 3px rgba(240,229,197,0.9), inset 0 0 0 4px rgba(138,106,60,0.55), 0 8px 26px rgba(54,36,14,0.35); }
+  button { border-color:rgba(110,80,40,0.55); box-shadow:inset 0 1px 0 rgba(255,250,230,0.7), 0 1px 2px rgba(54,36,14,0.25); font-family:var(--serif); }
+  #modal h2, #help h2 { font:600 23px/1.2 var(--serif); letter-spacing:0.1px; }
+  #modal p { font:16px/1.5 var(--serif); }
+  .opt { background:transparent; background-image:none; border:0; border-top:1px solid rgba(84,58,30,0.22); border-radius:0; box-shadow:none; margin:0; padding:11px 4px; font:600 16.5px/1.3 var(--serif); }
+  .opt:last-child { border-bottom:1px solid rgba(84,58,30,0.22); }
+  .opt b { font-weight:700; } .opt .muted { font:400 13.5px/1.35 var(--serif); }
+  .opt:hover, .opt:active { background:rgba(44,88,120,0.08); border-color:rgba(84,58,30,0.22); } .opt:hover b, .opt:active b { color:var(--flint); }
+  .opt .num { background:transparent; border:1px solid rgba(84,58,30,0.4); font-family:var(--serif); }
+  .muted { color:var(--dust); }
+  /* portraits, speech and plates */
+  img.face { display:block; border:1px solid var(--frame); border-radius:3px; background:#e6d8b2 var(--paper); box-shadow:inset 0 0 0 2px rgba(244,235,208,0.9), 0 1px 2px rgba(54,36,14,0.3); }
+  .ph { display:flex; align-items:center; gap:10px; flex-wrap:wrap; } .ph img.face.hd { flex:none; }
+  .bubble { position:relative; background:#f8f2dc; border:1.5px solid #8f8876; border-radius:11px; padding:8px 11px 9px; font:15px/1.38 "Gill Sans","Gill Sans MT","Trebuchet MS",system-ui,sans-serif; color:#2a2218; box-shadow:0 1px 3px rgba(54,36,14,0.2); }
+  .bubble .who { display:block; font-size:12.5px; color:#8a8474; margin-bottom:1px; } .bubble .role { float:right; margin-top:-17px; font-size:12px; color:#8a8474; font-style:italic; }
+  .says { display:flex; gap:12px; align-items:flex-start; margin:8px 0 12px; } .says img.face { flex:none; } .says .bubble { flex:1; }
+  .says .bubble::before { content:""; position:absolute; left:-9px; top:20px; width:15px; height:15px; background:#f8f2dc; border-left:1.5px solid #8f8876; border-bottom:1.5px solid #8f8876; transform:rotate(45deg); }
+  .ringbox { position:sticky; bottom:-14px; margin:14px -18px -14px; padding:14px 18px 16px; background:linear-gradient(rgba(239,228,195,0), #efe4c3 14px) , var(--paper); background-color:transparent; z-index:1; } .ringbox::before { content:""; position:absolute; inset:14px 0 0 0; background:#efe4c3 var(--paper); z-index:-1; border-top:1px solid rgba(84,58,30,0.25); } .ringbox .bubble { margin-bottom:11px; min-height:54px; }
+  .ringbox .bubble::after { content:""; position:absolute; left:var(--tail,27px); bottom:-9px; width:15px; height:15px; background:#f8f2dc; border-right:1.5px solid #8f8876; border-bottom:1.5px solid #8f8876; transform:rotate(45deg); transition:left .15s; }
+  .ring { display:flex; gap:8px; position:relative; } .rf { padding:0; height:auto; min-width:0; border:0; background:none; background-image:none; box-shadow:none; border-radius:3px; opacity:0.72; }
+  .rf.on { opacity:1; outline:2px solid var(--amber); outline-offset:1px; } .rf.mute { filter:saturate(0.4); }
+  .opt.fav b::after { content:"  ◂"; color:var(--flint); font-weight:400; }
+  img.plate { display:block; width:calc(100% + 8px); margin:-4px -4px 10px; border:1px solid var(--frame); border-radius:2px; aspect-ratio:640/230; object-fit:cover; }
+  .xbtn { z-index:2; background:#efe4c3 var(--paper); }
+</style>
+<script>if ('serviceWorker' in navigator && location.protocol.startsWith('http')) addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); });</script>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<canvas id="map"></canvas>
+<div class="top">
+  <div class="pill" id="status" role="button" tabindex="0" title="Open your house"><div id="date">Year 1</div><div id="hud"></div><div id="popcount"></div></div>
+  <div class="ctl">
+    <button id="play" title="Play or pause (space)">❚❚</button>
+    <button id="speed" title="Speed">1×</button>
+    <button id="skipBtn" title="Skip ahead to the next decision (ten years at most)">»</button>
+    <button id="actBtn" title="Choose a deed (A)">Act</button>
+  </div>
+</div>
+<div class="tools">
+  <button id="mapBtn" title="Map view, what to show, and the legend"><svg viewBox="0 0 24 24"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 16 9 5 9-5"/></svg></button>
+  <button id="homeBtn" title="Go to your house"><svg viewBox="0 0 24 24"><path d="m12 3 2.7 5.7 6.3.8-4.6 4.3 1.2 6.2L12 17l-5.6 3 1.2-6.2L3 9.500l6.300-.8L12 3Z"/></svg></button>
+  <button id="fitBtn" title="Show the whole of the isles"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+  <button id="menuBtn" title="Menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+</div>
+<div class="pop" id="mapMenu">
+  <h4>Map view</h4>
+  <div id="layers">
+    <button data-l="terrain" class="on">Land</button>
+    <button data-l="biome">Biomes</button>
+    <button data-l="food">Food</button>
+    <button data-l="game">Game</button>
+    <button data-l="soil">Soil</button>
+    <button data-l="water">Moisture</button>
+    <button data-l="impact">Human impact</button>
+  </div>
+  <h4>Show on the map</h4>
+  <div class="togs" id="togs">
+    <button data-s="people" class="on">Peoples</button>
+    <button data-s="names" class="on">Names</button>
+    <button data-s="res" class="on">Resources</button>
+    <button data-s="wild" class="on">Wildlife</button>
+    <button data-s="roads" class="on">Roads</button>
+    <button data-s="kult">Cultures</button>
+  </div>
+  <h4>Legend</h4>
+  <div id="legend"></div>
+</div>
+<div class="pop" id="menu">
+  <button id="helpBtn">How to play</button>
+  <button id="saveBtn">Save game</button>
+  <button id="saveFileBtn">Save to a file</button>
+  <button id="loadFileBtn">Load from a file</button>
+  <button id="newBtn">Start a new world…</button>
+</div>
+<div class="panel">
+  <div class="grab" id="grab" title="Drag or tap to resize"><i></i></div>
+  <div class="tabs">
+    <button id="houseBtn">House</button>
+    <button id="logBtn">Chronicle</button>
+    <button id="tribesBtn">Peoples</button>
+    <button id="chartBtn">Chart</button>
+  </div>
+  <div id="panelBody"></div>
+</div>
+<div id="modal"><div class="card2"></div></div>
+<div id="toasts"></div>
+<div id="pickbar"></div>
+<div id="tip"></div><div id="picker"></div>
+<div id="loading">Raising the isles…</div>
+<div id="help"><div class="box"><button class="xbtn" onclick="document.getElementById('help').style.display='none'" title="Close">✕</button>
+  <h2>How to play</h2>
+  <p>At the start you choose one household. You lead its family line from then on: the head of the house, then the heir, and so on. A gold star on the map marks your camp. The bar at the top shows your food, clan and spears; tap it, or the House tab, to open your house.</p>
+  <h3>Finding your way around</h3>
+  <ul>
+    <li><b>Open and close:</b> tap anything on the map to open it. To close it, tap empty ground, press ✕ or Esc, or use the back button at the top of the panel. Cards and menus also close when you tap outside them, except a decision that needs an answer.</li>
+    <li><b>Map button</b> (the stacked sheets): choose the view (land, biomes, food, game, soil, moisture, human impact), switch peoples, names, resources, wildlife and roads on or off, and read the legend. If the map feels crowded, switch off peoples or names to see the land and its resources.</li>
+    <li><b>Icons:</b> round tokens are resources (flint, amber, axe-stone, ochre, salt, copper, tin, wild grain) and, closer in, wild foods (hazel, apples, cherries, berries, shellfish). Tents are wandering camps, round houses are villages, and a fire in a ring of stones is a gathering place.</li>
+    <li><b>Wildlife:</b> deer, boar, aurochs, wild horses, reindeer, ducks, seals, fish and whales are drawn where they really are. More animals together means richer hunting. They thin out and vanish where the land is hunted hard, and come back when it is left alone.</li>
+    <li><b>House panel:</b> anything that needs your attention is listed at the top (hunger, no heir, blood owed, rivals at your sources). The tabs below cover your stores and standing, your dealings, your family, clan and tribe, and the story of the house.</li>
+    <li><b>The Realm tab:</b> once your tribe is in a confederacy or kingdom, the House panel gains a Realm tab: the ruler, the tribes and whether each would stay, and how the realm is held. At first the tribes only follow the high chief and scatter when he dies; later they choose among themselves, and last it passes by blood. A confederacy held by blood may become a kingdom.</li>
+    <li><b>Dealings:</b> give standing orders once and the game follows them without stopping: what to do when one of your blood is killed (revenge, compensation, or let it go), when a clan swears vengeance on you (pay them, post guards, or do nothing), and when raiders come. Below, each clan you deal with has its own setting for whether it may share the sources your house has claimed. On automatic, your house shares with its own tribe and anyone who is not an enemy. You can also pay compensation to end a clan's grudge, or forgive one you hold. Each time an order is carried out, a short note appears and it is written in the house chronicle. Choose Ask me for anything you want to decide each time.</li>
+    <li><b>On a phone:</b> drag or tap the handle on the bottom sheet to make it taller or tuck it away. The Act button floats above it.</li>
+    <li><b>Other buttons:</b> the star takes you home, the corners show the whole of the isles, and the menu has this guide and a new world.</li>
+  </ul>
+  <ul>
+    <li>The world runs by itself. When something matters to your house, the game pauses and offers a decision. These include whom your children and grandchildren marry, how to answer a killing (revenge, compensation or forgiveness), what to do in a famine, whether to challenge for headman, how to act at the summer gathering, whether to farm, whether to claim a crown as king, and whether a king makes war. You can press 1–4 to choose.</li>
+    <li><b>Act</b> (or press <b>A</b>) lets you take the lead yourself at any time. You can <b>lead a raiding party</b> (your clan's warriors plus volunteers from friendly clans) against another tribe's camp or village; you might win food, grain and treasures, or lose men, and your head can fall. You can <b>lead your clan to new lands</b>: choose a nearby, distant or overseas destination, and your clan (or, if you aren't clan head, your household and its friends) breaks away to found a new tribe that you lead. You can also <b>send gifts</b> to win a tribe's friendship, <b>hold a great feast</b>, <b>challenge</b> your clan head or headman, <b>claim a crown</b>, <b>make war</b> as king, or <b>build a village</b>. Each deed has a rest period before you can do it again.</li>
+    <li><b>Calling up warriors:</b> as head of a household you raid with your own men and volunteers; as <b>clan head</b> you call the whole clan; as <b>headman</b> you can call up every clan of the tribe; as <b>king</b>, the warriors of the whole realm. A great war party can ravage several enemy camps at once. Other clans share the glory of a victory, and blame you for a defeat.</li>
+    <li><b>Expeditions:</b> <i>into the unknown</i> to map new land, find resources and meet strangers; or <i>to gather goods</i> (flint, axe-stone, amber, ochre, salt, copper, tin) from a source you know. Sources in another tribe's land may cost you food, goodwill or blood.</li>
+    <li><b>Fog of war:</b> you only see the lands your tribe has walked. More is revealed as your camps move, by expeditions, at gatherings (people talk about where they live), and by trading partners, kin and allies who tell you about their lands. The Tribes list shows only peoples you know. A people that bows to your realm tells you all it knows of the land and of the peoples beyond it, and you keep what it told you; tribes that joined you freely show you only the land they hold and the country round their camps. If you are a member of another's realm you see the land of its ruler, and no more.</li>
+    <li><b>Your people:</b> the House panel shows your food stores and has tabs for your <b>Family</b>, your <b>Clan</b> (every household, its size and how it feels about you) and your <b>Tribe</b> (every clan, its warriors, food and feelings toward your clan).</li>
+    <li><b>Food and goods:</b> foragers keep only a few days of food most of the year but lay in nuts, dried meat and smoked fish each autumn for winter; farmers store months of grain. Clans also gather everyday wealth — furs in good hunting years, shell beads on the shore — which, with surplus food, you can trade or give at gatherings.</li>
+    <li><b>Claimed sources:</b> with <i>⛏ Claim a source</i> your household works a flint quarry, axe-stone outcrop, amber beach, salt pan, ochre bed or ore vein you know of within 180 km. Its men go every season and bring back flint (2 per trip) or other goods (1), keeping your tools and flint weapons supplied. A source in another tribe's land annoys them, and hostile locals may drive your men off or kill one. A claim lapses if your camp moves more than 220 km away, and you can give one up in the House panel. The house can work up to 4.</li>
+    <li><b>Boats:</b> anyone camping within about 20 km of the sea, or by a big river or lake, slowly learns to make dugout canoes (roughly 8–25 years); the sea then teaches seagoing canoes. <i>🛶 Build canoes</i> in the Act menu speeds it up.</li>
+    <li><b>Weapons:</b> tribes with a steady supply of good flint learn to make flint-tipped spears and arrows (about +20% in a fight). Copper daggers and axes add more, and bronze the most. Copper and bronze tools also let farmers clear and reap more land (+20–30% harvests) and make foragers more productive. The tribe panel's <i>Weapons</i> tile shows where a tribe stands.</li>
+    <li><b>Feuds:</b> a clan that has lost people to you may swear vengeance, and your own house is owed blood when one of its line is killed. How your house answers both is a standing order under Dealings, so the game does not stop each time. Avengers need fighting men, so a clan bled white by a raid is slow to strike back, and leaders are harder to reach than ordinary men. A life taken in revenge mostly settles the debt, and elders often end a feud with compensation. Men of your house who fall while raiding create no blood debt.</li>
+    <li><b>Fewer interruptions:</b> minor matters (marriages, gatherings, scouts, sickness, challenges) come at most every nine months or so. Sons and daughters of the house are married off automatically from the age of 18 (daughters 16) to the best match in any neutral or friendly clan within about 90 km — your own tribe or another, favouring wealthy and allied clans. Hostile clans and tribes are never chosen. Only the head's own marriage asks you, unless you tick <i>Ask me about every marriage</i> in the House panel. Outcomes of decisions appear as brief notes at the bottom of the screen.</li>
+    <li><b>Exploring:</b> the known world also grows slowly by itself as hunters range further each season, strangers are seen near your camps, boatmen learn the coasts, and kin, trading partners and allies describe their lands a few camps at a time.</li>
+    <li><b>War parties:</b> once a tribe passes about 100 people it has the young men, ambitious leaders and appetites (grain, treasure, captives) to send war parties against weaker, unfriendly neighbours within about 80 km. The bigger the tribe, the more often it raids, and farming tribes raid more. Several clans send warriors, so these raids kill more and carry off more captives. Allies and members of the same confederacy are spared. If one comes for your camp you choose how to meet it.</li>
+    <li><b>Captives and slaves:</b> a successful raid can carry off women and children as captives, and a king's victories in war bring more. A slave belongs to the man who took him or her (the leader of a raid you lead is your head), works and eats with his household, but does not count toward the clan's or tribe's size, so does not make them split. Slaves cannot fight, marry or lead. When the owner dies they pass to his heir: a son, then a brother, then the household or clan head. Children born to a slave are slaves. Some escape back to their own people, especially if those people camp nearby, and a captive taken as a child may in time be adopted. You can <b>free a slave</b> from the Act menu; they join your household.</li>
+    <li>Big events also interrupt: <b>raiders</b> coming for your camp (fight on home ground, pay them off or flee), <b>scouts</b> reporting rich empty land, <b>fever</b> in camp, and a <b>weakened enemy</b> you could strike or help.</li>
+    <li>Renown grows with titles (clan head, headman, king), generous gifts, revenge, alliances and a large family.</li>
+    <li><b>How a seat is held:</b> a clan or a tribe may come to keep its leader for life, and later to give the seat by birth: to the head's child in a clan, to one chiefly clan in a tribe. Until then whoever stands highest leads. Settled clans and large tribes drift this way over the years; a wandering band does not. The panel of a clan or tribe says how it is led and who would follow, and a seat held for life or by birth is harder to win by challenge. As head of a clan or tribe you can ask for each step under Act.</li>
+    <li><b>Succession:</b> the house belongs to its clan. When the head dies, only someone of the blood living in that clan can inherit: a grown son first, then other men of the blood, then a boy (guided by the clan's elders), and only then a woman. Wives always go to live in their husband's clan, so if a woman leading the house marries out, the headship passes to the next heir in the clan. Children of the house's line stay with their father's clan if their mother remarries elsewhere, and your household never splits off from the clan unless you lead it away yourself. If no one of the blood is left in the clan, the house ends.</li>
+  </ul>
+  <h2>How the isles work</h2>
+  <p>One week passes per tick. The map is 1,000 × 1,000 km and holds about 240,000 km² of land, roughly the size of the UK. It is split between a great isle and a lesser isle. Each map is random. Drag to pan, and pinch or scroll to zoom. Hover over anything to see a summary, and click or tap to open it. Where several things overlap, a menu lets you choose. Tapping inside a tribe's shaded territory opens that tribe.</p>
+  <h3>Land, climate and biomes</h3>
+  <ul>
+    <li>The north is colder and the south is warmer, and every 1,000 m of height costs about 6°C. Westerly winds bring rain to the west and to the mountains, and leave dry rain shadows to the east. Coasts have milder seasons than inland areas.</li>
+    <li>Rivers and lakes form from rain draining off the terrain. Soils differ by place: chalk downs, river silt, sandy heaths, clay vales, and blanket peat where it is wet and cold.</li>
+    <li>Biomes emerge from the conditions:
+      <ul>
+        <li><b>Tundra and alpine:</b> above the treeline, where the warmest month averages under about 10°C.</li>
+        <li><b>Boreal pine and birch:</b> where summers are cool.</li>
+        <li><b>Mixed and broadleaf forest:</b> the "wildwood".</li>
+        <li><b>Grassland and scrub.</b></li>
+        <li><b>Heath and moorland:</b> on poor soils.</li>
+        <li><b>Bog and fen:</b> on waterlogged ground.</li>
+        <li><b>Dunes and saltmarsh:</b> along the coast.</li>
+      </ul>
+    </li>
+  </ul>
+  <h3>Resources that favour some tribes</h3>
+  <ul>
+    <li><b>Food:</b> salmon and trout runs in autumn, fish in lakes and shallow seas, shellfish beds in sheltered bays and estuaries, hazel woods, crab apple, wild cherry and sloe, and bilberry and cloudberry in the north. Game varies by biome: aurochs, red deer, boar, elk and reindeer.</li>
+    <li><b>◆ Flint</b> (best from chalk downs) and <b>▲ axe-stone</b> make good tools. Clans with good stone tools catch more game and fish. Tools wear out, so clans far from stone must keep trading for it.</li>
+    <li><b>● Amber</b> (washed up on eastern shores), <b>■ red ochre</b> and <b>✦ salt</b> are valued goods. Owning them raises a man's prestige and makes him more sought-after as a husband. Clans pass these goods along by exchange, and raiders seize them.</li>
+  </ul>
+  <h3>Seasonal gatherings and alliances</h3>
+  <ul>
+    <li>Each late summer, a tribe's clans travel to a gathering place: a salmon ford, a hazel wood or a strand. Neighbouring tribes that are not enemies come too.</li>
+    <li>At the gathering, people feast, arrange marriages between tribes, and trade flint, amber and other goods. Sometimes a brawl breaks out.</li>
+    <li>Each tribe tracks its ties with every other tribe: <b>💍 marriages, 🔥 shared feasts and ⇄ trades</b>. Once those ties and goodwill are strong enough, two tribes swear an <b>alliance</b>. Allies don't raid each other, marry more readily, and turn against anyone who raids their friends.</li>
+    <li>Gathering places build renown over time, and that renown draws more tribes to them.</li>
+  </ul>
+  <h3>Tribes, territory and migration</h3>
+  <ul>
+    <li>A tribe's camps stay within about 45 km of its homeland, shown as a shaded territory on the map. When a tribe splits, the breakaway group usually <b>migrates 80–250 km</b> to empty land with good food instead of crowding its old kin. Tribes that are hungry or crowded will also move on when open land lies elsewhere.</li>
+  </ul>
+  <h3>🌾 Grain and the first farmers</h3>
+  <ul>
+    <li>Wild emmer and barley grow along one river valley on the great isle. Tribes that keep harvesting it slowly domesticate it over about a century, in three stages: <b>gathering wild grain</b>, then <b>sowing and tending fields</b>, then <b>settling in permanent villages</b> (shown as houses on the map, with fields around them).</li>
+    <li>Farmers store grain that keeps through winter, and porridge lets mothers wean babies earlier. Births come about every 2½ years instead of 4, so a farming people grows roughly 2–3% a year, doubling every generation. Villages hold up to 60 people before a daughter village buds off, and a farming tribe can grow to about 400 across several villages before it splits.</li>
+    <li>A cereal diet and crowded villages have costs. Farmers are shorter (men about 160 cm against 168 cm) and sicker, they fight at about ¾ of a forager's strength, and their grain stores tempt raiders.</li>
+    <li>Fields wear out their soil after a few decades, and the village then moves. Farming spreads as farming tribes split off and find new land, and as neighbours who marry or trade with farmers learn it from them.</li>
+  </ul>
+  <h3>The sea, boats and fishing villages</h3>
+  <ul>
+    <li>The sea is rich. There are fishing banks where cod, herring and mackerel gather, shellfish beds in sheltered bays, seal colonies and seabird cliffs on rocky shores, and whale grounds ◗ offshore.</li>
+    <li>Coastal tribes first build <b>🛶 dugout canoes</b>, which make inshore fishing better and let them cross straits up to about 20 km. Later they build <b>⛵ seagoing canoes</b>, which open up offshore fishing banks and whaling in spring and autumn, and can cross straits up to about 70 km. A tribe can then migrate to the other island, and a clan at sea is drawn as a canoe. Neighbours who trade or get along copy boat designs.</li>
+    <li>Where the sea alone can feed a clan year-round, it stops wandering and builds a <b>permanent fishing village</b>. People there dry and smoke fish to store, and births come closer together. If the waters are fished out, the village is abandoned.</li>
+  </ul>
+  <h3>🏘 Settlements</h3>
+  <ul>
+    <li>Settlements come from farming or from rich fishing. They are permanent named places, drawn as solid footprints with houses, unlike the shifting shaded tribal lands. Villages close together grow into one settlement. Each settlement has its own panel, and its history is remembered even after it is abandoned.</li>
+  </ul>
+  <h3>⬢ Copper, ⬡ tin and bronze</h3>
+  <ul>
+    <li>Copper ore occurs in the uplands. Anyone can pick up ore, but <b>smelting needs a settled village</b>, with its furnaces, fuel and labour. Villages fetch or trade for ore from as far as about 180 km away, and the ore flows along trade routes to them. A tribe with a smelting village moves from the Stone Age to <b>Copper</b>: ⚒ tools and ornaments that last longer, and new wealth.</li>
+    <li>Stream tin is found on only one or two rocky coasts. A metal-working village that also obtains tin learns to cast <b>Bronze</b> ⚔. Bronze weapons make warriors far deadlier, which lets weaker farming peoples hold their own or even dominate. Copper, tin and bronze all count as wealth and help a headman's bid for kingship.</li>
+  </ul>
+  <h3>Roads</h3>
+  <ul>
+    <li><b>Trade pacts make roads:</b> while a trade pact stands, the two peoples tread a way between their chief places every summer: a track at once, a path within a few years and, between two villages, a road. Where the sea lies between, a way is worn down to each shore. When the pact ends the way fades by itself, over about twenty years.</li>
+    <li>Nobody builds the roads. They are worn in by use: camps moving, migrations, trips to quarries and ore sources, trade between camps, summer gatherings and, above all, traffic between neighbouring villages. Routes bend around lakes and steep climbs.</li>
+    <li>A route that keeps being used grows from a faint <b>track</b> to a <b>path</b> to a <b>road</b>. Routes nobody uses fade. Canoe crossings show as dotted <b>sea lanes</b>.</li>
+  </ul>
+  <h3>Kings and confederacies</h3>
+  <ul>
+    <li>Once the isles hold many tribes, a headman can make a <b>bid for kingship</b>. His bid is built from his prestige, his tribe's wealth (amber, axes, salt), his living kin, the backing of the other clans, his tribe's size, and his allied tribes. A strong enough bid lets him unite his allies into a <b>confederacy</b> with himself as 👑 king.</li>
+    <li>A king can wage <b>wars of subjugation</b> on weaker neighbours. Battles are decided by numbers of warriors and some luck. Defeated tribes become ⛓ <b>subjects</b> who pay tribute, and they may revolt if resentment grows and the king looks weak. Friendly tribes may also join of their own accord.</li>
+    <li>When a king dies, his son, or failing that his brother or a strongman, takes his place. Each member tribe then decides whether to stay, based on its loyalty, its kin ties, and the heir's standing. Subjects are the quickest to break away, and a confederacy can fall apart entirely.</li>
+  </ul>
+  <h3>Rivals, traders and scarce resources</h3>
+  <ul>
+    <li><b>Resources come in clusters:</b> one district has several amber beaches, another the copper hills, another the chalk flint, so most peoples must trade for something.</li>
+    <li><b>Cultures and tongues:</b> each founding people has its own language, with its own sounds, so names of people, tribes and villages differ from one people to the next. Speech drifts with distance and time: a far-off tribe first speaks a dialect, then a daughter tongue of its own. Peoples who cannot understand each other trade, marry and ally less readily, and war parties pick on strangers first. Long contact teaches some of the other's speech, and a small people living beside a great one may take up its tongue. Turn on <b>Cultures</b> in the map menu, or open Peoples, to see who speaks what. A tribe's page shows its culture, how well you understand it, and the style of its makers.</li>
+    <li><b>Crafts:</b> once a village has stood two years and eats well, a few hands leave the fields and live by a craft. <b>Potters</b> need potter's clay, a new deposit found along lowland rivers (or clay fetched from a source you claim). Pots keep stored food from spoiling. <b>Tanners</b> turn hides into leather, which gives shields to your fighters. <b>Carvers</b> work bone, antler, amber and stone in their people's style. Their pieces are fine gifts and bring standing to the clan head, and now and then a carver marks a rock that stays on the map. <b>Smiths</b> appear once metal is worked. Craftsmen are named on the clan page and in your family list. Pots, leather and carvings are traded like any other goods.</li>
+    <li><b>Village works:</b> a clan head can set the village to build (Act, then Build for the village). A <b>palisade</b> makes defenders fight 40% harder and cuts what raiders carry off. A <b>ditch and bank</b> adds to it. <b>Granaries</b> keep grain far longer and free more hands for crafts. A <b>great hall</b> brings renown and lets the clan grow much larger before it splits. Other villages build these too, mostly after they have been raided. Works stay where they are built, so a village that moves leaves them behind. Villages grow from hamlet to village, large village and town as people and crafts gather.</li>
+    <li><b>Rival clans:</b> other clans, including those of your own tribe, take up quarries, salt pans and ore veins near their camps and work them. If they work a source your house has claimed, you get less from it. Whether they are welcome is set under Dealings in the House panel: clans you share with work alongside you in peace; clans you keep out are driven off by your men every few years, which can cost a life and sours feelings. Clans crowding the same hunting grounds grow sour on each other, and poorer clans envy the rich, the house's clan most of all.</li>
+    <li><b>Keeping the clan peopled:</b> the Clan tab of the House panel now opens with the clan's numbers for the last ten years: born, married in, joined, died, married out, left to found a new clan. A clan grows through its women of childbearing age, so the tab counts them and a warning appears when there are two or fewer. A camp splits when it passes 42 people and a village when it passes 60 (a great hall raises that past 100); when your clan splits, the greater part now always stays with your house, and a note says who left and why. If you are clan head and two houses fall out, you are asked whether to make peace with a feast before the clan breaks. A clan under 40 people can <b>invite a household</b> of a friendly, larger clan of the tribe to come and live with it (Act).</li>
+    <li><b>The story of your house:</b> the game now starts at 1× (four seconds to a year) so you can follow what happens; use » to skip quiet years. News of your house appears under the date as it happens: births, marriages, deaths, quarrels. Each head makes a named friend and a named enemy among the houses of the tribe, shown on the overview, and they come back: a friend in need, an enemy's insult at the fire. When a child of the head comes of age you choose what they are raised to be, which sets the trait they will bring if they lead the house. The Story tab tells it all year by year.</li>
+    <li><b>Tribal lands:</b> the colour on the map is the land a tribe claims. A tribe can hold as much country as its numbers reach, spreading from its home and villages, slowed by hills and stopped by rivers and the sea; land it holds becomes its claim. A claim outlasts the people: land no one walks any more stays claimed for about a generation, drawn paler, before it lapses, so a tribe that has fallen apart can still look large on the map. If another tribe grows into claimed land, the claim is worn away over some years and then taken, which sours things between the two. The tribe page shows how much is claimed and how much of it is still held.</li>
+    <li><b>Myth:</b> every people has stories it believes. Each begins with a creation tale shaped by its faith and its culture. Some years after a notable leader dies, the tribe may start telling of them as a legend. The legend grows out of what they really did (founded a village, raised a monument, led raids, made peace, gave great feasts) and makes it taller. If the legend is one of your own forebears, everyone of your blood in that tribe stands higher for it (+0.15 each, up to three), and the founder of your house is always remembered if they lived to 25. Real events turn into stories too: the first sowing, the first great canoes, a plague, a hungry winter, a burned village, a raised monument. A tribe's stories are listed on its page, and a people that splits away carries them along as its own.</li>
+    <li><b>Walking a story:</b> under Act, the head can re-enact one of the tribe's stories before the people. Each kind of story gives something different if it goes well; you lose face if it does not, and about one time in fourteen the walker is lost.</li>
+    <li><b>Stories that come back:</b> a foundling, exiles asking shelter, and an oath sworn at the fire each return years later with a harder choice.</li>
+    <li><b>Treasures:</b> named things with histories (a great beast's hide, a dead leader's spear). Each raises the clan leader's standing, can be given to another people as the greatest of gifts, and can be carried off in a raid.</li>
+    <li><b>Marriage and the house:</b> the head of your house never leaves it. Whoever the head marries comes to live in your clan and joins the head's household, whatever the tribe's custom is for everyone else. You only change character when the head dies; the house then passes to a grown child, then a grandchild, then a brother or sister, then their children. The Family tab lists everyone of the blood in the clan by how they stand to the head, and names the heir.</li>
+    <li><b>Your ring:</b> the people around the head of your house speak up when a decision comes: your wife or husband for the hearth, the oldest of the clan for the old ways, the best fighter for the spears, your heir, and a friend from another house. Each leans a different way. Tap a face to hear that one; the answer they favour is marked. They advise, they do not decide, and they are not always right. On your House page one of them tells you what most needs doing.</li>
+    <li><b>Great beasts:</b> now and then one animal will not die: a bear, a boar, a wild bull, a wolf, a white stag, or a whale off the coast. It takes a hunter, or is seen and escapes, and once the people have talked of it enough they give it a name. From then it is drawn on the map (tap it to read what is known and said of it, and to hunt it) and a story is told of it wherever it is known, and what the story says it really is depends on the people's faith. You can send your hunters after it or lead the hunt yourself (Act, Hunt), with the odds shown; better weapons, a bold leader and, for a whale, seagoing canoes raise them. Whoever kills it is remembered as its slayer. You can also forbid its ground for five years. Other clans hunt it too. A beast nobody kills is eventually seen no more, and the story then says it only sleeps.</li>
+    <li><b>Fields:</b> a clan in a farming village can clear new fields beyond its home ground (Act, then Clear new fields), and the clans of the world do the same when grain runs short or their numbers outgrow the land. The soil lasts longer and the crop is a little bigger, and the cleared ground shows on the map. But the game is driven from it, and a great beast whose ground lies near it is driven away. As the peoples fill the land the herds and the great beasts grow few.</li>
+    <li><b>Signs:</b> now and then a sign appears and the elders read it. Make an offering (a treasure, and the other clans think better of you); keep the quiet (two years with no raid, expedition, voyage, trading journey, migration or new claim, shown on your House page); or wave it away. If you wave it away and a bad year follows within three years (many deaths, hunger or killings in the clan), people blame the house; if the three years pass quietly, your renown rises.</li>
+    <li><b>Saving:</b> the game saves itself in this browser every five years and when you leave the page, and the start screen offers to continue. The menu also has Save game, Save to a file and Load from a file. A saved world is rebuilt from its seed, so loading takes a few seconds.</li>
+    <li><b>Skip ahead:</b> the » button beside the speed runs the quiet years at full tilt and stops the moment a decision or a note needs you (ten years at most).</li>
+    <li><b>Counsel and ambitions:</b> the House overview opens with one line of counsel: the most useful thing you could do now. Under it are the ambitions of the present head, three at a time. Each one fulfilled brings renown and a new ambition. They lapse when the head dies, and the heir sets new ones.</li>
+    <li><b>Traits:</b> every head has a bent: the Bold strikes harder on raids, the Open-handed wins more goodwill with gifts, Silver-tongue is listened to, the Shrewd gets more from claimed sources, the Devout keeps blessings longer, the Far-walker sends expeditions twice as often.</li>
+    <li><b>Envoys:</b> the leader of a tribe can propose an alliance, demand tribute from a weaker people, or make peace; a clan head can agree a twenty-year trade pact. Each offer shows how likely the other people is to agree. Goodwill, shared speech and marriages make them likelier.</li>
+    <li><b>Legacy:</b> the Story tab keeps a running score for your house and the line of its heads. It is read out when the house ends.</li>
+    <li><b>Keeping an heir beside you:</b> only blood living in your own clan can inherit. Each marriage offer now says where the couple will live. The last of your blood in the clan never marries away (the spouse comes to you), and a head with no heir does not leave either. If no one of the blood is left beside you, you can <b>call one of the blood home</b> from another clan, or <b>adopt</b> a child of the clan. If the clan itself dissolves into another, the house carries on where most of its blood now lives.</li>
+    <li><b>When you do not lead the clan:</b> you can still ask its leader to move the camp, hold the rite or build for the village. Standing and goodwill between your two houses decide whether they agree.</li>
+    <li><b>When the clan outgrows its home:</b> if you lead the clan you choose whether a daughter clan leaves or you hold everyone together for eight years. Inviting a household is refused when it would push the clan over that size.</li>
+    <li><b>Four founding peoples</b> now share the isles instead of three, and start closer together, so neighbours are met within a generation or two rather than a century.</li>
+    <li><b>Quarrels:</b> when a quarrel between your own household and another would come to blood, you choose: make peace with a gift, stand your ground, or fight. You can set a standing order for it under Dealings. Your head is no longer killed in such a quarrel without your say.</li>
+    <li><b>Who leads, and why:</b> a clan follows the member with the greatest standing (of the sex that leads among your people, and old enough). Standing grows with age up to 45, skill, a cool head, children, gifts given, slaves and the clan's treasures. A tribe follows the clan head whose standing, weighted by the size of the clan, is greatest. The House overview shows these numbers beside the clan head and headman, and the Tribe tab shows each clan's weight. When someone else is chosen over you or your clan, a note says who and why. In a challenge every clan backs one of the two: its own head first, then friendship or grudges, the greater standing, and kin. The result lists each clan, its size and its reason, and the deed shows how the clans lean before you commit.</li>
+    <li><b>Moving:</b> a clan head can use <b>Move camp</b> at any time (once a year) to pitch the camp anywhere known within 80 km, and it stays there until moved again unless the land cannot feed it. To go further, or if you are not the clan head, lead your people to new lands; that can now be done every four years, by men or women.</li>
+    <li><b>Wild grain:</b> a camp within reach of the stands reaps them, and clans within 50 km now walk there each summer and bring grain home. Both teach the tribe to sow, the first faster. The Livelihood tile on the House overview says where the nearest known grain is and whether you are close enough.</li>
+    <li><b>Holding the leadership:</b> while you lead a tribe of three or more clans, a strong rival clan head may challenge you, especially if the other clans are cool toward you. You can face the challenge (your standing, kin and their goodwill decide it), buy support with gifts, or step aside.</li>
+    <li><b>Traders:</b> once there are villages, a village with a surplus (craft goods, ore, grain) sends traders to villages that lack it, and they come back with what their own village lacks. You can see them on the roads as small figures with packs; hover over one to see its load. Trade builds friendship between tribes and spreads metalworking, and bandits may rob traders passing hostile camps. A settled clan can also <i>🎒 send a trader</i> of its own from the Act menu. Traders from your tribe map the roads they travel.</li>
+  </ul>
+  <h3>Customs and faith</h3>
+  <p>Every tribe has its own way of reckoning kin and its own faith, drawn from the classic anthropology of tribal religion. Tribes keep these when they split, and they change over time: in-laws, allies and overlords spread their gods, and new ways of life bring new beliefs.</p>
+  <ul>
+    <li><b>Matrilineal peoples</b> are led by <b>clan mothers</b> and a headwoman. Descent runs through mothers, husbands move to the wife's clan, and daughters inherit the house. They feud less, settle quarrels with compensation more readily, and send out half as many war parties.</li>
+    <li><b>Patrilineal peoples</b> are led by men. Wives move to the husband's clan and sons inherit. Shamans or priests keep the sacred.</li>
+    <li><b>🜁 Spirits of the land</b> (animism and shamans): shamans heal in trance and call the game, so fewer people die of illness and hunting is better.</li>
+    <li><b>🦌 Totem ancestors</b> (totemism): each clan descends from an animal ancestor, and clan bonds are sacred. Clans rarely split in anger and settle feuds more readily.</li>
+    <li><b>♀ The Great Mother</b> (an earth and fertility cult): grain is tamed faster and more children are born. Early farmers tend to turn to her.</li>
+    <li><b>⌓ The ancestors</b> (ancestor veneration in long barrows): long-settled farmers bury their founders and guard their villages fiercely.</li>
+    <li><b>☉ Sky-father and the sun</b> (stone circles, divine kings): this faith comes with bronze and kingship. Warriors fight harder and kings find it easier to unite tribes. It pushes the clan mothers aside. </li>
+    <li><b>From mother-right to father-right:</b> each tribe sits somewhere on a scale between rule by mothers and rule by fathers (the slider on the tribe's <i>Customs & faith</i> tile), and it drifts slowly over generations. Settled villages, farming, metal wealth, big populations, frequent war, and the sky or ancestor cults push it toward the fathers. The Great Mother's cult holds it back, and wandering foragers keep their old ways. Along the way men gain a voice in the clan mothers' councils, bride-price replaces bride-service, and finally, a lifetime or two after settling, the clan mothers give way. A people can also drift back.</li>
+    <li><b>Monuments:</b> settled peoples raise long barrows, stone circles, Mother shrines, sacred groves and totem poles at their sacred places. These bind the clans together and draw neighbours to the gatherings.</li>
+    <li><b>Your part:</b> a clan head or headman can <i>hold a rite</i> of the tribe's faith, which gives its blessing for five years. A headman or headwoman can <i>raise a monument</i>, which brings great renown. Among the matrilineal, only women can challenge for the leadership of a clan, and among the patrilineal only men.</li>
+  </ul>
+  <h3>The people</h3>
+  <ul>
+    <li><b>Every person is an individual</b> with a name, sex, age, mother, father, spouse, temper and foraging skill. Each is an infant, child, adult or elder.</li>
+    <li><b>Births and deaths are calibrated to real hunter-gatherers.</b> Deaths follow the Siler forager mortality curve: about 20–25% of babies die in their first year, about 55% of people reach 15, and life expectancy at birth is about 30 (about 38 more years for those who reach 15). A woman can only conceive once nursing has stopped suppressing fertility, which spaces births about 3½–4 years apart. First births come at about 19, and women average about 6 children. Hunger delays conception and raises deaths among infants and elders first.</li>
+    <li>Food is shared within each camp. Adults forage within about 6 km, and food rots fast because nobody has preservation yet.</li>
+  </ul>
+  <h3>Society: family › clan › tribe</h3>
+  <ul>
+    <li><b>Households</b> form through marriage. People never marry close kin, and they usually marry outside their own clan. The wife moves to her husband's clan, and respected men sometimes take a second wife. Orphans are taken in by kin.</li>
+    <li><b>Clans</b> are extended families of about 15–40 people, and each clan is one <b>camp</b> on the map. A clan splits when it grows too large or when households fall out, and a clan that shrinks too far joins the clan it gets on with best.</li>
+    <li><b>Tribes</b> are groups of clans. Each has its own breaking point, somewhere between 300 and 400 people, and its range grows with its numbers. A tribe splits when it gets too big or when its clans turn on each other, and small tribes merge with friendly neighbors.</li>
+    <li>Every household, clan and tribe has an <b>opinion</b> of the others at its level, remembers what happened between them, and can hold a <b>blood grudge</b>. Leaders with more prestige settle more disputes peacefully.</li>
+    <li><b>What raises or lowers opinion:</b> quarrels over meat, marriages, sorcery and insults; killings, revenge and compensation; raids and wars between tribes; and sharing food, exchanging gifts, joint hunts and peace-making.</li>
+  </ul>
+  <p class="muted">The game starts with four founding tribes, one of them on the lesser isle. Nobody has boats yet, so each island's people develop on their own.</p>
+  <button onclick="document.getElementById('help').style.display='none'" style="margin-top:10px;width:100%">Got it</button>
+</div></div>
+<script>
+/*SIM*/
+</script>
+<script>
+/*UI*/
+</script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+#!/bin/bash
+# usage: ./isles <game#> "<command>[; <command>...]"
+g="$1"; shift
+curl -s --max-time 600 -G "http://127.0.0.1:${ISLES_PORT:-7717}/" --data-urlencode "g=$g" --data-urlencode "c=$*"
