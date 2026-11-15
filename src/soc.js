@@ -3079,9 +3079,9 @@
       A.push({ id: 'migrate', icon: '🧭', label: head ? 'Lead your clan to new lands' : 'Lead your household to new lands', hint: head ? (t.clans.length > 1 ? `Break from the ${t.name} and found a new tribe with ${h.name} as its headman` : 'Move your people to a new homeland') : `${fol} people of your house and its friends will follow ${h.name} to found a new clan and tribe`, ok, why: fol < 6 ? 'Too few would follow you' : !adult || h.age < 18 ? 'Your head is not of an age to lead' : !ready('migrate', 4) ? `Your people are still settling in (${yl('migrate', 4)})` : '',
         targets: ok ? [...destinations(W, c).map(d => ({ ref: d, label: `${d.label}: ${d.km} km ${d.dir}`, hint: d.desc })), { pick: { maxKm: 300 }, label: 'Choose a place on the map…', hint: 'Any land you know of within 300 km that your people can reach' }] : [] }); }
     // expeditions: explore the unknown, or fetch goods from a known source
-    { const able = h.alive && (adult || myW >= 2), rt = able && ready('explore', hasTrait(h, 'wanderer') ? 1.5 : 3) ? exploreRoutes(W, c) : [];
-      A.push({ id: 'explore', icon: '🗺', label: 'Lead an expedition into the unknown', hint: adult && h.sex === 'M' ? `${h.name} and young men scout far lands — map them, find resources, meet strangers` : 'Send young men to scout far lands', ok: able && rt.length > 0, why: !able ? 'No one fit to go' : !ready('explore', 3) ? `Your scouts need rest (${yl('explore', 3)})` : t.boats < 0.3 ? 'You know every land you can reach on foot — you need boats to go further' : 'You know every land you can reach',
-        targets: rt.map(r => ({ ref: r, label: `${r.dir[0].toUpperCase() + r.dir.slice(1)} — unknown land from ${r.km} km${r.across ? ', across the sea' : ''}`, hint: `${Math.round(r.unk * 100)}% unknown${r.unk < 0.15 ? ' — you know these lands' : ''}${r.sign ? ' · ' + r.sign : ''}` })) });
+    { const able = h.alive && (adult || myW >= 2), exN = hasTrait(h, 'wanderer') ? 1.5 : 3, rt = able && ready('explore', exN) ? exploreRoutes(W, c) : [];
+      A.push({ id: 'explore', icon: '🗺', label: 'Lead an expedition into the unknown', hint: (expLeader(h) ? `${h.name} and young men scout far lands — map them, find resources, meet strangers` : 'Send young men to scout far lands') + `. Up to four men go; each risks about ${riskPct(EXP_RISK)}% (${riskPct(EXP_RISK_SEA)}% across the sea, ${riskPct(EXP_RISK_FOE)}% if they meet enemies)${expLeader(h) ? `; the leader ${riskPct(EXP_RISK * LEADER_RISK)}% (${riskPct(EXP_RISK_SEA * LEADER_RISK)}% across the sea, ${riskPct(EXP_RISK_FOE * LEADER_RISK)}% against enemies)` : ''}.`, ok: able && rt.length > 0, why: !able ? 'No one fit to go' : !ready('explore', exN) ? `Your scouts need rest (${yl('explore', exN)})` : t.boats < 0.3 ? 'You know every land you can reach on foot — you need boats to go further' : 'You know every land you can reach',
+        targets: rt.map(r => r.signed ? ({ ref: r, label: `${capFirst(r.dir)} — follow the signs, ${walkWord(r.km * 1000)}${r.across ? ', across the sea' : ''}`, hint: r.sign }) : ({ ref: r, label: `${capFirst(r.dir)} — unknown land from ${r.km} km${r.across ? ', across the sea' : ''}`, hint: `${Math.round(r.unk * 100)}% unknown${r.unk < 0.15 ? ' — you know these lands' : ''}` })) });
       if (t.boats >= 0.3) { const vr = able && ready('voyage', 3) ? voyageRoutes(W, c) : [];
         A.push({ id: 'voyage', icon: '⛵', label: 'Lead a sea voyage', hint: t.boats >= 0.6 ? 'Seagoing canoes — chart far coasts and islands' : 'Dugouts — follow the coast to chart unknown shores', ok: able && vr.length > 0, why: !able ? 'No one fit to go' : !ready('voyage', 3) ? `The canoes need mending (${yl('voyage', 3)})` : 'No unknown shores within reach of our canoes from here',
           targets: vr.map(r => ({ ref: r, label: `${r.dir[0].toUpperCase() + r.dir.slice(1)}, ${r.km} km ${r.open ? 'over open sea' : 'along the coast'}`, hint: `${Math.round(r.unk * 100)}% unknown waters` })) }); }
@@ -3496,7 +3496,7 @@
     for (const c of t.clans) {
       reveal(W, c.x, c.y, 22000);
       // hunters, foragers and wanderers range further every season: the known world creeps outward
-      if (W.rand() < 0.35 + Math.min(0.4, c.people.length / 100)) { const a = W.rand() * 6.283, r = 25000 + W.rand() * 30000, x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r; if (x > 0 && y > 0 && x < WORLD && y < WORLD && W.land[cellAt(x, y)]) reveal(W, x, y, 9000 + W.rand() * 6000); }
+      if (W.rand() < 0.35 + Math.min(0.4, c.people.length / 100)) { const a = W.rand() * 6.283, r = 25000 + W.rand() * 60000, x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r; if (x > 0 && y > 0 && x < WORLD && y < WORLD && W.land[cellAt(x, y)]) reveal(W, x, y, 9000 + W.rand() * 6000); }
       // strangers seen near our camps
       for (const o of nearClans(W, c.x, c.y, 40000)) if (o.tribe !== t) reveal(W, o.x, o.y, 9000);
     }
@@ -3555,6 +3555,36 @@
       else notice(W, `The ${t.name} submit`, `The ${t.name} bow to ${K.name}, ${rulerOf(cf, K)}, and must pay tribute.`);
     }
   }
+  // signs of peoples beyond the fog, found by our own hunters: yearly, for the player's tribe only (the world's peoples have no fog of war)
+  function addSign(P, s) { P.signs = [s].concat((P.signs || []).filter(q => q.t !== s.t)).slice(0, 8); }
+  function keptSigns(W) { const P = W.player; if (!P || !P.signs) return []; return P.signs.filter(s => { const o = W.tribes.find(x => x.id === s.t); return o && o.clans.length && !knowsTribe(W, o); }); }
+  // signs shown to the player: not older than ten years (an old one is kept only so the same news is not told again)
+  function liveSigns(W) { return keptSigns(W).filter(s => W.week - s.w < 520); }
+  // is there already a sign for this people from the last ten years, or any sign that says the same (direction and days)?
+  const signTold = (W, P, o, d, dir) => (P.signs || []).some(s => s.t === o.id && (W.week - s.w < 520 || (s.dir === dir && daysWalk(s.km * 1000) === daysWalk(d))));
+  function signsYear(W) {
+    const P = W.player; if (!P || P.over || !P.known || !P.head.alive || !P.head.clan) return;
+    const mine = P.head.clan.tribe; if (P.signs) P.signs = keptSigns(W);
+    const best = new Map(); // tribe -> nearest hidden camp to any clan of ours
+    for (const c of mine.clans) for (const o of signCamps(W, c)) { const d = Math.hypot(o.x - c.x, o.y - c.y), b = best.get(o.tribe); if (!b || d < b.d) best.set(o.tribe, { d, c, o }); }
+    const list = [...best.entries()].filter(([o, b]) => !knowsTribe(W, o) && !signTold(W, P, o, b.d, compass(b.o.x - b.c.x, b.o.y - b.c.y))).sort((a, b) => a[1].d - b[1].d);
+    for (const [o, b] of list) {
+      const p = b.d < 80000 ? 0.5 : b.d < 180000 ? 0.3 : 0.15;
+      if (W.rand() < p) { const dir = compass(b.o.x - b.c.x, b.o.y - b.c.y); addSign(P, { t: o.id, dir, km: Math.round(b.d / 1000), w: W.week, kind: 'track' });
+        houseNote(W, `Hunters of the ${b.c.name} clan came on a sign: ${signSentence(b.d, dir)}. Someone lives there.`); break; }
+    }
+  }
+  // a trader of ours reaches a village: the hosts tell of peoples they have dealings with that we do not know
+  function traderTale(W, r) {
+    const P = W.player; if (!P || P.over || !P.known || !P.head.clan || r.home.tribe !== P.head.clan.tribe) return;
+    const mine = P.head.clan.tribe; let best = null;
+    for (const id of r.to.tribe.rel.keys()) { const o = W.tribes.find(x => x.id === id); if (!o || o === mine || !o.clans.length || knowsTribe(W, o)) continue;
+      for (const oc of o.clans) { const c = P.head.clan, d = Math.hypot(oc.x - c.x, oc.y - c.y); if (d <= SIGN_R && (!best || d < best.d) && !signTold(W, P, o, d, compass(oc.x - c.x, oc.y - c.y))) best = { d, o, c, oc }; } }
+    if (!best) return;
+    const dir = compass(best.oc.x - best.c.x, best.oc.y - best.c.y);
+    addSign(P, { t: best.o.id, dir, km: Math.round(best.d / 1000), w: W.week, kind: 'tale', name: best.o.name });
+    houseNote(W, `At ${r.to.village || r.to.name} our trader heard tell of the ${best.o.name}, who live to the ${dir}, ${walkWord(best.d)}.`);
+  }
   function fogYear(W) {
     const P = W.player; if (!P || P.over || !P.known || !P.head.alive || !P.head.clan) return;
     const t = P.head.clan.tribe;
@@ -3573,15 +3603,22 @@
 
   // ---- expeditions ----
   const EXP_GOODS = { flint: 4, axe: 2, amber: 3, ochre: 3, salt: 3, copper: 3, tin: 2, clay: 4 };
-  // ---- word of peoples beyond the fog: only a hint, and only when a people really lives within about 150 km that way ----
-  // the camps of other peoples that lie on land the house has not seen, within 150 km of the clan's camp
-  function hiddenCamps(W, c) { return nearClans(W, c.x, c.y, 150000).filter(o => o.tribe !== c.tribe && o.people.length > 3 && !knows(W, o.x, o.y)); }
-  // what an explorer sees of them: smoke from the nearer camps, the tracks and old hearths of the further ones; never a name, never a distance
-  function signWord(d, dir) { return d < 80000 ? `The smoke of camps was seen far to the ${dir}` : `The tracks and old hearths of strangers lead ${dir}`; }
-  function routeSign(W, c, r, hid) { // is there a people beyond the fog on the way this route heads?
-    let best = null; for (const o of hid) if (compass(o.x - c.x, o.y - c.y) === r.dir) { const d = Math.hypot(o.x - c.x, o.y - c.y); if (!best || d < best) best = d; }
-    return best == null ? '' : signWord(best, r.dir);
-  }
+  // ---- word of peoples beyond the fog: signs reach as far as an expedition can walk (SIGN_R), and say how far ----
+  const SIGN_R = 340000, SIGN_NEAR = 150000, DAY_M = 25000; // a party walks about 25 km a day; one helper turns metres into days
+  const daysWalk = d => Math.max(1, Math.round(d / DAY_M));
+  const walkWord = d => { const n = daysWalk(d); return n === 1 ? "a day's walk" : `some ${n} days' walk`; };
+  // expedition danger per man: on land, across the sea, and if they meet a hostile people; the leader risks LEADER_RISK of that
+  const EXP_RISK = 0.03, EXP_RISK_SEA = 0.06, EXP_RISK_FOE = 0.18, LEADER_RISK = 0.6;
+  const expLeader = h => h.age >= 16 && h.age < 58 && h.sex === 'M'; // the head goes and risks his own life only in these years
+  const riskPct = v => Math.round(v * 1000) / 10;
+  // the camps of other peoples that lie on land the house has not seen, within SIGN_R of the clan's camp
+  // hidden camps of peoples we do not know that a party could really walk to: what signs and sign routes are about
+  const signCamps = (W, c) => hiddenCamps(W, c).filter(o => !knowsTribe(W, o.tribe) && W.land[cellAt(o.x, o.y)] && !W.lake[cellAt(o.x, o.y)] && canReach(W, c, o.x, o.y));
+  function hiddenCamps(W, c) { return nearClans(W, c.x, c.y, SIGN_R).filter(o => o.tribe !== c.tribe && o.people.length > 3 && !knows(W, o.x, o.y)); }
+  // what an explorer finds of them, by true distance: smoke of near camps, tracks of the middle ones, worked flint of the far ones
+  function signText(d, dir) { return d < 80000 ? `the smoke of camps was seen far to the ${dir}` : d < 180000 ? `tracks and old hearths of strangers lead ${dir}` : `worked flint of a strange make was found; it came from the ${dir}, from far off`; }
+  const signSentence = (d, dir) => `${signText(d, dir)}, ${walkWord(d)}`;
+  const capFirst = x => x[0].toUpperCase() + x.slice(1);
   // after a journey: camps of other peoples within 70 km of the path or its end, not met, that the party would have seen the smoke of
   function smokeSeen(W, c, pts, ex, ey) {
     const seen = []; for (const o of W.clans) { if (o.tribe === c.tribe || !o.people.length || knows(W, o.x, o.y)) continue; if (pts.every(([px, py]) => Math.hypot(o.x - px, o.y - py) > 25000) && pts.some(([px, py]) => Math.hypot(o.x - px, o.y - py) <= 70000) && Math.hypot(o.x - c.x, o.y - c.y) <= 190000) seen.push(o); }
@@ -3609,8 +3646,23 @@
       const across = W.comp[cellAt(b.x, b.y)] !== W.comp[cellAt(c.x, c.y)];
       out.push({ pts, x: ex, y: ey, dir: compass(ux, uy), km: Math.round(b.d / 1000), unk: unk / Math.max(1, tot), across });
     }
-    { const hid = hiddenCamps(W, c); for (const r of out) r.sign = routeSign(W, c, r, hid); }
-    return out.filter(r => r.unk > 0.06).sort((p, q) => (q.sign ? 1 : 0) - (p.sign ? 1 : 0) || q.unk - p.unk).slice(0, 4);
+    // routes aimed straight at a hidden camp: the nearest in each of the eight sectors, nearest first, come before the unknown-land routes
+    const sr = [], nearest = new Array(8).fill(null);
+    // a party follows signs to camps near enough to see them by (within SIGN_NEAR), or to peoples our hunters or traders have already come on signs of
+    const known = new Set(liveSigns(W).map(s => s.t));
+    for (const o of signCamps(W, c)) { const dx = o.x - c.x, dy = o.y - c.y, d = Math.hypot(dx, dy), sec = ((Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) % 8) + 8) % 8; if (d > SIGN_NEAR && !known.has(o.tribe.id)) continue; if (d > 0 && (!nearest[sec] || nearest[sec].d > d)) nearest[sec] = { o, d, dx, dy }; }
+    for (let sec = 0; sec < 8; sec++) { const n = nearest[sec]; if (!n) continue;
+      const ci = cellAt(n.o.x, n.o.y); if (!W.land[ci] || W.lake[ci] || !canReach(W, c, n.o.x, n.o.y)) continue;
+      const across = W.comp[ci] !== W.comp[cellAt(c.x, c.y)], L = Math.min(n.d + 30000, 340000), ux = n.dx / n.d, uy = n.dy / n.d, pts = [];
+      let ex = n.o.x, ey = n.o.y, ok = true;
+      for (let d = 10000; d <= L; d += 10000) { const px = clamp(c.x + ux * d, 2000, WORLD - 2000), py = clamp(c.y + uy * d, 2000, WORLD - 2000); pts.push([px, py]); const ok2 = W.land[cellAt(px, py)]; if (!ok2 && d <= n.d + 5000 && !across) ok = false; if (ok2) { ex = px; ey = py; } }
+      if (!ok) continue;
+      let unk = 0, tot = 0; for (const [px, py] of pts) for (let s2 = 0; s2 < 6; s2++) { const qx = px + Math.cos(s2) * 15000, qy = py + Math.sin(s2) * 15000; if (!W.land[cellAt(qx, qy)]) continue; tot++; if (!knows(W, qx, qy)) unk++; }
+      sr.push({ pts, x: ex, y: ey, dir: compass(ux, uy), km: Math.round(n.d / 1000), unk: unk / Math.max(1, tot), across, signed: true, d: n.d, sign: capFirst(signSentence(n.d, compass(ux, uy))) });
+    }
+    sr.sort((p, q) => p.d - q.d);
+    const taken = new Set(sr.map(r => r.dir));
+    return sr.slice(0, 4).concat(out.filter(r => r.unk > 0.06 && !taken.has(r.dir)).sort((p, q) => q.unk - p.unk)).slice(0, 4);
   }
   function expeditionTargets(W, c) {
     return W.deposits.filter(d => EXP_GOODS[d.type] && knows(W, d.x, d.y) && Math.hypot(d.x - c.x, d.y - c.y) < 260000 && canReach(W, c, d.x, d.y))
@@ -3622,29 +3674,30 @@
     let lost = 0, headFell = false;
     const men = c.people.filter(q => q.sex === 'M' && !q.slave && q.age >= 16 && q.age < 45 && q !== h);
     for (const q of men.slice(0, 4)) if (W.rand() < risk) { die(W, c, q, others ? `killed by the ${others.name} on an expedition` : 'lost on an expedition'); lost++; }
-    if (leader && h.alive && W.rand() < risk * 0.6) { die(W, c, h, others ? `killed by the ${others.name} on an expedition` : 'lost on an expedition'); headFell = true; }
+    if (leader && h.alive && W.rand() < risk * LEADER_RISK) { die(W, c, h, others ? `killed by the ${others.name} on an expedition` : 'lost on an expedition'); headFell = true; }
     c.people = c.people.filter(q => q.alive);
     return { lost, headFell };
   }
   function doExplore(W, c, h, route) {
-    const P = W.player, leader = h.age >= 16 && h.age < 58 && h.sex === 'M', before = new Set(W.deposits.filter(d => knows(W, d.x, d.y)));
+    const P = W.player, leader = expLeader(h), before = new Set(W.deposits.filter(d => knows(W, d.x, d.y)));
     let n = 0; for (const [px, py] of route.pts) n += reveal(W, px, py, 25000);
     wear(W, c.x, c.y, route.x, route.y, 0.4);
     const found = W.deposits.filter(d => !before.has(d) && knows(W, d.x, d.y));
     const met = W.tribes.filter(o => o !== c.tribe && o.clans.some(oc => route.pts.some(([px, py]) => Math.hypot(oc.x - px, oc.y - py) < 25000)));
     let hostile = null;
     for (const o of met) { const r = c.tribe.rel.get(o.id); if (!r) { affect(W, c.tribe, o, 4, `First met on an expedition led by ${h.name}`); affect(W, o, c.tribe, W.rand() < 0.7 ? 3 : -8, 'Strangers came through our land'); } if (opinion(o, c.tribe) < -15 && !hostile) hostile = o; }
-    const R = expeditionRisk(W, c, h, leader, hostile, hostile ? 0.18 : route.across ? 0.06 : 0.03);
+    const R = expeditionRisk(W, c, h, leader, hostile, hostile ? EXP_RISK_FOE : route.across ? EXP_RISK_SEA : EXP_RISK);
     for (const d of found) { if (EXP_GOODS[d.type] || d.type === 'grain') c.tribe.seen.add(d.type); }
     P.renown += 1 + found.length;
     const who = leader ? h.name : `Young men sent by ${h.name}`;
     const txt = `${who} ${leader ? 'leads an' : 'go on an'} expedition ${route.km} km ${route.dir}${route.across ? ', across the sea' : ''}, mapping some ${Math.round(n * CELL * CELL / 1e6).toLocaleString()} km² of new land.`;
     houseNote(W, txt + (found.length ? ` Found: ${[...new Set(found.map(d => DEPOSITS[d.type].name.toLowerCase()))].join(', ')}.` : ''));
     for (const d of found) logEvent(W, `🧭 The ${c.tribe.name} learn of ${DEPOSITS[d.type].name.toLowerCase()} — ${d.note}.`, c.tribe, 'trade');
-    return { title: found.length || met.length ? 'The explorers return' : 'Empty lands', text: `${txt}<br><br>${found.length ? `<b>They found:</b> ${foundList(found)}. You can now send an expedition to gather from these.<br>` : 'They found nothing of special value.<br>'}${met.length ? `They met ${met.map(o => 'the ' + o.name).join(', ')}.` : 'They met no one.'}${met.length ? '' : ' ' + smokeSeen(W, c, route.pts, route.x, route.y)}${hostile ? ` The ${hostile.name} were not friendly.` : ''}${R.lost ? ` ${R.lost} of our men did not come back.` : ''}${R.headFell ? ` <b>${h.name} never returned.</b>` : ''}` };
+    const smoke = met.length ? '' : smokeSeen(W, c, route.pts, route.x, route.y);
+    return { title: found.length || met.length ? 'The explorers return' : smoke ? 'Smoke on the far hills' : 'Empty lands', text: `${txt}<br><br>${found.length ? `<b>They found:</b> ${foundList(found)}. You can now send an expedition to gather from these.<br>` : 'They found nothing of special value.<br>'}${met.length ? `They met ${met.map(o => 'the ' + o.name).join(', ')}.` : 'They met no one.'}${smoke ? ' ' + smoke : ''}${hostile ? ` The ${hostile.name} were not friendly.` : ''}${R.lost ? ` ${R.lost} of our men did not come back.` : ''}${R.headFell ? ` <b>${h.name} never returned.</b>` : ''}` };
   }
   function doExpedition(W, c, h, tg) {
-    const P = W.player, d = tg.d, leader = h.age >= 16 && h.age < 58 && h.sex === 'M', t = c.tribe;
+    const P = W.player, d = tg.d, leader = expLeader(h), t = c.tribe;
     let amount = EXP_GOODS[d.type], risk = 0.02, note2 = '';
     const guards = tg.guard; let hostile = null;
     if (guards.length) {
@@ -4028,6 +4081,7 @@
         if (!Object.keys(back).length && o.grain > needsWeek(o) * 4) { r.food = needsWeek(r.home); o.grain -= r.food; } else r.food = 0;
         r.gave = r.pack; r.pack = back; r.leg = 1;
         affect(W, o, r.home, 5, `Traders came from ${r.home.village || r.home.name}`); if (o.tribe !== r.home.tribe) { affect(W, o.tribe, r.home.tribe, 4, 'Trade'); rel(o.tribe, r.home.tribe).trade++; }
+        traderTale(W, r);
         // crafts travel with the goods
         if (r.home.tribe.metal >= 0.3 && o.tribe.metal < 0.3 && o.settled && W.rand() < 0.1) o.tribe.metal = Math.max(o.tribe.metal, 0.12);
       } else { // home again
@@ -4625,7 +4679,7 @@
     if (c.settled && freeCount(c) >= splitCap(W, c) - 6 && !(c.works && c.works.hall) && can('build')) return { text: `The village is near the size at which it splits (${freeCount(c)} of ${splitCap(W, c)}). A great hall lets it hold together past a hundred.`, deed: 'build' };
     if (!(P.claims && P.claims.length) && can('claim')) { const a = can('claim'); return { text: `${a.targets[0].label.replace(/^\\S+\\s/, '')} lies unclaimed. Claim it and your household brings goods home every season.`, deed: 'claim' }; }
     if (c.head !== h && h.sex === leaderSex(t) && h.age >= 25 && c.head && prestige(h) > prestige(c.head) * 0.95 && can('challengeClan')) return { text: `Your standing (${prestige(h).toFixed(2)}) matches that of ${c.head.name} (${prestige(c.head).toFixed(2)}), who leads the clan. You could challenge.`, deed: 'challengeClan' };
-    if (!knownOthers(W, t).length && can('explore')) return { text: 'You know of no other people. Send an expedition: neighbours mean trade, marriages and allies.', deed: 'explore' };
+    if (!knownOthers(W, t).length && can('explore')) { const sg = (can('explore').targets || []).find(x => x.ref && x.ref.signed); return { text: sg ? `You know of no other people. Follow the signs to the ${sg.ref.dir}, ${walkWord(sg.ref.d)}: neighbours mean trade, marriages and allies.` : 'You know of no other people. Send an expedition: neighbours mean trade, marriages and allies.', deed: 'explore' }; }
     if (t.headman === h && can('ally')) return { text: 'A friendly people would take your hand. Propose an alliance.', deed: 'ally' };
     if (c.settled && can('build')) return { text: 'The village has stores to spare. Set it to build: a granary, a hall or a palisade.', deed: 'build' };
     const am = (P.amb || []).find(a => !a.done); if (am) return { text: `${h.name} has set ${h.sex === 'F' ? 'her' : 'his'} heart on this: ${am.text.toLowerCase()}.` };
@@ -5130,7 +5184,7 @@
     for (const t of W.tribes) { t.popHist.push(tribeSize(t)); if (t.popHist.length > 200) t.popHist.shift(); }
     houseSummary(W);
     playerYear(W);
-    fogYear(W);
+    fogYear(W); signsYear(W);
     houseFlow(W);
     fieldsYear(W); mythYear(W); beastYear(W); claimsYear(W); chainsYear(W);
     diplomacyYear(W);
@@ -5183,7 +5237,7 @@
     if (W.week % 52 === 0) yearEnd(W);
   }
 
-  return { tribeKnown, N, CELL, WORLD, HA, FORAGE_R, TRIBE_MAX, tribeMax, BIOMES, GROVES, DEPOSITS, GOOD_NAMES, createWorld, seedFirstPop, step, clanSize, tribeSize, familiesOf, famMembers, needsWeek, opinion, prestige, isAllied, sameConfed, tribeCenter, roadLevel, pactRoute, playerActions, doAction, dealings, settleFeud, policy: W => pol(W), setPolicy: (W, k, v) => { pol(W)[k] = v; }, setDeal: (W, id, v) => { if (v === 'auto') delete pol(W).deal[id]; else pol(W).deal[id] = v; }, dealMode: (W, o) => dealWith(W, o), clanHeir, FAITHS, isMatri, faithOf, cultureName, MON, checkPlace, und, speechWord, kultInfo, grainInfo, clanFlow, HOME_R, CREATION, claimsYear, ring, ringSay, BEASTS, beastNm, beastTale, beastOdds, beastWhere, beastToll, beastNear, saveGame, loadGame, saveInfo, ruleInfo, advice, legacy, legacyHTML, TRAITS, epithet, hasTrait, leadWeight, standingWhy, villageInfo, RANKS, SOCIETY, societyOf, rankOf, WORKS, JOBS, walls, canBuild, releaseClaim: (W, i) => { const P = W.player; if (P && P.claims && P.claims[i]) { houseNote(W, `The house gave up its claim to the ${DEPOSITS[P.claims[i].d.type].name.toLowerCase()}.`); P.claims.splice(i, 1); } }, weaponsName, houseSlaves, slaveCount, freeCount, knows, knowsTribe, foodDays, GIFTABLE, STAGES, BOAT_STAGES, METAL_STAGES, boatStage, metalStage, arms, canReach, houseCandidates, choosePlayer, resolve, dynMembers, titlesOf, relWord, vigor, tribeVigor, statureCm, farmSuit, fieldInfo, potential, cellFood, foodBreakdown, kingshipBid, warriors, tribeWealth, confedTribes, confedPeople, newConfed, joinConfed, leaveConfed, formAlliance, kinOf, rulerWord, realmWord, realmInfo, realmHeir, realmRisk, realmPutDown, realmWarList, realmRiseOdds, realmStay, realmNext, realmKingdomNeeds, succession, confedYear,
+  return { tribeKnown, liveSigns, walkWord, SIGN_R, N, CELL, WORLD, HA, FORAGE_R, TRIBE_MAX, tribeMax, BIOMES, GROVES, DEPOSITS, GOOD_NAMES, createWorld, seedFirstPop, step, clanSize, tribeSize, familiesOf, famMembers, needsWeek, opinion, prestige, isAllied, sameConfed, tribeCenter, roadLevel, pactRoute, playerActions, doAction, dealings, settleFeud, policy: W => pol(W), setPolicy: (W, k, v) => { pol(W)[k] = v; }, setDeal: (W, id, v) => { if (v === 'auto') delete pol(W).deal[id]; else pol(W).deal[id] = v; }, dealMode: (W, o) => dealWith(W, o), clanHeir, FAITHS, isMatri, faithOf, cultureName, MON, checkPlace, und, speechWord, kultInfo, grainInfo, clanFlow, HOME_R, CREATION, claimsYear, ring, ringSay, BEASTS, beastNm, beastTale, beastOdds, beastWhere, beastToll, beastNear, saveGame, loadGame, saveInfo, ruleInfo, advice, legacy, legacyHTML, TRAITS, epithet, hasTrait, leadWeight, standingWhy, villageInfo, RANKS, SOCIETY, societyOf, rankOf, WORKS, JOBS, walls, canBuild, releaseClaim: (W, i) => { const P = W.player; if (P && P.claims && P.claims[i]) { houseNote(W, `The house gave up its claim to the ${DEPOSITS[P.claims[i].d.type].name.toLowerCase()}.`); P.claims.splice(i, 1); } }, weaponsName, houseSlaves, slaveCount, freeCount, knows, knowsTribe, foodDays, GIFTABLE, STAGES, BOAT_STAGES, METAL_STAGES, boatStage, metalStage, arms, canReach, houseCandidates, choosePlayer, resolve, dynMembers, titlesOf, relWord, vigor, tribeVigor, statureCm, farmSuit, fieldInfo, potential, cellFood, foodBreakdown, kingshipBid, warriors, tribeWealth, confedTribes, confedPeople, newConfed, joinConfed, leaveConfed, formAlliance, kinOf, rulerWord, realmWord, realmInfo, realmHeir, realmRisk, realmPutDown, realmWarList, realmRiseOdds, realmStay, realmNext, realmKingdomNeeds, succession, confedYear,
     seasonOf, seasonName, tempOffset, cellAt, lifeStage, siler, fecund, makePerson, stepPop };
 })();
 if (typeof module !== 'undefined') module.exports = SIM;

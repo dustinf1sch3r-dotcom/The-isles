@@ -104,7 +104,7 @@ Five automated testers last played the war and unification game, and their bugs 
 
 Still open or worth doing next:
 - Nobody has play-tested the latest fixes by hand.
-- Finding neighbours early can take a long time on some seeds; explore hints only appear when a people is within 150 km.
+- Finding neighbours early can take a long time on some seeds; explore routes follow a sign (a camp of a people not yet known, within SIGN_R = 340 km and reachable) when there is one; signs come yearly and from traders' tales.
 - No world kingdom arose by itself in the tests. The kingdom needs 400 people and a great hall.
 - Being raided, or attacked by another realm, was never seen by testers, so those decisions are untested in play.
 - A tribe's leader-for-life can be replaced in one edge case (a woman who led only because no eligible man existed).
