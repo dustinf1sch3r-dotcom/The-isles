@@ -22,6 +22,9 @@ The player leads one house (a dynasty) inside a clan inside a tribe, generation 
 | `tools/fuzz.js` | Randomised play: random answers, random deeds. `node tools/fuzz.js 2,7,14 130` (seeds, years) must end with `errors 0` and print no `BAD TEXT` lines. |
 | `tools/balance.js` | Unattended play, always option 0. `node tools/balance.js 5,8,11,14 120` prints houses that died out, the share of years the player's clan was dangerously small, and world population. Compare before and after any rule change. |
 | `tools/save_roundtrip.js` | Save, load and play on. |
+| `tools/head_swap.js` | Ten games: counts head changes while the old head lives, heads moving clan, and heads changing household (a child head fostered after the household breaks up is expected). |
+| `tools/discovery.js`, `raids.js`, `wars.js`, `stops.js` | Feature measures: how soon a house meets another people (passive and exploring), raids and paybacks in raid-every-chance play, realm wars and their outcomes, cards that stop play by type. Each takes `ISLES_SIM=<path to a sim.js>` to measure another build (for example the one before a change). `balance.js`, `fuzz.js` and `head_swap.js` always use `../build/sim.js`. |
+| `tools/same.js` | `SIM_A=<sim.js> SIM_B=<sim.js> node tools/same.js 5,11,14` proves two builds give bit-identical worlds (for speed work that must not change results). |
 | `play/server.js`, `play/isles` | A text front-end for play-testing from a shell: `node play/server.js &` then `./play/isles 1 "new 5; adv 5; state; deeds"`. `docs/TESTER.md` documents its commands. It also has `testsetup` commands that jump to the late game for testing. |
 | `docs/` | Briefs used for agent engineers and testers, and the last test reports. |
 
@@ -96,20 +99,22 @@ Lines are very long, often a whole function on one line. Do not print whole file
 - **Roads and farming:** trade pacts make roads. Clearing fields shows on the map and drives beasts off, and wildlife thins as the land fills.
 - **Way of working:** Dustin likes the strongest model to plan and check, with cheaper agents building and play-testing, and every claim checked before it is reported.
 
-## Where things stand (November 2026)
-Five automated testers last played the war and unification game, and their bugs were fixed (see `docs/war-test-reports.md`). Checks at that point:
-- Fuzz gave 0 errors.
-- 14 unattended games had no house die out.
-- Five game years take about 2 seconds at year 200.
+## Where things stand (15 November 2026)
+This round (GitHub issues #1 to #3, built by agent engineers from briefs, each checked by two skeptics, then play-tested on the combined build):
+- **Signs of other peoples (#1).** Signs reach 340 km; hunters find them yearly and traders bring tales; the explore deed follows a sign straight to a people (camps within 150 km, or peoples the house has a sign of). First contact when exploring: 5.5 years on average over eight seeds (was 25).
+- **War with risk (#2).** A raided clan may strike back within six years (`c.wrong`, `paybackMonth`); the raiders' card, the raid deed (including the head's own risk) and the realm war deed show the chances they roll; a peace binds both sides; a ruler can call off a war; a house whose tribe is attacked while it does not lead gets a card (send the men or keep them home). Subjects are no longer called allies.
+- **Quieter late game (#3).** Standing orders for eight routine card types, set from the card; renown counts only the blood in the house's tribe (at most 200); a note when a child head is fostered; a cheaper `stepEnv` (bit-identical); the realm outline widens when zoomed out.
+- Checks on the combined build: fuzz 0 errors; saves and a save from before this round load; head_swap 0; balance on eight seeds: no house ended, world population 2.6% above the old game in total.
 
 Still open or worth doing next:
-- Nobody has play-tested the latest fixes by hand.
-- Finding neighbours early can take a long time on some seeds; explore hints only appear when a people is within 150 km.
+- The map is crowded once many peoples exist (issue #5, a declutter change, follows this round).
+- A realm only marches on a people at most 1/1.6 of its strength and within 90 km of its host, so the "send our men or keep them home" card nearly always shows about 0% both ways, and the player's own war deed is rarely reachable in honest play. Realm wars need a rule that makes them closer and more common.
+- Late game is slow: about 1.2 seconds a year at year 250 on seed 2 in the text front-end, growing faster than population (per-month loops over all tribes and clans: `kultYear`, `marriages`, `revenge`, `traderMonth`, `slaveMonth`). `stepEnv` was made cheaper but saves only a few percent.
+- Seeds whose nearest people is beyond 340 km or across the sea without boats still get no sign (seed 6 met no one by year 19).
+- Raiding every chance now costs the house about three times the dead it did (paybacks); no house ended in the tests.
 - No world kingdom arose by itself in the tests. The kingdom needs 400 people and a great hall.
-- Being raided, or attacked by another realm, was never seen by testers, so those decisions are untested in play.
 - A tribe's leader-for-life can be replaced in one edge case (a woman who led only because no eligible man existed).
 - Late-game population runs higher than before, partly from richer fields.
-- The realm outline is drawn the same width at every zoom, so it is thin at whole-isles zoom.
 
 ## Testing a change
 Do all of these before committing:
@@ -117,7 +122,8 @@ Do all of these before committing:
 - **Build:** `./build.sh` (must print `built`).
 - **Fuzz:** `node tools/fuzz.js 2,7,14 130`.
 - **Saves:** `node tools/save_roundtrip.js`.
-- **Balance:** `node tools/balance.js 5,8,11,14 120`, compared with the result from before the change.
+- **Balance:** `node tools/balance.js 5,8,11,14 120` and `node tools/balance.js 2,7,21,33 120`, compared with the result from before the change. Single seeds swing by chance (a change that adds any `W.rand()` call reorders every later roll), so judge the eight together.
+- **Old saves:** make a save with the build from before the change (seed 9, year 60, always option 0), load it with the new build and play 30 more years.
 - **Interface changes:** load `index.html` at phone size with Playwright (Chromium), and look at the screenshots.
 - **Family or succession changes:** `node tools/head_swap.js` counts head changes while the old head is alive over ten games. It must say 0.
 

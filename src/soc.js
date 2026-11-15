@@ -655,6 +655,8 @@
         if (!fams.length) continue;
         fams.sort((a, b) => opinion(f, b) - opinion(f, a));
         const g = fams[0]; for (const q of mem) q.fam = g; groups = null;
+        { const P1 = W.player, yh = P1 && !P1.over && mem.includes(P1.head) && P1.head.age < 16 ? P1.head : null, ad = yh && (g.head && g.head.alive && g.head.clan === c ? g.head : c.people.find(q => q.fam === g && isAdult(q)));
+          if (ad) { const hp = yh.sex === 'F' ? 'her' : 'his', par = yh.father === ad ? 'father' : yh.mother === ad ? 'mother' : null, gp = (yh.father && (yh.father.father === ad || yh.father.mother === ad)) || (yh.mother && (yh.mother.father === ad || yh.mother.mother === ad)) ? 'grand' + (ad.sex === 'M' ? 'father' : 'mother') : null, rw = par ? `${hp} ${par}` : gp ? `${hp} ${gp}` : relWord(ad, yh); houseNote(W, `Young ${yh.name} now lives in the household of ${ad.name}${rw.startsWith('of ') ? (ad.dyn ? ', of the blood' : '') : ', ' + rw}.`); } }
         note(W, g, `Took in the orphaned children of the house of ${f.name}.`); affect(W, c, c, 0);
         kill(W, f);
       }
@@ -720,6 +722,7 @@
       const o = W.ents.get(oid); if (!o || o.kind !== 'clan' || r.grudge < 22) continue;
       { const P0 = W.player; if (P0 && !P0.over && P0.head.alive && c === P0.head.clan && pol(W).blood !== 'revenge') continue; } // the house's clan takes revenge only on the house's word
       if (Math.hypot(o.x - c.x, o.y - c.y) > 60000) continue;
+      if (c.tribe !== o.tribe && peaceHeld(W, c.tribe, o.tribe)) continue; // a peace holds the blood-feud too
       // who holds the grudge? the side that suffered last (recorded via history order); approximate: either side may act
       const avengers = c.people.filter(q => q.sex === 'M' && !q.slave && q.age >= 16 && q.age < 55), targets = o.people.filter(q => q.sex === 'M' && !q.slave && q.age >= 16 && q.age < 60 && !kinOfHouse(W, q, c));
       if (!avengers.length || !targets.length) continue;
@@ -737,7 +740,7 @@
         // a chance for elders to settle it with compensation instead
         const sameTribe = c.tribe === o.tribe, hm = c.tribe.headman;
         if (rand() < (sameTribe ? 0.55 + (hm ? 0.3 * Math.min(1, prestige(hm)) : 0) : 0.4) + (isMatri(c.tribe) ? 0.2 : 0) + (faithOf(c.tribe) === 'totem' ? 0.1 : 0)) {
-          r.grudge *= 0.2; r.op += 15; r.hist.push({ w: W.week, t: `Feud settled with gifts of compensation${hm ? `, arranged by ${hm.name}` : ''}` });
+          r.grudge *= 0.2; r.op += 15; clearWrong(c, o); r.hist.push({ w: W.week, t: `Feud settled with gifts of compensation${hm ? `, arranged by ${hm.name}` : ''}` });
           note(W, c, `Feud with the ${o.name} clan ended with compensation.`); note(W, o, `Feud with the ${c.name} clan ended with compensation.`);
           logEvent(W, `The ${c.name} and ${o.name} clans end their feud with compensation.`, c, 'peace');
           continue;
@@ -993,7 +996,7 @@
       if (!leadC || warriorsOf(leadC) < 3) continue;
       let best = null, bs = 0;
       for (const o of nearClans(W, leadC.x, leadC.y, 80000)) {
-        if (o.tribe === t || isAllied(t, o.tribe) || sameConfed(t, o.tribe) || !canReach(W, leadC, o.x, o.y)) continue;
+        if (o.tribe === t || isAllied(t, o.tribe) || sameConfed(t, o.tribe) || peaceHeld(W, t, o.tribe) || !canReach(W, leadC, o.x, o.y)) continue;
         const op = opinion(t, o.tribe); if (op > 10) continue;
         const weak = tribeSize(t) / Math.max(10, tribeSize(o.tribe)), wealth = o.store + o.grain / 2 + (o.goods.amber + o.goods.bronze + o.goods.metal + o.goods.furs) * 1e6;
         const sc = (weak > 1 ? Math.min(3, weak) : weak * 0.3) * (1 + wealth / 2e7) * (1 + o.people.length / 30) * (1 - op / 60) / (1 + Math.hypot(o.x - leadC.x, o.y - leadC.y) / 40000) / walls(o) * (und(t, o.tribe) < 0.2 ? 1.25 : 1);
@@ -1001,7 +1004,7 @@
       }
       if (!best) continue;
       // friendly clans of the tribe send their young men along
-      let party = warriorsOf(leadC); for (const o of t.clans) if (o !== leadC && o !== pc && opinion(o, leadC) > -10 && Math.hypot(o.x - leadC.x, o.y - leadC.y) < 60000) party += Math.floor(warriorsOf(o) * 0.5);
+      const party = warMuster(W, t, leadC, pc);
       logEvent(W, `⚔ A war party of the ${t.name} (${party} warriors under ${leadC.head ? leadC.head.name : 'the ' + leadC.name}) sets out against the ${best.name} ${best.settled ? 'village' : 'camp'} of the ${best.tribe.name}.`, t, 'blood');
       raid(W, leadC, leadC, best, false, party / Math.max(1, warriorsOf(leadC)));
       W.nWarParties = (W.nWarParties || 0) + 1;
@@ -1019,7 +1022,7 @@
       const temper = ((a.head ? a.head.temper : .5) + (b.head ? b.head.temper : .5)) / 2;
       // covet: one side holds stone or amber the other lacks
       const covet = ((a.tool < 0.6 && b.goods.flint + b.goods.axe > 0) || (b.tool < 0.6 && a.goods.flint + a.goods.axe > 0) ? 0.08 : 0) + (a.grain > needsWeek(a) * 6 || b.grain > needsWeek(b) * 6 ? 0.06 : 0);
-      if (!allied && !sameConfed(ta, tb) && op < -35 && rand() < 0.04 + temper * 0.08 + hunger * 0.3 + covet) { raid(W, hunger > 0 && a.cond < b.cond ? a : rand() < 0.5 ? a : b, a, b); continue; }
+      if (!allied && !sameConfed(ta, tb) && !peaceHeld(W, ta, tb) && op < -35 && rand() < 0.04 + temper * 0.08 + hunger * 0.3 + covet) { raid(W, hunger > 0 && a.cond < b.cond ? a : rand() < 0.5 ? a : b, a, b); continue; }
       if (!allied && hunger > 0.3 && rand() < 0.4) {
         affect(W, ta, tb, -7, `Clash over foraging grounds between the ${a.name} and ${b.name} camps`);
         affect(W, a, b, -7, 'Trespass on foraging grounds');
@@ -1036,8 +1039,8 @@
       if (a.id >= b.id) continue; const r = a.rel.get(b.id); if (!r) continue;
       const o = r.op - r.grudge, war = a.atWar.has(b.id);
       if (war && sameConfed(a, b)) { a.atWar.delete(b.id); b.atWar.delete(a.id); continue; } // one realm: no war between its tribes
-      if (!war && o < -60 && !sameConfed(a, b)) { a.atWar.add(b.id); b.atWar.add(a.id); if (r.allied) breakAlliance(W, a, b, 'war'); note(W, a, `War with the ${b.name}.`); note(W, b, `War with the ${a.name}.`); logEvent(W, `War breaks out between the ${a.name} and the ${b.name}.`, a, 'blood'); }
-      if (war && o > -25) { a.atWar.delete(b.id); b.atWar.delete(a.id); r.grudge *= 0.4; affect(W, a, b, 10, 'Peace made'); note(W, a, `Peace with the ${b.name}.`); note(W, b, `Peace with the ${a.name}.`); logEvent(W, `The ${a.name} and the ${b.name} make peace.`, a, 'peace'); }
+      if (!war && o < -60 && !sameConfed(a, b) && !(r.peaceUntil > W.week)) { a.atWar.add(b.id); b.atWar.add(a.id); if (r.allied) breakAlliance(W, a, b, 'war'); note(W, a, `War with the ${b.name}.`); note(W, b, `War with the ${a.name}.`); logEvent(W, `War breaks out between the ${a.name} and the ${b.name}.`, a, 'blood'); }
+      if (war && o > -25) { a.atWar.delete(b.id); b.atWar.delete(a.id); r.grudge *= 0.4; if (!(r.peaceUntil > W.week + 5 * 52)) { r.peaceUntil = W.week + 5 * 52; r.peaceFrom = W.week; delete r.peaceBy; } W.nPeaces = (W.nPeaces || 0) + 1; affect(W, a, b, 10, 'Peace made'); note(W, a, `Peace with the ${b.name}.`); note(W, b, `Peace with the ${a.name}.`); logEvent(W, `The ${a.name} and the ${b.name} make peace.`, a, 'peace'); }
       if (r.allied && o < 0) breakAlliance(W, a, b, 'quarrels');
     }
   }
@@ -1054,6 +1057,47 @@
     const r = raidRatio(W, att, def, raidDefBonus(def), bonus == null ? undefined : bonus * 1.25); // a raid comes as a surprise: the party counts a quarter more
     return r <= 0 ? 0 : clamp(1 - (1 / r - 0.6) / 0.8, 0, 1);
   }
+  // the defenders' odds when a war party comes to the player's camp and the card says "stand and fight": the card rolls with this same bonus (no surprise there)
+  const CARD_DEF = 1.35;
+  function driveOffChance(W, att, def, attBonus, ratio0) {
+    if (warriorsOf(att) < 2) return 1; // raidCore does nothing with fewer than two attackers
+    const r = ratio0 != null ? ratio0 : raidRatio(W, att, def, CARD_DEF, attBonus);
+    return 1 - (r <= 0 ? 0 : clamp(1 - (1 / r - 0.6) / 0.8, 0, 1));
+  }
+  // a peace between two tribes binds both sides until r.peaceUntil
+  const peaceHeld = (W, a, b) => { const r = a && b && a.rel.get(b.id); return !!(r && r.peaceUntil > W.week); };
+  const clearWrong = (a, b) => { if (a.wrong && a.wrong.c === b.id) delete a.wrong; if (b.wrong && b.wrong.c === a.id) delete b.wrong; };
+  // the word for what another people is to us, for text: only a sworn alliance is "allies"
+  function bondWord(W, t, o) {
+    const r = t.rel.get(o.id); if (r && r.allied) return 'your allies';
+    if (!sameConfed(t, o)) return '';
+    const cf = t.confed, st = x => { const m = cf.members.get(x.id); return m ? m.status : ''; };
+    if (cf.capital === t && st(o) === 'subject') return 'your subjects';
+    if (cf.capital === o && st(t) === 'subject') return 'your overlords';
+    return 'of your realm';
+  }
+  // the war party a clan can muster: its own men and half of those of friendly clans of its tribe within 60 km (the player's clan never joins)
+  function warMuster(W, t, leadC, pc) {
+    let party = warriorsOf(leadC); for (const o of t.clans) if (o !== leadC && o !== pc && opinion(o, leadC) > -10 && Math.hypot(o.x - leadC.x, o.y - leadC.y) < 60000) party += Math.floor(warriorsOf(o) * 0.5);
+    return party;
+  }
+  // a clan that was raided remembers it for six years and may strike back (monthly, from the same place as warParties)
+  function paybackMonth(W) {
+    const P = W.player, pc = P && !P.over && P.head.alive && P.head.clan;
+    for (const c of [...W.clans]) {
+      const wr = c.wrong; if (!wr || !c.alive) continue;
+      const A = W.ents.get(wr.c);
+      if (W.week - wr.w > 52 * 6 || !A || !A.alive || A.kind !== 'clan' || !A.people.length || A.tribe === c.tribe || isAllied(c.tribe, A.tribe) || peaceHeld(W, c.tribe, A.tribe)) { delete c.wrong; continue; }
+      if (c === pc) continue; // the house's own clan strikes back only when the house leads it out
+      if (!canReach(W, c, A.x, A.y) || Math.hypot(A.x - c.x, A.y - c.y) > Math.max(80000, (wr.km + 20) * 1000) || warriorsOf(c) < 2) continue;
+      const party = warMuster(W, c.tribe, c, pc), ratio = party / Math.max(1, warriorsOf(A));
+      const p = 0.06 * clamp((ratio - 0.4) / 0.8, 0, 1);
+      if (p <= 0 || W.rand() >= p) continue;
+      delete c.wrong; W.nPaybacks = (W.nPaybacks || 0) + 1;
+      logEvent(W, `The ${c.name} clan (${c.tribe.name}) strike back at the ${A.name} clan, who raided them.`, c.tribe, 'blood');
+      raid(W, c, c, A, false, party / Math.max(1, warriorsOf(c)), { w: wr.w });
+    }
+  }
   // a people the house knows of that the raid deed does not offer, and why not
   function seenYear(W) { const P = W.player; if (!P || P.over || !P.known || !P.head.alive || !P.head.clan) return; for (const o of W.tribes) if (o.alive && o.clans.some(x => knows(W, x.x, x.y))) o.seenW = W.week; }
   function raidWhyNot(W, c, offered) {
@@ -1063,7 +1107,8 @@
       const near = o.clans.filter(x => Math.hypot(x.x - c.x, x.y - c.y) <= 160000), cen = tribeCenter(o), km = Math.round(Math.hypot(cen[0] - c.x, cen[1] - c.y) / 1000);
       if (km > 260) continue;
       let why;
-      if (isAllied(t, o)) why = 'they are your allies';
+      if (peaceHeld(W, t, o)) { const r = t.rel.get(o.id); const py = Math.floor((r.peaceFrom != null ? r.peaceFrom : r.peaceUntil - 520) / 52) + 1, py2 = Math.floor(r.peaceUntil / 52) + 1; why = `${r.peaceBy === 'player' ? 'you made peace with them' : 'the two peoples have been at peace'}${r.peaceBy === 'player' ? ' in' : ' since'} year ${py} (it holds until year ${py2})`; }
+      else if (isAllied(t, o)) why = 'they are ' + bondWord(W, t, o);
       else if (!near.length) why = `their nearest camp is ${Math.round(Math.min(...o.clans.map(x => Math.hypot(x.x - c.x, x.y - c.y))) / 1000)} km away, past the 160 km a raiding party can go`;
       else if (!near.some(x => knows(W, x.x, x.y))) { const y = o.seenW == null ? null : Math.floor((W.week - o.seenW) / 52); why = y == null ? 'no camp of theirs has been seen' : y < 1 ? 'no camp of theirs lies on land you have seen' : `no camp of theirs has been seen for ${y} year${y === 1 ? '' : 's'}`; }
       else if (!near.some(x => x.people.length > 3)) why = 'too few of them are left';
@@ -1072,24 +1117,24 @@
     }
     return out.sort((a, b) => a.km - b.km).slice(0, 5);
   }
-  function raid(W, att, a, b, byPlayer, attBonus) {
+  function raid(W, att, a, b, byPlayer, attBonus, payback) {
     const def = att === a ? b : a;
     const P = W.player;
     if (!byPlayer && P && !P.over && P.head.alive && P.head.clan === def && att.tribe !== def.tribe) {
-      pushEvent(W, { type: 'raided', key: att.id + ':' + W.week, title: attBonus ? 'A war party!' : 'Raiders!', text: `Warriors of the ${att.name} clan (${att.tribe.name}) are coming for the ${def.name} ${def.settled ? 'village' : 'camp'} — ${Math.round(att.people.filter(q => q.sex === 'M' && !q.slave && q.age >= 16 && q.age < 50).length * (attBonus || 1))} of them against your ${def.people.filter(q => q.sex === 'M' && !q.slave && q.age >= 16 && q.age < 55).length}. What will ${P.head.name} do?`, data: { att, def, attBonus },
-        options: [{ label: 'Stand and fight', hint: 'Defenders fight hard on their own ground' }, { label: 'Pay them off', hint: 'Give up food and something of value — no blood spilled' }, { label: def.settled ? 'Hide the people in the marshes' : 'Flee with what we can carry', hint: 'Lose most of the stores, save lives' }] });
+      pushEvent(W, { type: 'raided', key: att.id + ':' + W.week, title: attBonus > 1.4 ? 'A war party!' : 'Raiders!', text: `Warriors of the ${att.name} clan (${att.tribe.name}) are coming for the ${def.name} ${def.settled ? 'village' : 'camp'} — ${Math.round(att.people.filter(q => q.sex === 'M' && !q.slave && q.age >= 16 && q.age < 50).length * (attBonus || 1))} of them against your ${def.people.filter(q => q.sex === 'M' && !q.slave && q.age >= 16 && q.age < 55).length}.${payback ? ` They come to pay back the raid of year ${Math.floor(payback.w / 52) + 1}.` : ''} What will ${P.head.name} do?`, data: { att, def, attBonus, ratio: raidRatio(W, att, def, CARD_DEF, attBonus), payback: payback ? { w: payback.w } : null },
+        options: [{ label: 'Stand and fight', hint: `About ${Math.round(driveOffChance(W, att, def, attBonus, raidRatio(W, att, def, CARD_DEF, attBonus)) * 100)}% to drive them off. Defenders fight hard on their own ground` }, { label: 'Pay them off', hint: 'Costs half the food, 30% of the grain and one of amber, salt, an axe, metal or bronze, if you have any. No blood spilled' }, { label: def.settled ? 'Hide the people in the marshes' : 'Flee with what we can carry', hint: `Costs 80% of the food and 60% of the grain${def.settled ? '' : '; the camp moves 15 to 35 km'}. Lives are saved` }] });
       return;
     }
-    return raidCore(W, att, a, b, def.settled && faithOf(def.tribe) === 'ancestors' ? 1.25 : 1, attBonus == null ? undefined : attBonus * 1.25); // surprise; the dead guard their villages
+    return raidCore(W, att, a, b, def.settled && faithOf(def.tribe) === 'ancestors' ? 1.25 : 1, attBonus == null ? undefined : attBonus * 1.25, !!payback); // surprise; the dead guard their villages
   }
-  function raidCore(W, att, a, b, defBonus, attBonus) {
+  function raidCore(W, att, a, b, defBonus, attBonus, payback, ratio0) {
     const def = att === a ? b : a, rand = W.rand; att.tribe.warYr = (att.tribe.warYr || 0) + 1; def.tribe.warYr = (def.tribe.warYr || 0) + 0.5; W.nRaids = (W.nRaids || 0) + 1;
     const warriorsA = att.people.filter(q => q.sex === 'M' && !q.slave && q.age >= 16 && q.age < 50), warriorsD = def.people.filter(q => q.sex === 'M' && !q.slave && q.age >= 16 && q.age < 55);
     if (warriorsA.length < 2) return;
     const fallen = warriorsD.filter(q => !kinOfHouse(W, q, att)); // the house's own blood among the defenders is not killed by its own kin's raid
-    const strength = raidRatio(W, att, def, defBonus, attBonus) * (0.6 + rand() * 0.8);
+    const strength = (ratio0 != null ? ratio0 : raidRatio(W, att, def, defBonus, attBonus)) * (0.6 + rand() * 0.8);
     let killedD = 0, killedA = 0;
-    const big = attBonus != null; // a war party led by the player: more men, more blood
+    const big = attBonus != null && !payback; // a war party led by the player: more men, more blood
     const kd = strength > 1 ? 1 + (rand() < 0.4 ? 1 : 0) + (big ? Math.floor(rand() * Math.min(3 + attBonus, strength * 1.5)) : 0) : rand() < 0.4 ? 1 : 0, ka = strength < 1 ? 1 + (big && rand() < 0.5 ? 1 : 0) : rand() < 0.25 ? 1 : 0;
     for (let k = 0; k < kd && fallen.length; k++) { const v = fallen.splice(Math.floor(rand() * fallen.length), 1)[0]; die(W, def, v, `killed in a raid by the ${att.tribe.name}`, att); killedD++; def.yr.killed++; }
     const PH = W.player && !W.player.over && W.player.head; if (big && PH) { const i = warriorsA.indexOf(PH); if (i >= 0) warriorsA.splice(i, 1); } // the leader's own risk is rolled separately
@@ -1104,7 +1149,7 @@
     if (strength > 1) treasureTaken(W, att, def);
     let captives = [];
     if (strength > 1) { const nCap = big ? Math.floor(rand() * Math.min(2 + attBonus, 1 + strength)) : rand() < 0.5 ? 1 + (rand() < 0.3 ? 1 : 0) : 0; if (nCap) captives = takeCaptives(W, att, def, wl < 1 ? Math.ceil(nCap / 2) : nCap, (W.player && !W.player.over && big && W.player.head.clan === att) ? W.player.head : att.head || att.people.find(q => q.sex === 'M' && !q.slave && q.age >= 20)); }
-    for (const al of W.tribes) if (al !== def.tribe && al !== att.tribe && isAllied(al, def.tribe)) { affect(W, al, att.tribe, -12, `Raided our allies the ${def.tribe.name}`, 5); }
+    for (const al of W.tribes) if (al !== def.tribe && al !== att.tribe && isAllied(al, def.tribe)) { const bw = bondWord(W, al, def.tribe); affect(W, al, att.tribe, -12, bw === 'your allies' ? `Raided our allies the ${def.tribe.name}` : bw === 'your subjects' ? `Raided our subjects the ${def.tribe.name}` : bw === 'your overlords' ? `Raided our overlords the ${def.tribe.name}` : `Raided the ${def.tribe.name} of our realm`, 5); }
     affect(W, def.tribe, att.tribe, -20, `The ${att.name} clan raided the ${def.name} camp`, Math.min(60, 12 + killedD * 8));
     affect(W, def, att, -25, `Raid on our camp${killedD ? `, ${killedD} killed` : ''}`, Math.min(60, 15 + killedD * 8));
     if (killedA) affect(W, att, def, -10, `Lost ${killedA} warrior${killedA > 1 ? 's' : ''} raiding the ${def.name}`, killedA * 20);
@@ -1112,6 +1157,7 @@
     note(W, att, `Raided the ${def.name} camp of the ${def.tribe.name}${killedD ? `, killing ${killedD}` : ''}${killedA ? `, losing ${killedA}` : ''}${captives.filter(q => q.slave).length ? `, carrying off ${captives.filter(q => q.slave).length} captive${captives.filter(q => q.slave).length > 1 ? 's' : ''}` : ''}.`);
     credit(att.head, 'raids'); logEvent(W, `Raid! The ${att.name} clan (${att.tribe.name}) strikes the ${def.name} camp (${def.tribe.name})${killedD + killedA ? ` — ${killedD + killedA} dead` : ''}.`, def, 'blood');
     def.raidedAt = W.week;
+    if (!payback) def.wrong = { c: att.id, t: att.tribe.id, w: W.week, km: Math.round(Math.hypot(att.x - def.x, att.y - def.y) / 1000) }; // a wrong to pay back; a payback itself leaves the score even
     if (strength > 1.5 && def.works && def.works.pal && rand() < 0.5) { delete def.works.pal; note(W, def, `Our palisade was burned by the ${att.tribe.name}.`); logEvent(W, `The palisade of ${def.village || 'the ' + def.name + ' village'} is burned by the ${att.tribe.name}.`, def, 'blood'); if (W.player && !W.player.over && W.player.head.clan === def) houseNote(W, `Our palisade was burned by the ${att.tribe.name}.`); }
     if (!def.settled) relocate(W, def, 12000, 30000);
     return { win: strength > 1, killedD, killedA, loot, tookGoods, captives };
@@ -1911,7 +1957,7 @@
     if (!cf.alive) return;
     realmEnding(W, cf, why);
     for (const id of [...cf.members.keys()]) { const t = W.ents.get(id); if (t) { t.confed = null; t.leftFrom = cf.id; t.leftAt = W.week; } }
-    const hadWars = cf.wars.size; cf.members.clear(); cf.wars.clear(); W.confeds.splice(W.confeds.indexOf(cf), 1); kill(W, cf);
+    const hadWars = cf.wars.size; cf.members.clear(); for (const id of [...cf.wars.keys()]) warOver(W, cf, id); cf.wars.clear(); W.confeds.splice(W.confeds.indexOf(cf), 1); kill(W, cf);
     logEvent(W, `${cf.name[0].toUpperCase() + cf.name.slice(1)} falls apart — ${why}.${hadWars ? ' Its wars end with it.' : ''}`, null, 'king');
   }
   const confedTribes = (W, cf) => [...cf.members.keys()].map(id => W.ents.get(id)).filter(Boolean);
@@ -1933,15 +1979,40 @@
     }
   }
 
-  function battle(W, att, def, cf) {
+  const WAR_QUIT = 0.4, WAR_CRUSH = 2.5, REALM_TRIB = 0.15; // a lost battle ends the host's war with this chance (always from the third battle); a victory this many times over ends it at once; the share of stored food a subject clan gives each year
+  // a war begins: its record is opened, and clans of the attacked tribe that are at odds with its leader may hold back their men
+  function warBegin(W, cf, t) {
+    const L = (cf.warLog = cf.warLog || {})[t.id] = { from: W.week, won: 0, lost: 0, hold: [], stand: null };
+    const lc = t.headman && t.headman.clan, myT = realmPlayerTribe(W), pc = myT === t ? W.player.head.clan : null;
+    if (lc) for (const c of t.clans) if (c !== lc && c !== pc && opinion(c, lc) < -30 && W.rand() < 0.3) {
+      L.hold.push(c.id); W.nHoldBack = (W.nHoldBack || 0) + 1; for (const o of t.clans) if (o !== c) affect(W, o, c, -12, `Kept its men at home when the realm marched`);
+      if (myT === t) logEvent(W, `The ${c.name} clan keeps its men at home.`, t, 'blood');
+    }
+  }
+  // a war is over (won, lost, called off, or ended with its realm)
+  function warOver(W, cf, tid) { cf.wars.delete(tid); if (cf.warLog) delete cf.warLog[tid]; }
+  const warText = (cf, tid) => { const L = cf.warLog && cf.warLog[tid]; return L ? `${L.won} ${L.won === 1 ? 'battle' : 'battles'} won and ${L.lost} lost` : 'under way'; };
+  const warFrom = (cf, tid) => { const L = cf.warLog && cf.warLog[tid]; return L ? L.from : null; };
+  // the two sides of a realm's battle, used by the roll and by every chance shown. Clans that hold back (this war's `hold`, and `omit`) send no men.
+  function warSides(W, cf, def, omit) {
     // attacker strength: the king's tribes (allies send fewer, subjects fewer still)
     const sA = confedTribes(W, cf).reduce((s, t) => { const st = cf.members.get(t.id).status; return s + warriors(t) * tribeVigor(t) * (st === 'core' ? 1 : st === 'ally' ? 0.6 : 0.4); }, 0);
-    let sD = warriors(def) * tribeVigor(def); for (const o of W.tribes) if (o !== def && isAllied(o, def) && !sameConfed(o, att)) sD += warriors(o) * 0.4;
+    const att = cf.capital, out = warHeld(cf, def, omit); let dw = warriors(def); for (const c of def.clans) if (out.has(c.id)) dw -= warriorsOf(c);
+    let sD = dw * tribeVigor(def); for (const o of W.tribes) if (o !== def && isAllied(o, def) && !sameConfed(o, att)) sD += warriors(o) * 0.4;
+    return { sA, sD };
+  }
+  const warHeld = (cf, def, omit) => { const L = cf.warLog && cf.warLog[def.id], s = new Set(L && L.hold || []); if (omit) s.add(omit.id); return s; };
+  // the chance that one battle goes the realm's way: the same sum the battle rolls (win when sA/sD * (0.6 + 0.8u) > 1)
+  function battleOdds(W, cf, def, omit) { const { sA, sD } = warSides(W, cf, def, omit); return sA <= 0 ? 0 : clamp(1 - (Math.max(1, sD) / sA - 0.6) / 0.8, 0, 1); }
+  const WAR_DLOSS_LOST = [0.1, 0.22], WAR_DLOSS_WON = [0.03, 0.08]; // the share of the defenders' men that falls in a battle the host wins / the host loses
+  const warFall = r => { const f = Math.round(1 / r[1]), g = Math.round(1 / r[0]); return `one in ${g} to one in ${f}`; };
+  function battle(W, att, def, cf) {
+    const { sA, sD } = warSides(W, cf, def);
     const r = (sA / Math.max(1, sD)) * (0.6 + W.rand() * 0.8);
     const win = r > 1;
-    const lose = (t, frac) => { let k = 0; const men = []; for (const c of t.clans) for (const q of c.people) if (q.sex === 'M' && !q.slave && q.age >= 16 && q.age < 50) men.push([c, q]); const n = Math.round(men.length * frac); for (let i = 0; i < n && men.length; i++) { const [c, q] = men.splice(Math.floor(W.rand() * men.length), 1)[0]; die(W, c, q, `killed in battle`); c.yr.killed++; k++; } for (const c of t.clans) c.people = c.people.filter(q => q.alive); return k; };
+    const lose = (t, frac) => { let k = 0; const men = [], hb = t === def ? warHeld(cf, def) : new Set(); for (const c of t.clans) if (!hb.has(c.id)) for (const q of c.people) if (q.sex === 'M' && !q.slave && q.age >= 16 && q.age < 50) men.push([c, q]); const n = Math.round(men.length * frac); for (let i = 0; i < n && men.length; i++) { const [c, q] = men.splice(Math.floor(W.rand() * men.length), 1)[0]; die(W, c, q, `killed in battle`); c.yr.killed++; k++; } for (const c of t.clans) c.people = c.people.filter(q => q.alive); return k; };
     const dyn0 = W.player ? dynMembers(W) : [];
-    const dL = lose(def, win ? 0.1 + W.rand() * 0.12 : 0.03 + W.rand() * 0.05), aL = lose(att, win ? 0.03 + W.rand() * 0.04 : 0.08 + W.rand() * 0.1);
+    const dL = lose(def, win ? WAR_DLOSS_LOST[0] + W.rand() * (WAR_DLOSS_LOST[1] - WAR_DLOSS_LOST[0]) : WAR_DLOSS_WON[0] + W.rand() * (WAR_DLOSS_WON[1] - WAR_DLOSS_WON[0])), aL = lose(att, win ? 0.03 + W.rand() * 0.04 : 0.08 + W.rand() * 0.1);
     affect(W, def, att, -20, `Battle with ${rulerMid(cf)} ${cf.king.name}'s warriors`, 10 + dL * 3);
     let caps = 0; if (win && def.clans.length && cf.king.clan) { const dc = pick(def.clans, W.rand); caps = takeCaptives(W, cf.king.clan, dc, 1 + Math.floor(W.rand() * 4), cf.king).length; }
     { const fell = dyn0.filter(q => !q.alive); if (fell.length) houseNote(W, `In the battle between the ${def.name} and ${rulerMid(cf)} ${cf.king.name}'s host (${win ? 'the host won' : 'the host was beaten'}), ${nameList(fell)}${fell.length > 3 ? ` and ${fell.length - 3} more` : ''} of our blood fell.`); }
@@ -1976,6 +2047,7 @@
         }
       }
       // --- wars of subjugation ---
+      let held = null; const K0 = king;
       const grudge = W.tribes.some(x => x.alive && x.leftFrom === cf.id && W.week - x.leftAt < 52 * 8);
       if (!cf.wars.size && W.rand() < (grudge ? 0.35 : 0.12 + king.temper * 0.25)) {
         const myStr = confedTribes(W, cf).reduce((s, t) => s + warriors(t), 0);
@@ -1988,29 +2060,31 @@
           if (sc > ts) { ts = sc; target = t; }
         }
         if (target && realmPressed(W, cf, target)) target = null;
-        if (target && isHead(W, king)) { pushEvent(W, { type: 'war', key: target.id, title: 'A war of conquest?', text: `The ${target.name} (${tribeSize(target)} people, ${warriors(target)} warriors) are weaker than your realm. Your warriors could force them to submit and pay tribute — but war costs lives${target.stage === 3 ? ', though their farmers are poor fighters' : ''}, and their allies will hate you for it.`, data: { cf, target }, options: [{ label: `Make war on the ${target.name}`, hint: `Your realm has ${confedTribes(W, cf).reduce((s, x) => s + warriors(x), 0)} warriors` }, { label: 'Keep the peace' }] }); }
+        if (target && isHead(W, king)) { pushEvent(W, { type: 'war', key: target.id, title: 'A war of conquest?', text: `The ${target.name} (${tribeSize(target)} people, ${warriors(target)} warriors) are weaker than your realm. Your warriors could force them to submit and pay tribute — but war costs lives${target.stage === 3 ? ', though their farmers are poor fighters' : ''}, and their allies will hate you for it.`, data: { cf, target }, options: [{ label: `Make war on the ${target.name}`, hint: `Your realm has ${confedTribes(W, cf).reduce((s, x) => s + warriors(x), 0)} warriors; each battle about ${Math.round(battleOdds(W, cf, target) * 100)}% to go your way if it were fought today. One battle a year; they submit after two victories or one crushing one.` }, { label: 'Keep the peace' }] }); }
         else if (target) {
-          cf.wars.set(target.id, 0); target.warLosses = 0;
+          cf.wars.set(target.id, 0); target.warLosses = 0; warBegin(W, cf, target); if (realmWarcall(W, cf, target)) held = target.id;
           note(W, cf, `${rulerWord(cf)} ${king.name} made war on the ${target.name}.`); note(W, target, `${rulerWord(cf)} ${king.name} of ${cf.name} made war on us.`);
           logEvent(W, `⚔ ${rulerWord(cf)} ${king.name} of ${cf.name} goes to war to subjugate the ${target.name}.`, cf, 'blood');
           for (const o of W.tribes) if (o !== target && isAllied(o, target) && !sameConfed(o, cap)) affect(W, o, cap, -15, `Attacked our allies the ${target.name}`);
         }
       }
       for (const [tid, n] of [...cf.wars]) {
-        const t = W.ents.get(tid); if (!t || !t.alive || t.confed === cf) { cf.wars.delete(tid); continue; }
+        const t = W.ents.get(tid); if (!t || !t.alive || t.confed === cf) { warOver(W, cf, tid); continue; }
+        if (held === tid) continue; // the house of the attacked tribe is still being asked: the first battle waits for the next year
         const b = battle(W, cap, t, cf);
-        cf.wars.set(tid, n + 1);
+        cf.wars.set(tid, n + 1); { const L = (cf.warLog = cf.warLog || {})[tid] || (cf.warLog[tid] = { from: W.week - n * 52, won: 0, lost: 0 }); if (b.win) L.won++; else L.lost++; }
         if (b.win) {
           t.warLosses++;
           note(W, cf, `Victory over the ${t.name}: ${b.dL} of theirs fell and ${b.aL} of ours.`);
-          if (t.warLosses >= 2 || b.r > 2.5) {
-            cf.wars.delete(tid); joinConfed(W, cf, t, 'subject'); t.warLosses = 0;
-            logEvent(W, `The ${t.name} submit to ${rulerMid(cf)} ${king.name} and must pay tribute to ${cf.name} (${b.dL} of theirs fell and ${b.aL} of ours in the last battle).`, cf, 'king');
+          if (t.warLosses >= 2 || b.r > WAR_CRUSH) {
+            warOver(W, cf, tid); joinConfed(W, cf, t, 'subject'); t.warLosses = 0;
+            logEvent(W, `The ${t.name} submit to ${rulerMid(cf)} ${king.name} and must pay tribute to ${cf.name} (${b.dL} of the ${t.name} and ${b.aL} of the host fell in the last battle).`, cf, 'king');
           } else logEvent(W, `Battle: ${rulerWord(cf)} ${king.name}'s warriors defeat the ${t.name} (${b.dL} of the ${t.name} and ${b.aL} of the host fell).`, t, 'blood');
         } else {
+          { const L = cf.warLog && cf.warLog[tid], P = W.player, pc = L && L.stand != null ? W.ents.get(L.stand) : null, lc = t.headman && t.headman.clan; if (P && !P.over && pc && pc.alive && pc.tribe === t) { P.renown += 2; if (lc) affect(W, lc, pc, 8, `Stood with us against the ${rulerWord(cf).toLowerCase()}`); houseNote(W, `The ${t.name} turned back ${rulerMid(cf, K0)} ${K0.name}'s host, and our men stood in the field. Our house gains 2 renown.`); } }
           note(W, cf, `Defeat at the hands of the ${t.name}: ${b.aL} of ours fell and ${b.dL} of theirs.`);
           logEvent(W, `Battle: the ${t.name} repel ${rulerMid(cf)} ${king.name}'s warriors (${b.aL} of the host and ${b.dL} of the ${t.name} fell; the host may yet return).`, t, 'blood');
-          if (n >= 2 || W.rand() < 0.4) { cf.wars.delete(tid); affect(W, t, cap, 10, `The ${rulerWord(cf).toLowerCase()} gave up ${heHer(king)} war`); logEvent(W, `${rulerWord(cf)} ${king.name} abandons ${heHer(king)} war against the ${t.name}.`, cf, 'king'); }
+          if (n >= 2 || W.rand() < WAR_QUIT) { warOver(W, cf, tid); affect(W, t, cap, 10, `The ${rulerWord(cf).toLowerCase()} gave up ${heHer(king)} war`); logEvent(W, `${rulerWord(cf)} ${king.name} abandons ${heHer(king)} war against the ${t.name}.`, cf, 'king'); }
         }
       }
       cf.peak = Math.max(cf.peak, confedPeople(W, cf));
@@ -2127,7 +2201,7 @@
   // a tribe that joins a realm is at peace with every tribe of it, and the realm's war on it is over
   function realmPeace(W, cf, t) {
     for (const id of cf.members.keys()) { const o = W.ents.get(id); if (o && o !== t) { t.atWar.delete(o.id); o.atWar.delete(t.id); } }
-    cf.wars.delete(t.id); t.warLosses = 0;
+    warOver(W, cf, t.id); t.warLosses = 0;
   }
   // the strength of the realm's host (without one tribe), as battle() weighs it; and of a tribe that stands alone against it
   const realmHost = (W, cf, skip) => confedTribes(W, cf).reduce((s, x) => { if (x === skip) return s; const st = cf.members.get(x.id).status; return s + warriors(x) * tribeVigor(x) * (st === 'core' ? 1 : st === 'ally' ? 0.6 : 0.4); }, 0);
@@ -2207,7 +2281,7 @@
   function realmPay(W, cf, t, m, tl) {
     const to = cf.king.clan, from = t.clans.length ? pick(t.clans, W.rand) : null, light = m.light > W.week, gave = []; let food = 0;
     for (const g of ['amber', 'axe', 'salt', 'ochre', 'flint']) if (from && to && from.goods[g] > 0 && W.rand() < (light ? 0.25 : 0.5)) { from.goods[g]--; to.goods[g] = Math.min(10, to.goods[g] + 1); gave.push((GOOD_NAMES[g] || g).toLowerCase()); }
-    if (from && to) { const f = from.store * (light ? 0.075 : 0.15); from.store -= f; to.store += f; food = f; }
+    if (from && to) { const f = from.store * (light ? REALM_TRIB / 2 : REALM_TRIB); from.store -= f; to.store += f; food = f; }
     affect(W, t, cf.capital, light ? -1 : -4, `Tribute paid to the ${rulerWord(cf).toLowerCase()}`);
     tl.push({ t, food, gave });
   }
@@ -2244,12 +2318,31 @@
   function realmPressed(W, cf, t) { // the realm marches on the player's tribe: true when the player has been asked (or the matter is put off)
     const P = W.player, myT = realmPlayerTribe(W); if (!myT || t !== myT) return false;
     const K = cf.king;
-    if (P.head !== t.headman) { const hn = t.headman ? t.headman.name : 'our leader'; const tx = `${rulerMid(cf, K)} ${K.name} of ${cf.name} marched against the ${t.name}. ${hn}, who leads us, will meet them in the field.`; houseNote(W, realmCap(tx)); notice(W, `War on the ${t.name}`, realmCap(tx)); return false; }
+    if (P.head !== t.headman) return false; // the house is asked in realmWarcall, once the war has begun
     if (W.week - (P.lastPressed || -1e9) < 52 * 4) return true;
     P.lastPressed = W.week; const odds = realmRiseOdds(W, cf, t), host = confedTribes(W, cf).reduce((s, x) => s + warriors(x), 0);
     pushEvent(W, { type: 'pressed', key: cf.id, title: `${realmCap(cf.name)} marches on the ${t.name}`, text: `${realmCap(rulerMid(cf, K))} ${K.name} of ${cf.name} comes against the ${t.name} with ${host} warriors. You have ${warriors(t)}. You may bow now and pay tribute, or stand and fight.`, data: { cf, t, odds },
       options: [{ label: 'Submit', hint: `The ${t.name} become subjects and pay tribute each year; no blood is shed` }, { label: 'Stand and fight', hint: `About ${Math.round(odds * 100)}% to turn them back. If we fail, our men die and we submit all the same` }] });
     return true;
+  }
+  function realmWarcall(W, cf, t) { // a realm marches on the tribe of the player's house and the head of the house is not its leader: the house is asked whether its men stand with the tribe
+    const P = W.player, myT = realmPlayerTribe(W); if (!myT || t !== myT || P.head === t.headman || !P.head.clan) return false;
+    if (!warriorsOf(P.head.clan)) return false; // no men of fighting age: nothing to ask
+    if (t.headman && t.headman.clan === P.head.clan) { houseNote(W, `${realmCap(rulerMid(cf, cf.king))} ${cf.king.name} of ${cf.name} marched on the ${t.name}. ${t.headman.name}, of our own clan, leads the tribe, and our men follow ${himHer(t.headman)} to the field.`); return false; }
+    const K = cf.king, pc = P.head.clan, host = confedTribes(W, cf).reduce((s, x) => s + warriors(x), 0), lead = t.headman ? `${t.headman.name}, who leads us, will meet them in the field.` : 'Those who lead us will meet them in the field.';
+    const withUs = Math.round((1 - battleOdds(W, cf, t)) * 100), without = Math.round((1 - battleOdds(W, cf, t, pc)) * 100);
+    pushEvent(W, { type: 'warcall', key: t.id, title: `War on the ${t.name}`, text: `${realmCap(rulerMid(cf, K))} ${K.name} of ${cf.name} marches on the ${t.name} with ${host} warriors. ${lead} The ${pc.name} clan has ${warriorsOf(pc) === 1 ? '1 man of fighting age. Shall he go?' : `${warriorsOf(pc)} men of fighting age. Shall they go?`}`, data: { cf, t, clan: pc },
+      options: [{ label: 'Send our men to stand with the tribe', hint: `Each battle about ${withUs}% to go our way, as things stand. In a battle lost, ${warFall(WAR_DLOSS_LOST)} of the men who fight may fall; in a battle won, ${warFall(WAR_DLOSS_WON)}.` }, { label: 'Keep our men at home', hint: `None of ours can fall. Each battle about ${without}% without our men, as things stand; the other clans will not forget it.` }] });
+    return true;
+  }
+  function realmWarcallAnswer(W, ev, k) {
+    const { cf, t, clan } = ev.data, P = W.player;
+    if (!cf.alive || !t.alive || !cf.wars.has(t.id)) { const tx = `The war on the ${t.name} was over before the ${clan.name} clan's men were called.`; houseNote(W, tx); W.lastResult = { title: 'Too late', text: tx }; return; }
+    const L = cf.warLog && cf.warLog[t.id]; if (!L) { const tx = `The war on the ${t.name} was over before the ${clan.name} clan's men were called.`; houseNote(W, tx); W.lastResult = { title: 'Too late', text: tx }; return; }
+    if (k === 0) { L.stand = clan.id; const tx = `${P.head.name} sent the ${clan.name} clan's men to stand with the ${t.name} against ${rulerMid(cf)} ${cf.king.name}.`; houseNote(W, tx); W.lastResult = { title: 'Our men march', text: `${tx} The chance of each battle going our way is about ${Math.round((1 - battleOdds(W, cf, t)) * 100)}%.` }; return; }
+    const odds = Math.round((1 - battleOdds(W, cf, t, clan)) * 100); L.hold = (L.hold || []).filter(id => id !== clan.id).concat(clan.id);
+    for (const o of t.clans) if (o !== clan) affect(W, o, clan, -12, `Kept its men at home when the realm marched`);
+    const tx = `${P.head.name} kept the ${clan.name} clan's men at home while the ${t.name} faced ${rulerMid(cf)} ${cf.king.name}. The other clans will not forget it.`; houseNote(W, tx); W.lastResult = { title: 'Our men stay home', text: `${tx} The chance of each battle going our way is about ${odds}%, without our men.` };
   }
   function realmPressedAnswer(W, ev, k) {
     const { cf, t, odds } = ev.data, P = W.player; if (!cf.alive || !t.alive || t.confed) return;
@@ -2263,7 +2356,7 @@
   function realmTold(W, cf, t, status) { // the tribe of the player's house joins or submits without the player deciding: the house is told who decided
     if (REALM_QUIET) return; const myT = realmPlayerTribe(W); if (!myT || t !== myT) return;
     const P = W.player, who = t.headman && t.headman !== P.head ? `${t.headman.name}, who leads the ${t.name}, ` : `Those who lead the ${t.name} `, K = cf.king;
-    const tx = status === 'subject' ? `${who}bowed to ${rulerMid(cf, K)} ${K.name} of ${cf.name}. The ${t.name} are now subjects and pay tribute.` : `${who}took the ${t.name} into ${cf.name} under ${rulerMid(cf, K)} ${K.name}.`;
+    const tx = status === 'subject' ? `${who}bowed to ${rulerMid(cf, K)} ${K.name} of ${cf.name}. The ${t.name} are now subjects and pay tribute. Each year one of their clans, drawn by lot, must give the ${K.clan ? K.clan.name + ' clan' : 'ruling clan'} ${Math.round(REALM_TRIB * 100)}% of its stored food and, of each of amber, axes, salt, ochre and flint it holds, one piece at an even chance.` : `${who}took the ${t.name} into ${cf.name} under ${rulerMid(cf, K)} ${K.name}.`;
     houseNote(W, tx); notice(W, status === 'subject' ? `The ${t.name} are made subjects` : `The ${t.name} join ${cf.name}`, tx);
   }
   function realmDropped(W, cf, t, why) {
@@ -2291,7 +2384,7 @@
       if (o.leftAt != null && W.week - o.leftAt < 52) { no.push(Object.assign(row, { why: 'they left a realm only lately; the host will not march within the year' })); continue; }
       if (cf.wars.has(o.id)) { no.push(Object.assign(row, { why: 'already at war with them' })); continue; }
       const tc = tribeCenter(o), dir = c0 ? compass(tc[0] - c0.x, tc[1] - c0.y) : '', ow = warriors(o), oc = o.confed;
-      row.hint = `${tribeSize(o)} people · ${ow} warriors (your host has ${host}) · ${k} km ${dir}${o.stage === 3 ? ' · farmers' : ''} · ${ow * 1.6 > host ? 'stronger than your host can be sure of beating' : 'weaker than your host'}${oc ? ` · of ${oc.name}: its tribes will fight beside them and its people will hate you for it; if they are beaten they leave it${oc.capital === o ? ', and it would fall apart' : ''}` : ''}`;
+      row.hint = `${tribeSize(o)} people · ${ow} warriors (your host has ${host}) · ${k} km ${dir}${o.stage === 3 ? ' · farmers' : ''} · ${ow * 1.6 > host ? 'stronger than your host can be sure of beating' : 'weaker than your host'} · each battle about ${Math.round(battleOdds(W, cf, o) * 100)}% to go your way if it were fought today${oc ? ` · of ${oc.name}: its tribes will fight beside them and its people will hate you for it; if they are beaten they leave it${oc.capital === o ? ', and it would fall apart' : ''}` : ''}`;
       ok.push(row);
     }
     ok.sort((a, b) => a.km - b.km); no.sort((a, b) => a.km - b.km);
@@ -2531,7 +2624,7 @@
     return { mine: isHead(W, K), hold, choosing, kind: cf.kingdom ? 'kingdom' : 'confederacy', name: cf.name, since: cf.founded, kingdomSince: cf.kingdom || 0, rule: r, ruleName: REALM_RULES[r], ruleText: ruleText2,
       ruler: K, rulerWord: rulerWord(cf, K), ruledSince: Math.max(0, rulerSince(cf)), heir: H ? { who: H.who, how: H.how + holdTxt, child: !!H.child } : null,
       next: nx ? { id: nx.id, label: nx.label, needs: nx.needs, odds: nx.odds } : null, kingdomNeeds: cf.kingdom ? null : realmKingdomNeeds(W, cf),
-      tribes, wars: [...cf.wars.keys()].map(id => W.ents.get(id)).filter(Boolean), past: cf.kings.slice(0, -1) };
+      tribes, wars: [...cf.wars.keys()].map(id => W.ents.get(id)).filter(Boolean), warText: Object.fromEntries([...cf.wars.keys()].map(id => [id, warText(cf, id)])), warFrom: Object.fromEntries([...cf.wars.keys()].map(id => [id, warFrom(cf, id)])), past: cf.kings.slice(0, -1) };
   }
 
   // =====================================================================
@@ -2583,6 +2676,8 @@
     const first = cl[0], head = nw(first[0]); houseNote(W, `${head[0].toUpperCase() + head.slice(1)} more of our blood in the clan ${first[1]} this year${cl.slice(1).map(c => '; ' + nw(c[0]) + ' ' + c[1]).join('')}.`);
   }
   const dynMembers = W => { const out = []; for (const c of W.clans) for (const q of c.people) if (q.dyn) out.push(q); return out; };
+  // the blood living in the player's own tribe, and across the isles (the first drives renown; the second is only told)
+  const bloodCount = W => { const P = W.player, h = P && P.head, t = h && h.clan && h.clan.tribe; let all = 0, tribe = 0; for (const c of W.clans) { let n = 0; for (const q of c.people) if (q.dyn) n++; all += n; if (t && c.tribe === t) tribe += n; } return { tribe, all }; };
   function titlesOf(q) { const t = []; if (!q || !q.clan || !q.alive) return t; if (q.clan.head === q) t.push('clan head'); if (q.clan.tribe.headman === q) t.push('headman'); const cf = q.clan.tribe.confed; if (cf && cf.king === q) t.push('king'); return t; }
   const isHead = (W, q) => W.player && !W.player.over && W.player.head === q;
   const MINOR = new Set(['marriage', 'gathering', 'scouts', 'opportunity', 'challenge', 'sickness']);
@@ -2590,12 +2685,14 @@
     if (!W.player || W.player.over) return;
     if (W.pending.some(e => e.type === ev.type && e.key === ev.key)) return;
     const P = W.player;
-    if (AUTOKEY[ev.type]) { const v = pol(W)[AUTOKEY[ev.type]]; if (v !== 'ask') { (W.autoQ = W.autoQ || []).push([ev, AUTOIX[AUTOKEY[ev.type]][v]]); return; } }
+    const autoK = AUTOKEY[ev.type], autoV = autoK && pol(W)[autoK], autoI = autoV && autoV !== 'ask' ? AUTOIX[autoK][autoV] : undefined;
+    if (autoI !== undefined && !ROUTINE.has(ev.type)) { (W.autoQ = W.autoQ || []).push([ev, autoI]); return; }
     if (MINOR.has(ev.type)) {
       // don't bury the player in decisions: at most one minor matter every ~9 months
-      if (W.week - (P.lastMinor || -1e9) < 40 || W.pending.length) { if (ev.type === 'sickness') { ev.id = -1; resolve(W, ev, 1); W.lastResult = null; } return; }
+      if (W.week - (P.lastMinor || -1e9) < 40 || W.pending.length) { if (ev.type === 'sickness') { if (autoI !== undefined && ev.options[autoI] && !ev.options[autoI].off) (W.autoQ = W.autoQ || []).push([ev, autoI]); else { ev.id = -1; resolve(W, ev, 1); W.lastResult = null; } } return; }
       P.lastMinor = W.week;
     }
+    if (autoI !== undefined && ev.options[autoI] && !ev.options[autoI].off) { (W.autoQ = W.autoQ || []).push([ev, autoI]); return; }
     ev.id = (W.evId = (W.evId || 0) + 1); ev.week = W.week; W.pending.push(ev);
   }
   const relWord = (q, h) => { const p = h.sex === 'F' ? 'her' : 'his', sb = (a, b) => a && b && a !== b && ((a.father && a.father === b.father) || (a.mother && a.mother === b.mother)), sx = a => a.sex === 'M' ? 'brother' : 'sister'; return (q.father === h || q.mother === h) ? `${p} ${q.sex === 'M' ? 'son' : 'daughter'}` : ((h.father && q.father === h.father) || (h.mother && q.mother === h.mother)) ? `${p} ${q.sex === 'M' ? 'brother' : 'sister'}` : ((q.father && (q.father.father === h || q.father.mother === h)) || (q.mother && (q.mother.father === h || q.mother.mother === h))) ? `${p} grand${q.sex === 'M' ? 'son' : 'daughter'}` : sb(q.father, h) ? `${p} ${sx(q.father)}'s ${q.sex === 'M' ? 'son' : 'daughter'}` : sb(q.mother, h) ? `${p} ${sx(q.mother)}'s ${q.sex === 'M' ? 'son' : 'daughter'}` : sb(q, h.father) ? `${p} father's ${sx(q)}` : sb(q, h.mother) ? `${p} mother's ${sx(q)}` : `of ${p} blood`; };
@@ -2644,7 +2741,7 @@
     // --- hunger ---
     if (c.lowWeeks >= 6 && W.week - P.lastFamine > 104) {
       P.lastFamine = W.week;
-      const foe = nearClans(W, c.x, c.y, 45000).filter(o => o.tribe !== t && !isAllied(t, o.tribe)).sort((a, b) => b.store + b.grain - a.store - a.grain)[0];
+      const foe = nearClans(W, c.x, c.y, 45000).filter(o => o.tribe !== t && !isAllied(t, o.tribe) && !peaceHeld(W, t, o.tribe)).sort((a, b) => b.store + b.grain - a.store - a.grain)[0];
       pushEvent(W, { type: 'famine', key: W.week, title: `Hunger in the ${c.name} camp`, text: `The ${c.name} clan is going hungry — only ${Math.round(c.cond * 100)}% of what people need is being eaten. Children and the old will die first. What will ${h.name} do?`,
         data: { foe }, options: [
           foe ? { label: `Raid the ${foe.name} camp of the ${foe.tribe.name}`, hint: `${foe.people.length} people · take their food${foe.grain > 0 ? ' and grain' : ''} — and their enmity` } : null,
@@ -2709,7 +2806,7 @@
     const who = q === P.head ? `${q.name}, head of your house,` : `${q.name} (${Math.floor(q.age)}), ${relWord(q, P.head)},`;
     const hint = p => {
       const bits = [`${p.clan.name} clan · ${p.clan.people.length} people`];
-      if (p.clan.tribe !== q.clan.tribe) bits.push(`ties to the ${p.clan.tribe.name}${isAllied(q.clan.tribe, p.clan.tribe) ? ' (allies)' : opinion(q.clan.tribe, p.clan.tribe) < -15 ? ' (on bad terms)' : ''}`);
+      if (p.clan.tribe !== q.clan.tribe) bits.push(`ties to the ${p.clan.tribe.name}${isAllied(q.clan.tribe, p.clan.tribe) ? ` (${bondWord(W, q.clan.tribe, p.clan.tribe).replace(/^your /, '')})` : opinion(q.clan.tribe, p.clan.tribe) < -15 ? ' (on bad terms)' : ''}`);
       const g = p.clan.goods, rich = [g.amber ? `amber ×${g.amber}` : '', g.axe ? `axes ×${g.axe}` : '', g.salt ? `salt ×${g.salt}` : ''].filter(Boolean).join(', '); if (rich) bits.push(rich);
       { const ux = q.sex === 'M' ? uxorilocal(W, q, p, !!q.spouse) : uxorilocal(W, p, q, !!p.spouse), stays = p.clan === q.clan || (q.sex === 'M' ? !ux : ux); bits.unshift(stays ? `${p.sex === 'F' ? 'she' : 'he'} comes to live with your clan` : `${q.sex === 'F' ? 'she' : 'he'} GOES to live with the ${p.clan.name} clan`); }
       if (p.spouse) bits.push('would be a second wife');
@@ -2779,9 +2876,9 @@
           if (inside) { if (kf && h.fam) { const r = rel(kf, h.fam); r.grudge *= 0.25; r.op += 10; } P.renown += 1; houseNote(W, `${kf ? 'The house of ' + kf.name : 'The killer\'s house'}, of our own clan, made amends before the elders for the killing of ${ev.data.victim ? ev.data.victim.name : 'our kinsman'}; no goods left the clan.`); W.lastResult = { title: 'Amends are made', text: `${kf ? 'The house of ' + kf.name : 'The killer\'s house'} stands before the elders of the clan and makes amends. It is a matter between houses of one clan, so no goods pass out of it, and the quarrel between the houses is ended.` }; return; } for (const g of ['amber', 'axe', 'salt', 'flint']) if (byClan.goods[g] > 0 && !paid) { const n = Math.min(2, byClan.goods[g]); byClan.goods[g] -= n; c.goods[g] += n; paid = `${n} ${GOOD_NAMES[g].toLowerCase()}`; }
           if (!paid) { const f = byClan.store * 0.4 + byClan.grain * 0.2; byClan.store *= 0.6; byClan.grain *= 0.8; c.store += f; paid = 'food'; }
           if (opinion(byClan, c) < -30 && W.rand() < 0.35) { affect(W, c, byClan, -10, 'They refused to pay compensation', 10); houseNote(W, `The ${byClan.name} refused to pay for their killing.`); return; }
-          const r = rel(c, byClan); r.grudge *= 0.25; r.op += 8; r.hist.push({ w: W.week, t: `Paid ${paid} in compensation to the House of ${P.house}` });
+          const r = rel(c, byClan); r.grudge *= 0.25; r.op += 8; clearWrong(c, byClan); r.hist.push({ w: W.week, t: `Paid ${paid} in compensation to the House of ${P.house}` });
           P.renown += 2; houseNote(W, `The ${byClan.name} paid ${paid} in compensation.`);
-        } else { if (inside) { if (kf && h.fam) { const r = rel(kf, h.fam); r.grudge = 0; r.op += 6; } } else { const r = rel(c, byClan); r.grudge = 0; r.op += 12; } P.renown -= 3; houseNote(W, `The house forgave ${on} their killing.`); }
+        } else { if (inside) { if (kf && h.fam) { const r = rel(kf, h.fam); r.grudge = 0; r.op += 6; } } else { const r = rel(c, byClan); r.grudge = 0; r.op += 12; clearWrong(c, byClan); } P.renown -= 3; houseNote(W, `The house forgave ${on} their killing.`); }
         return;
       }
       case 'gathering': {
@@ -2851,7 +2948,7 @@
         if (k === 0) { const hungry = q.clan.cond < 0.9, tr = hungry ? null : GIFTABLE.find(g => c.goods[g] > 0); if (tr) { c.goods[tr]--; q.clan.goods[tr] = (q.clan.goods[tr] || 0) + 1; } else { const amt = Math.min(c.store, needsWeek(c) * 1.5); c.store -= amt; q.clan.store += amt; }
           affect(W, q.fam, h.fam, 30, `${h.name} helped us when we had nothing`); if (q.clan !== c) affect(W, q.clan, c, 8, `${h.name} helped ${q.name} in need`); P.renown += 2;
           houseNote(W, `${h.name} gave ${q.name} what ${q.sex === 'F' ? 'she' : 'he'} needed, and asked nothing for it.`); W.lastResult = { title: 'A debt of the heart', text: `${q.name} takes it without a word and grips your arm. ${q.sex === 'F' ? 'Her' : 'His'} house will stand with yours when the clans choose a leader, and ${q.sex === 'F' ? 'her' : 'his'} clan thinks better of yours (+8).` }; }
-        else { affect(W, q.fam, h.fam, -30, `${h.name} turned us away when we were in need`); houseNote(W, `${h.name} sent ${q.name} away empty-handed.`); W.lastResult = { title: 'He goes home empty-handed', text: `${q.name} nods, thanks you for the fire, and leaves. Something has gone out of the friendship (−30).` }; }
+        else { affect(W, q.fam, h.fam, -30, `${h.name} turned us away when we were in need`); houseNote(W, `${h.name} sent ${q.name} away empty-handed.`); W.lastResult = { title: `${q.sex === 'F' ? 'She' : 'He'} goes home empty-handed`, text: `${q.name} nods, thanks you for the fire, and leaves. Something has gone out of the friendship (−30).` }; }
         return;
       }
       case 'slight': {
@@ -2920,15 +3017,16 @@
       case 'rising': realmRiseAnswer(W, ev, k); return;
       case 'realminvite': realmInviteAnswer(W, ev, k); return;
       case 'pressed': realmPressedAnswer(W, ev, k); return;
+      case 'warcall': realmWarcallAnswer(W, ev, k); return;
       case 'war': {
         const { cf, target } = ev.data;
-        if (k === 0 && cf.alive && target.alive && !target.confed) { cf.wars.set(target.id, 0); realmWarAllies(W, cf, target); target.warLosses = 0; note(W, target, `${rulerWord(cf)} ${h.name} of ${cf.name} made war on us.`); logEvent(W, `⚔ ${rulerWord(cf)} ${h.name} of ${cf.name} goes to war to subjugate the ${target.name}.`, cf, 'blood'); houseNote(W, `${rulerWord(cf)} ${h.name} went to war against the ${target.name}.`); }
+        if (k === 0 && cf.alive && target.alive && !target.confed) { cf.wars.set(target.id, 0); warBegin(W, cf, target); realmWarAllies(W, cf, target); target.warLosses = 0; note(W, target, `${rulerWord(cf)} ${h.name} of ${cf.name} made war on us.`); logEvent(W, `⚔ ${rulerWord(cf)} ${h.name} of ${cf.name} goes to war to subjugate the ${target.name}.`, cf, 'blood'); houseNote(W, `${rulerWord(cf)} ${h.name} went to war against the ${target.name}.`); }
         return;
       }
       case 'vengeance': {
         const { c: av, o } = ev.data; if (!av.alive || !o.alive) return; const r = rel(av, o);
         if (k === 0) { const f = needsWeek(o) * 1.5; if (o.grain > f) o.grain -= f; else o.store = Math.max(0, o.store - f); av.store += f; let gave = ''; for (const g of GIFTABLE) if (o.goods[g] > 0) { o.goods[g]--; av.goods[g] = (av.goods[g] || 0) + 1; gave = GOOD_NAMES[g].toLowerCase(); break; }
-          const ok = W.rand() < 0.65 + (gave ? 0.2 : 0); if (ok) { r.grudge *= 0.25; r.op += 15; houseNote(W, `${h.name} paid compensation to the ${av.name} clan; the feud is settled.`); W.lastResult = { title: 'The feud is settled', text: `The ${av.name} accept food${gave ? ' and ' + gave : ''}. The blood debt is paid.` }; }
+          const ok = W.rand() < 0.65 + (gave ? 0.2 : 0); if (ok) { r.grudge *= 0.25; r.op += 15; clearWrong(av, o); houseNote(W, `${h.name} paid compensation to the ${av.name} clan; the feud is settled.`); W.lastResult = { title: 'The feud is settled', text: `The ${av.name} accept food${gave ? ' and ' + gave : ''}. The blood debt is paid.` }; }
           else { r.grudge *= 0.7; houseNote(W, `The ${av.name} took ${h.name}'s compensation, but some still want blood.`); W.lastResult = { title: 'Not enough', text: `The ${av.name} take the gifts, but their young men still want blood.` }; } }
         else if (k === 1) { o.guardUntil = W.week + 104; houseNote(W, `${h.name} posted guards around the ${o.name} camp.`); }
         return;
@@ -2974,7 +3072,7 @@
       }
       case 'raided': {
         const { att, def } = ev.data; if (!att.alive || !def.alive) return;
-        if (k === 0) { const n0 = def.people.length, a0 = att.people.length, f0 = foodDays(def); raidCore(W, att, att, def, 1.35, ev.data.attBonus); houseNote(W, `The ${att.name} raided us; ${h.name} stood and fought.`); P.renown += 1;
+        if (k === 0) { const n0 = def.people.length, a0 = att.people.length, f0 = foodDays(def); raidCore(W, att, att, def, CARD_DEF, ev.data.attBonus, !!ev.data.payback, ev.data.ratio); houseNote(W, `The ${att.name} raided us; ${h.name} stood and fought.`); P.renown += 1;
           { const lostN = Math.max(0, n0 - def.people.length), fell = Math.max(0, a0 - att.people.length), fd = Math.max(0, f0 - foodDays(def)); W.lastResult = { title: fd > 2 || lostN > fell ? 'They broke in' : 'They are driven off', text: `${fell} of theirs fell. ${lostN ? `${lostN} of ours ${lostN === 1 ? 'was' : 'were'} killed or carried off` : 'None of ours was lost'}${fd > 0 ? `, and they took about ${fd} day${fd === 1 ? '' : 's'} of food` : ''}. Renown +1.` }; } }
         else if (k === 1) { const f = def.store * 0.5 + def.grain * 0.3; def.store *= 0.5; def.grain *= 0.7; att.store += f; for (const g of ['amber', 'salt', 'axe', 'metal', 'bronze']) if (def.goods[g] > 0) { def.goods[g]--; att.goods[g]++; break; } affect(W, def, att, -6, 'Paid them off to avoid a raid'); P.renown -= 2; houseNote(W, `${h.name} paid off raiders of the ${att.name} clan.`); W.lastResult = { title: 'They take it and go', text: `Half the fresh food and a share of what is stored goes with them, and something of value if you had any. No one is hurt. Renown −2.` }; }
         else { def.store *= 0.2; def.grain *= 0.4; const save = def.settled; if (!save) relocate(W, def, 15000, 35000); affect(W, def, att, -10, 'Drove us from our camp', 5); P.renown -= 1; houseNote(W, `The ${def.name} fled before raiders of the ${att.name} clan.`); W.lastResult = { title: 'Into the woods', text: `The people scatter before the raiders come. No one is hurt, but most of the food is left behind for them${save ? '' : ', and the camp is pitched again elsewhere'}. Renown −1.` }; }
@@ -3021,7 +3119,7 @@
     castYear(W);
     const tt = titlesOf(h), cur = P.heads[P.heads.length - 1];
     for (const x of tt) if (!cur.titles.includes(x)) { cur.titles.push(x); houseNote(W, `${h.name} became ${x === 'king' ? rulerOf(h.clan.tribe.confed, h) : x === 'headman' ? `headman of the ${h.clan.tribe.name}` : `head of the ${h.clan.name} clan`}.`); }
-    P.renown += (tt.includes('king') ? 8 : tt.includes('headman') ? 3 : tt.includes('clan head') ? 1 : 0) + dynMembers(W).length * 0.05 + (h.clan.goods.amber * 0.1);
+    P.renown += (tt.includes('king') ? 8 : tt.includes('headman') ? 3 : tt.includes('clan head') ? 1 : 0) + Math.min(200, bloodCount(W).tribe) * 0.05 + (h.clan.goods.amber * 0.1);
   }
 
   // =====================================================================
@@ -3056,9 +3154,9 @@
   // young men of friendly clans in the tribe who'll follow a raid leader with standing
   function volunteers(c) { let n = 0; for (const o of c.tribe.clans) if (o !== c && opinion(o, c) > 5) n += Math.floor(myWarriors(o) * clamp(0.15 + opinion(o, c) / 150, 0, 0.5)); return n; }
   function raidTargets(W, c) {
-    return nearClans(W, c.x, c.y, 160000).filter(o => o.tribe !== c.tribe && knows(W, o.x, o.y) && !isAllied(c.tribe, o.tribe) && o.people.length > 3)
-      .map(o => ({ o, loot: o.store + o.grain + (o.goods.amber + o.goods.bronze + o.goods.metal) * 2e6, w: o.people.filter(q => q.sex === 'M' && !q.slave && q.age >= 16 && q.age < 55).length }))
-      .sort((a, b) => b.loot - a.loot).slice(0, 5);
+    return nearClans(W, c.x, c.y, 160000).filter(o => o.tribe !== c.tribe && knows(W, o.x, o.y) && !isAllied(c.tribe, o.tribe) && !peaceHeld(W, c.tribe, o.tribe) && o.people.length > 3)
+      .map(o => ({ o, wrongd: !!(c.wrong && c.wrong.c === o.id && W.week - c.wrong.w <= 52 * 6), loot: o.store + o.grain + (o.goods.amber + o.goods.bronze + o.goods.metal) * 2e6, w: o.people.filter(q => q.sex === 'M' && !q.slave && q.age >= 16 && q.age < 55).length }))
+      .sort((a, b) => (b.wrongd - a.wrongd) || (b.loot - a.loot)).slice(0, 5);
   }
   function clanChallengeOdds(W, c, h) { const ch = c.head, fams = familiesOf(c); let back = 0; for (const f of fams) if (h.fam && f !== h.fam) back += opinion(f, h.fam) - (ch.fam ? opinion(f, ch.fam) : 0); return clamp(0.4 + (prestige(h) - prestige(ch)) * 0.9 + back / Math.max(1, fams.length) / 100 + (ch.age > 60 ? 0.15 : 0), 0.1, 0.9) * ruleFactor(c); }
   const relWordT = o => o > 40 ? 'close friends' : o > 15 ? 'friendly' : o < -40 ? 'enemies' : o < -15 ? 'hostile' : 'neither friend nor foe';
@@ -3073,21 +3171,21 @@
     // raid
     { const tg = raidTargets(W, c), F = raidForces(W, c, h), ok = adult && F.length && tg.length && ready('raid', 3), wn = raidWhyNot(W, c, new Set(tg.map(x => x.o.tribe))), wnTxt = wn.map(x => `the ${x.o.name} (${x.km} km ${x.dir}): ${x.why}`).join('; ');
       A.push({ id: 'raid', icon: '⚔', label: 'Lead a raiding party', hint: `Take food, grain and valuables from another tribe — you can call ${F.map(f => f.n + ' ' + f.short).join(', ') || 'no one'}.${wnTxt ? ' Peoples you know of but cannot raid: ' + wnTxt + '.' : ''}`, forces: F, ok, why: !adult ? 'Your head is too young or too old to lead a raid' : !F.length ? 'Too few warriors will follow you' : !tg.length ? `No camps of strangers you know of within 160 km — explore to find some.${wnTxt ? ' Known peoples: ' + wnTxt + '.' : ''}` : !ready('raid', 3) ? `Your warriors need rest (${yl('raid', 3)})` : '',
-        targets: tg.map(({ o, w }) => ({ ref: o, label: `the ${o.name} ${o.settled ? 'village' : 'camp'} of the ${o.tribe.name}`, hint: `${F.length ? 'chance of winning ' + F.map(f => `about ${Math.round(raidChance(W, c, o, raidBonus(c, h, f)) * 100)}%${F.length > 1 ? ' with ' + f.n + ' ' + (f.id === 'clan' ? 'of the clan and volunteers' : f.short) : ' with ' + f.n}`).join(', ') + ' · ' : ''}${opinion(c.tribe, o.tribe) > 15 ? 'They count you as friends: a raid ends that · ' : ''}${o.people.length} people · ${w} fighting men${o.settled ? ' · stored grain' : ''}${o.goods.amber + o.goods.bronze + o.goods.metal ? ' · valuables' : ''} · ${o.tribe.stage === 3 ? 'farmers (weaker fighters)' : 'foragers'}${o.goods.bronze ? ' · bronze weapons!' : ''}${o.works && o.works.pal ? ' · behind a palisade!' : ''}${und(t, o.tribe) < 0.15 ? ' · speech unknown to us' : ''} · they think of you as ${opinion(o.tribe, t) > 15 ? 'friends' : opinion(o.tribe, t) < -15 ? 'enemies' : 'strangers'}` })) }); }
+        targets: tg.map(({ o, w, wrongd }) => ({ ref: o, label: `the ${o.name} ${o.settled ? 'village' : 'camp'} of the ${o.tribe.name}`, hint: `${wrongd ? 'They raided you in year ' + (Math.floor(c.wrong.w / 52) + 1) + ' · ' : ''}${F.length ? 'chance of winning ' + F.map(f => `about ${Math.round(raidChance(W, c, o, raidBonus(c, h, f)) * 100)}%${F.length > 1 ? ' with ' + f.n + ' ' + (f.id === 'clan' ? 'of the clan and volunteers' : f.short) : ' with ' + f.n}`).join(', ') + ' · you yourself may fall: ' + F.map(f => `about ${riskPct(raidHeadRisk(true, f.n))}% if you win, ${riskPct(raidHeadRisk(false, f.n))}% if you lose${F.length > 1 ? ' with ' + f.n : ''}`).join(', ') + ' · ' : ''}${opinion(c.tribe, o.tribe) > 15 ? 'They count you as friends: a raid ends that · ' : ''}${o.people.length} people · ${w} fighting men${o.settled ? ' · stored grain' : ''}${o.goods.amber + o.goods.bronze + o.goods.metal ? ' · valuables' : ''} · ${o.tribe.stage === 3 ? 'farmers (weaker fighters)' : 'foragers'}${o.goods.bronze ? ' · bronze weapons!' : ''}${o.works && o.works.pal ? ' · behind a palisade!' : ''}${und(t, o.tribe) < 0.15 ? ' · speech unknown to us' : ''} · they think of you as ${opinion(o.tribe, t) > 15 ? 'friends' : opinion(o.tribe, t) < -15 ? 'enemies' : 'strangers'}` })) }); }
     // migrate & found a new tribe
     { const head = c.head === h, fol = head ? c.people.length : houseFollowers(W, c, h).length, ok = adult && h.age >= 18 && fol >= 6 && ready('migrate', 4);
       A.push({ id: 'migrate', icon: '🧭', label: head ? 'Lead your clan to new lands' : 'Lead your household to new lands', hint: head ? (t.clans.length > 1 ? `Break from the ${t.name} and found a new tribe with ${h.name} as its headman` : 'Move your people to a new homeland') : `${fol} people of your house and its friends will follow ${h.name} to found a new clan and tribe`, ok, why: fol < 6 ? 'Too few would follow you' : !adult || h.age < 18 ? 'Your head is not of an age to lead' : !ready('migrate', 4) ? `Your people are still settling in (${yl('migrate', 4)})` : '',
         targets: ok ? [...destinations(W, c).map(d => ({ ref: d, label: `${d.label}: ${d.km} km ${d.dir}`, hint: d.desc })), { pick: { maxKm: 300 }, label: 'Choose a place on the map…', hint: 'Any land you know of within 300 km that your people can reach' }] : [] }); }
     // expeditions: explore the unknown, or fetch goods from a known source
-    { const able = h.alive && (adult || myW >= 2), rt = able && ready('explore', hasTrait(h, 'wanderer') ? 1.5 : 3) ? exploreRoutes(W, c) : [];
-      A.push({ id: 'explore', icon: '🗺', label: 'Lead an expedition into the unknown', hint: adult && h.sex === 'M' ? `${h.name} and young men scout far lands — map them, find resources, meet strangers` : 'Send young men to scout far lands', ok: able && rt.length > 0, why: !able ? 'No one fit to go' : !ready('explore', 3) ? `Your scouts need rest (${yl('explore', 3)})` : t.boats < 0.3 ? 'You know every land you can reach on foot — you need boats to go further' : 'You know every land you can reach',
-        targets: rt.map(r => ({ ref: r, label: `${r.dir[0].toUpperCase() + r.dir.slice(1)} — unknown land from ${r.km} km${r.across ? ', across the sea' : ''}`, hint: `${Math.round(r.unk * 100)}% unknown${r.unk < 0.15 ? ' — you know these lands' : ''}${r.sign ? ' · ' + r.sign : ''}` })) });
+    { const able = h.alive && (adult || myW >= 2), exN = hasTrait(h, 'wanderer') ? 1.5 : 3, rt = able && ready('explore', exN) ? exploreRoutes(W, c) : [];
+      A.push({ id: 'explore', icon: '🗺', label: 'Lead an expedition into the unknown', hint: (expLeader(h) ? `${h.name} and young men scout far lands — map them, find resources, meet strangers` : 'Send young men to scout far lands') + `. Up to four men go; each risks about ${riskPct(EXP_RISK)}% (${riskPct(EXP_RISK_SEA)}% across the sea, ${riskPct(EXP_RISK_FOE)}% if they meet enemies)${expLeader(h) ? `; the leader ${riskPct(EXP_RISK * LEADER_RISK)}% (${riskPct(EXP_RISK_SEA * LEADER_RISK)}% across the sea, ${riskPct(EXP_RISK_FOE * LEADER_RISK)}% against enemies)` : ''}.`, ok: able && rt.length > 0, why: !able ? 'No one fit to go' : !ready('explore', exN) ? `Your scouts need rest (${yl('explore', exN)})` : t.boats < 0.3 ? 'You know every land you can reach on foot — you need boats to go further' : 'You know every land you can reach',
+        targets: rt.map(r => r.signed ? ({ ref: r, label: `${capFirst(r.dir)} — follow the signs, ${walkWord(r.km * 1000)}${r.across ? ', across the sea' : ''}`, hint: r.sign }) : ({ ref: r, label: `${capFirst(r.dir)} — unknown land from ${r.km} km${r.across ? ', across the sea' : ''}`, hint: `${Math.round(r.unk * 100)}% unknown${r.unk < 0.15 ? ' — you know these lands' : ''}` })) });
       if (t.boats >= 0.3) { const vr = able && ready('voyage', 3) ? voyageRoutes(W, c) : [];
         A.push({ id: 'voyage', icon: '⛵', label: 'Lead a sea voyage', hint: t.boats >= 0.6 ? 'Seagoing canoes — chart far coasts and islands' : 'Dugouts — follow the coast to chart unknown shores', ok: able && vr.length > 0, why: !able ? 'No one fit to go' : !ready('voyage', 3) ? `The canoes need mending (${yl('voyage', 3)})` : 'No unknown shores within reach of our canoes from here',
           targets: vr.map(r => ({ ref: r, label: `${r.dir[0].toUpperCase() + r.dir.slice(1)}, ${r.km} km ${r.open ? 'over open sea' : 'along the coast'}`, hint: `${Math.round(r.unk * 100)}% unknown waters` })) }); }
       const et = able && ready('expedition', 2) ? expeditionTargets(W, c) : [];
       A.push({ id: 'expedition', icon: '🎒', label: 'Lead an expedition to gather goods', hint: 'Fetch flint, amber, salt, ochre, axe-stone or ore from a source you know', ok: able && et.length > 0, why: !able ? 'No one fit to go' : !ready('expedition', 2) ? `Too soon (${yl('expedition', 2)})` : 'You know of no sources within 260 km — explore first',
-        targets: et.map(e => ({ ref: e, label: `${DEPOSITS[e.d.type].icon} ${DEPOSITS[e.d.type].name}, ${e.km} km ${compass(e.d.x - c.x, e.d.y - c.y)}`, hint: `${e.d.note} · ${e.guard.length ? `in the land of the ${e.guard[0].tribe.name} (${opinion(e.guard[0].tribe, t) > 15 || isAllied(e.guard[0].tribe, t) ? 'friendly' : opinion(e.guard[0].tribe, t) < -15 ? 'hostile!' : 'wary'})` : 'no one lives there'}` })) }); }
+        targets: et.map(e => ({ ref: e, label: `${DEPOSITS[e.d.type].icon} ${DEPOSITS[e.d.type].name}, ${e.km} km ${compass(e.d.x - c.x, e.d.y - c.y)}`, hint: `${e.d.note} · ${e.guard.length ? `in the land of the ${e.guard[0].tribe.name} (${isAllied(t, e.guard[0].tribe) ? bondWord(W, t, e.guard[0].tribe) + ': they let you pass' : opinion(e.guard[0].tribe, t) > 15 ? 'friendly' : opinion(e.guard[0].tribe, t) < -15 ? 'hostile!' : 'wary'})` : 'no one lives there'}` })) }); }
     // pitch the camp where the head chooses; it stays there until moved again (or until the land cannot feed it)
     if (!c.settled && !c.toSettle) A.push({ id: 'movecamp', icon: '⛺', label: c.head === h || !c.head ? 'Move camp' : `Ask ${c.head.name} to move the camp`, hint: `Choose where your clan camps, up to 80 km away: beside the wild grain, a flint source, the shore. The camp stays there until it is moved again${c.head && c.head !== h ? `. ${c.head.name} leads the clan and may say no` : ''}`, ok: ready('movecamp', c.head === h ? 1 : 2),
       why: c.head === h ? 'The clan has only just pitched camp (1 yr)' : `You asked not long ago (${yl('movecamp', 2)})`, targets: [{ pick: { maxKm: 80 }, label: 'Choose the place on the map…', hint: 'Any land you know of within 80 km that your people can reach' }] });
@@ -3133,7 +3231,7 @@
     // claim a source for the household to work, season after season
     { const ct = adult || myW >= 2 ? claimTargets(W, c) : [], n = (P.claims || []).length;
       A.push({ id: 'claim', icon: '⛏', label: 'Claim a source for the house', hint: `Your household will work it every season — ${n ? `now working ${n}` : 'flint, axe-stone, amber, salt, ochre, ore'}`, ok: ct.length > 0 && n < 4, why: n >= 4 ? 'The house can work at most 4 sources' : 'You know of no unclaimed sources within 180 km — explore first',
-        targets: ct.map(e => ({ ref: e, label: `${DEPOSITS[e.d.type].icon} ${DEPOSITS[e.d.type].name}, ${e.km} km ${compass(e.d.x - c.x, e.d.y - c.y)}`, hint: `${e.d.note} · ${e.guard.length ? `in the land of the ${e.guard[0].tribe.name} (${isAllied(e.guard[0].tribe, t) || opinion(e.guard[0].tribe, t) > 15 ? 'friendly' : opinion(e.guard[0].tribe, t) < -15 ? 'hostile — expect trouble' : 'wary'})` : 'no one lives there'} · about ${CLAIM_YIELD[e.d.type] * 4} a year` })) }); }
+        targets: ct.map(e => ({ ref: e, label: `${DEPOSITS[e.d.type].icon} ${DEPOSITS[e.d.type].name}, ${e.km} km ${compass(e.d.x - c.x, e.d.y - c.y)}`, hint: `${e.d.note} · ${e.guard.length ? `in the land of the ${e.guard[0].tribe.name} (${isAllied(t, e.guard[0].tribe) ? bondWord(W, t, e.guard[0].tribe) + ': no trouble from them' : opinion(e.guard[0].tribe, t) > 15 ? 'friendly' : opinion(e.guard[0].tribe, t) < -15 ? 'hostile — expect trouble' : 'wary'})` : 'no one lives there'} · about ${CLAIM_YIELD[e.d.type] * 4} a year` })) }); }
     // build canoes
     { const ci = cellAt(c.x, c.y), water = c.coastal || W.seaDist[ci] <= 4 || W.acc[ci] > 400 || W.lake[ci];
       if (boatStage(t) < 2) A.push({ id: 'canoes', icon: '🛶', label: t.boats < 0.3 ? 'Build the first canoes' : 'Build seagoing canoes', hint: t.boats < 0.3 ? 'Hollow out great logs — fish further out, travel by water' : 'Hide-and-timber boats for the open sea, whales and crossings', ok: water && ready('canoes', 6), why: !water ? 'You camp far from the sea, a big river or a lake' : `Your boatbuilders are at work (${yl('canoes', 6)})` }); }
@@ -3155,7 +3253,7 @@
     // gifts
     { const g = GIFTABLE.reduce((s, x) => s + (c.goods[x] || 0), 0), others = W.tribes.filter(o => o !== t && knowsTribe(W, o) && o.clans.some(x => Math.hypot(x.x - c.x, x.y - c.y) < 200000)).sort((a, b) => opinion(t, a) - opinion(t, b)).slice(0, 5);
       A.push({ id: 'gifts', icon: '🎁', label: 'Send gifts to another tribe', hint: 'Spend valuables to win friends — a path to alliances', ok: (g > 0 || c.cond > 0.8) && others.length && ready('gifts', 2), why: !g && c.cond <= 0.8 ? 'Your clan has nothing to spare' : !others.length ? 'No other tribes nearby' : !ready('gifts', 2) ? `Too soon (${yl('gifts', 2)})` : '',
-        targets: others.map(o => ({ ref: o, label: `the ${o.name}`, hint: `${tribeSize(o)} people · now ${opinion(t, o) > 15 ? 'friendly' : opinion(t, o) < -15 ? 'hostile' : 'neutral'}${isAllied(t, o) ? ' · allies' : ''}` })) }); }
+        targets: others.map(o => ({ ref: o, label: `the ${o.name}`, hint: `${tribeSize(o)} people · now ${opinion(t, o) > 15 ? 'friendly' : opinion(t, o) < -15 ? 'hostile' : 'neutral'}${isAllied(t, o) ? ' · ' + bondWord(W, t, o).replace(/^your /, '') : ''}` })) }); }
     // feast
     { const fed = c.cond >= 0.85 || c.grain > needsWeek(c) * 4;
       A.push({ id: 'feast', icon: '🔥', label: 'Hold a great feast', hint: 'Spend your stores and a great hunt to win the hearts of the other clans', ok: t.clans.length > 1 && fed && c.store + c.grain >= needsWeek(c) * 3 && ready('feast', 5), why: t.clans.length < 2 ? 'There are no other clans to impress' : c.store + c.grain < needsWeek(c) * 3 ? 'You need three weeks of food in store for a feast' : !fed ? 'Your clan is too hungry to feast others' : !ready('feast', 5) ? `Too soon (${yl('feast', 5)})` : '' }); }
@@ -3183,8 +3281,11 @@
       A.push({ id: 'crown', icon: '👑', label: 'Unite the tribes', hint: 'Bind your allies into a confederacy, with you as high chief', ok: b && b.total >= b.need && f.length >= 2, why: !b ? '' : b.total < b.need ? `Your bid is ${b.total.toFixed(1)} of ${b.need.toFixed(1)}: renown, warriors, allies and gifts given all raise it` : b.allies.length >= 2 ? 'Two allied peoples must be free to follow you, and some of your allies already follow another ruler' : 'You need at least 2 allied tribes', data: f }); }
     // war (king)
     if (t.confed && t.confed.king === h) { const cf = t.confed, L = realmWarList(W, cf), reasons = L.no.slice(0, 6).map(x => `the ${x.o.name} (${x.why})`);
-      A.push({ id: 'war', icon: '🏹', label: 'Make war on a tribe', hint: `Force a people you know of to submit and pay tribute. The nearest are listed first.${reasons.length ? ' Not open to war: ' + reasons.join('; ') + '.' : ''}`, ok: L.ok.length > 0 && !cf.wars.size, why: cf.wars.size ? 'You are already at war' : !L.ok.length ? `No people you know of lies within reach${reasons.length ? ': ' + reasons.slice(0, 3).join('; ') : ''}` : '',
+      A.push({ id: 'war', icon: '🏹', label: 'Make war on a tribe', hint: `Force a people you know of to submit and pay tribute. The nearest are listed first. One battle a year. They submit after two victories, or at once after a crushing one (the host over ${WAR_CRUSH} times as strong on the day). After a defeat the host may go home (${Math.round(WAR_QUIT * 100)} in 100; always after the third battle). The chances change with the numbers.${reasons.length ? ' Not open to war: ' + reasons.join('; ') + '.' : ''}`, ok: L.ok.length > 0 && !cf.wars.size, why: cf.wars.size ? 'You are already at war' : !L.ok.length ? `No people you know of lies within reach${reasons.length ? ': ' + reasons.slice(0, 3).join('; ') : ''}` : '',
         targets: L.ok.slice(0, 6).map(x => ({ ref: x.o, label: `the ${x.o.name}, ${x.km} km`, hint: x.hint })) }); }
+    if (t.confed && t.confed.king === h && t.confed.wars.size) { const cf = t.confed, ws = [...cf.wars.keys()].map(id => W.ents.get(id)).filter(Boolean);
+      A.push({ id: 'endwar', icon: '🕊', label: ws.length === 1 ? `Call off the war on the ${ws[0].name}` : 'Call off a war', hint: `Bring the host home. You lose 3 renown; the people you were fighting are glad of it and think a little better of the ${cf.capital.name}.`, ok: ws.length > 0, why: ws.length ? '' : 'The war is over already',
+        targets: ws.map(o => ({ ref: o, label: `the ${o.name}`, hint: warText(cf, o.id) })) }); }
     realmMemberDeeds(W, A, h, t);
     realmDeeds(W, A, h, t);
     // settle
@@ -3243,7 +3344,7 @@
       }
       const nCap = (R0.captives || []).length, freed = (R0.captives || []).filter(q => !q.slave), slaves = (R0.captives || []).filter(q => q.slave), lost = b4.mine - (c.people.length - nCap), killed = b4.theirs - o.people.length - nCap, gained = R0.win ? 1 : 0, tre = c.goods.amber + c.goods.bronze + c.goods.metal + c.goods.axe + c.goods.flint - b4.gd;
       let headFell = false;
-      if (h.alive && W.rand() < (gained > 0 ? 0.04 : 0.15) / Math.sqrt(Math.max(1, F.n / 8))) { die(W, c, h, `killed leading a raid on the ${o.name}`); c.people = c.people.filter(q => q.alive); headFell = true; }
+      if (h.alive && W.rand() < raidHeadRisk(gained > 0, F.n)) { die(W, c, h, `killed leading a raid on the ${o.name}`); c.people = c.people.filter(q => q.alive); headFell = true; }
       P.renown += gained > 0 ? 3 + killed : -1;
       houseNote(W, `${h.name} led a raid on the ${o.name} of the ${o.tribe.name}: ${killed} of theirs fell, ${lost + (headFell ? 1 : 0)} of ours${headFell ? `, and ${h.name} ${h.sex === 'F' ? 'herself' : 'himself'} was slain` : ''}${gained > 0 ? '; we came home with plunder' : '; we came home empty-handed'}.`);
       return { title: gained > 0 ? 'The raid succeeds' : 'The raid fails', text: `${F.n} warriors (${F.mix || F.label.replace(/^Call up /, '')}) struck the ${o.name} ${o.settled ? 'village' : 'camp'}. ${killed} of theirs fell and ${lost + (headFell ? 1 : 0)} of ours.${gained > 0 ? ` You carried off ${(d => d >= 1 ? d + (d === 1 ? ' day' : ' days') + ' of food' : 'a little food')(Math.round((c.store + c.grain - b4.store) / Math.max(1, needsWeek(c) / 7)))}${tre > 0 ? ` and ${tre} valuable thing${tre > 1 ? 's' : ''}` : ''}${o.settled ? ' and grain from their stores' : ''}.` : ' They drove you off.'}${slaves.length ? ` <b>${slaves.length} captive${slaves.length > 1 ? 's' : ''}</b> (${slaves.map(q => `${q.name}, ${Math.floor(q.age)}`).join('; ')}) now belong${slaves.length > 1 ? '' : 's'} to ${h.name}.` : ''}${freed.length ? ` <b>${freed.map(q => q.name).join(' and ')}</b>, of the blood of your house, ${freed.length > 1 ? 'were' : 'was'} among the captives and came home free, not as ${freed.length > 1 ? 'slaves' : 'a slave'}.` : ''} The chance of winning was about ${odds}%.${headFell ? ` <b>${h.name} was killed in the fighting.</b>` : ''} The ${o.tribe.name} will not forget this.` };
@@ -3284,12 +3385,12 @@
         formAlliance(W, t, o); P.renown += 6; houseNote(W, `${h.name} made an alliance with the ${o.name}.`); return { title: 'An alliance is sworn', text: `Oaths are spoken over a fire and a shared meal. The ${t.name} and the ${o.name} are allies: neither raids the other, each may call on the other in war, and allied peoples can be united under one high chief.` }; }
       if (id === 'pact') { if (!yes) { houseNote(W, `The ${o.name} would not agree a trade pact.`); return { title: 'No pact', text: `The ${o.name} see no gain in it for now. Goodwill, and a little of each other's speech, would help.` }; }
         r.pact = W.week + 52 * 20; const way = pactSign(W, t, o, r); affect(W, o, t, 8, 'A trade pact agreed'); P.renown += 3; houseNote(W, `${h.name} agreed a trade pact with the ${o.name}.${way}`); note(W, t, `A trade pact was agreed with the ${o.name}.${way}`); note(W, o, `A trade pact was agreed with the ${t.name}.${way}`); logEvent(W, `The ${t.name} and the ${o.name} agree a trade pact for twenty years.${way}`, t, 'gather'); return { title: 'A trade pact', text: `For twenty years the clans of the ${t.name} and the ${o.name} will meet each summer to trade. Expect goods you lack to arrive, goodwill to grow year by year, and both peoples to pick up the other's speech.${way}` }; }
-      if (id === 'tribute') { if (!yes) { affect(W, o, t, -22, 'They demanded tribute of us', 15); houseNote(W, `The ${o.name} refused us tribute.`); return { title: 'They refuse', text: `The ${o.name} send your envoy back with an insult. They will not pay, and they will not forget that you asked (goodwill −22).` }; }
+      if (id === 'tribute') { if (!yes) { const pk = peaceHeld(W, t, o); affect(W, o, t, pk ? -4 : -22, 'They demanded tribute of us', pk ? 0 : 15); houseNote(W, `The ${o.name} refused us tribute.`); return { title: 'They refuse', text: pk ? `The ${o.name} send your envoy back with cold words. The peace between you holds, but they think less of you (goodwill −4).` : `The ${o.name} send your envoy back with an insult. They will not pay, and they will not forget that you asked (goodwill −22).` }; }
         r.tribute = { to: t.id, until: W.week + 52 * 10 }; affect(W, o, t, -28, 'Forced to pay tribute', 10); P.renown += 8; houseNote(W, `The ${o.name} agreed to pay us tribute.`); return { title: 'Tribute', text: `The ${o.name} will send food and valuables to ${t.headman && t.headman.clan ? 'the ' + t.headman.clan.name + ' clan' : 'your leader'} each year for ten years. They hate you for it (goodwill −28), and will stop the moment they are strong enough.` }; }
       const tr = GIFTABLE.find(g => c.goods[g] > 0); if (tr) c.goods[tr]--; else eatStore(c, needsWeek(c));
       if (!yes) { houseNote(W, `The ${o.name} would not make peace.`); return { title: 'No peace', text: `The ${o.name} keep the gift and their anger. The dead on both sides are too fresh.` }; }
-      t.atWar.delete(o.id); o.atWar.delete(t.id); r.grudge = 0; if (r.op < -8) r.op = -8; P.renown += 4; houseNote(W, `${h.name} made peace with the ${o.name}.`); logEvent(W, `Peace: ${h.name} of the ${t.name} and the ${o.name} lay down the old quarrel.`, t, 'gather');
-      return { title: 'Peace', text: `Gifts are exchanged and the dead are named aloud one last time. The war and the old grudges between the ${t.name} and the ${o.name} are laid down. They are wary still, but no longer enemies.` };
+      t.atWar.delete(o.id); o.atWar.delete(t.id); r.grudge = 0; if (r.op < -8) r.op = -8; r.peaceUntil = W.week + 10 * 52; r.peaceFrom = W.week; r.peaceBy = 'player'; P.renown += 4; houseNote(W, `${h.name} made peace with the ${o.name}.`); logEvent(W, `Peace: ${h.name} of the ${t.name} and the ${o.name} lay down the old quarrel.`, t, 'gather');
+      return { title: 'Peace', text: `Gifts are exchanged and the dead are named aloud one last time. The war and the old grudges between the ${t.name} and the ${o.name} are laid down. They are wary still, but no longer enemies. For ten years neither side will raid the other.` };
     }
     if (id === 'build') {
       const kk = A.targets[k] && A.targets[k].ref; if (!kk) return null; const D = WORKS[kk];
@@ -3404,7 +3505,9 @@
     if (id === 'challenge') { const ev = { type: 'challenge', data: { tribe: t, rival: t.headman }, options: [] }; W.pending.push(ev); W.lastResult = null; resolve(W, ev, 0); const R = W.lastResult; W.lastResult = null; return R || { title: 'Nothing came of it', text: '' }; }
     if (id === 'crown') { const f = A.data; newConfed(W, t, h, f); P.renown += 15; houseNote(W, `${h.name} united ${[t, ...f].map(o => 'the ' + o.name).join(', ')} and was raised as high chief.`); return { title: 'The tribes are united', text: `${h.name} is raised as high chief of ${t.confed.name}. At first the tribes follow you and not the seat, so the confederacy would end with you. After five years you can try to bind them to the seat.` }; }
     if (id === 'bindseat' || id === 'bloodseat' || id === 'kingdom' || id === 'leaverealm') return realmDeed(W, id, h, t, A);
-    if (id === 'war') { const o = A.targets[k] && A.targets[k].ref; if (!o) return null; const cf = t.confed; if (!realmWarList(W, cf).ok.some(x => x.o === o)) return { title: 'No war', text: `The host cannot march on the ${o.name} now.` }; cf.wars.set(o.id, 0); o.warLosses = 0; realmWarAllies(W, cf, o); logEvent(W, `⚔ ${rulerWord(cf)} ${h.name} of ${cf.name} goes to war to subjugate the ${o.name}.`, cf, 'blood'); houseNote(W, `${rulerWord(cf)} ${h.name} went to war against the ${o.name}.`); return { title: 'War', text: `${h.name}'s warriors march against the ${o.name}. Battles will be fought each year until they submit — or you give up.` }; }
+    if (id === 'endwar') { const o = A.targets[k] && A.targets[k].ref, cf = t.confed; if (!o || !cf || !cf.wars.has(o.id)) return null; warOver(W, cf, o.id); P.renown -= 3; affect(W, o, cf.capital, 5, `The ${rulerWord(cf).toLowerCase()} called off the war`);
+      const tx = `${rulerWord(cf)} ${h.name} called off the war on the ${o.name}.`; logEvent(W, tx, cf, 'king'); note(W, cf, tx); note(W, o, tx); houseNote(W, tx); return { title: 'The war is called off', text: `${tx} The host goes home. The ${o.name} are glad of it; our house loses 3 renown.` }; }
+    if (id === 'war') { const o = A.targets[k] && A.targets[k].ref; if (!o) return null; const cf = t.confed; if (!realmWarList(W, cf).ok.some(x => x.o === o)) return { title: 'No war', text: `The host cannot march on the ${o.name} now.` }; cf.wars.set(o.id, 0); o.warLosses = 0; warBegin(W, cf, o); realmWarAllies(W, cf, o); logEvent(W, `⚔ ${rulerWord(cf)} ${h.name} of ${cf.name} goes to war to subjugate the ${o.name}.`, cf, 'blood'); houseNote(W, `${rulerWord(cf)} ${h.name} went to war against the ${o.name}.`); return { title: 'War', text: `${h.name}'s warriors march against the ${o.name}. Battles will be fought each year until they submit — or you give up.` }; }
     if (id === 'settle') {
       if (t.stage >= 2) { c.live = 'farm'; settleClan(W, c); if (place) { c.tx = place.x; c.ty = place.y; } c.holdUntil = 0; t.dom = Math.min(0.6, t.dom + 0.05);
         const km = Math.round(Math.hypot(c.tx - c.x, c.ty - c.y) / 1000); P.renown += 2; houseNote(W, `${h.name} led the ${c.name} clan to build a permanent village.`);
@@ -3456,8 +3559,8 @@
     }
     // a weakened enemy nearby
     if (r > 0.994 && W.week - (P.lastOpp || -1e9) > yrs(6)) {
-      const weak = nearClans(W, c.x, c.y, 60000).find(o => o.tribe !== t && !sameConfed(t, o.tribe) && opinion(t, o.tribe) < -15 && (o.cond < 0.75 || o.people.length < 15));
-      if (weak) { P.lastOpp = W.week; pushEvent(W, { type: 'opportunity', key: weak.id, title: 'An enemy laid low', text: `Word comes that the ${weak.name} ${weak.settled ? 'village' : 'camp'} of the ${weak.tribe.name} — no friends of yours — is ${weak.cond < 0.75 ? 'starving' : 'down to a handful of people'}. Their stores and valuables are poorly guarded.`, data: { weak }, options: [{ label: 'Strike now', hint: 'Lead a raid while they are weak' }, { label: 'Send them food', hint: 'Turn an enemy into a friend' }, { label: 'Leave them be' }] }); return; }
+      const weak = nearClans(W, c.x, c.y, 60000).find(o => o.tribe !== t && !sameConfed(t, o.tribe) && !peaceHeld(W, t, o.tribe) && opinion(t, o.tribe) < -15 && (o.cond < 0.75 || o.people.length < 15));
+      if (weak) { P.lastOpp = W.week; pushEvent(W, { type: 'opportunity', key: weak.id, title: 'An enemy laid low', text: `Word comes that the ${weak.name} ${weak.settled ? 'village' : 'camp'} of the ${weak.tribe.name} — no friends of yours — is ${weak.cond < 0.75 ? 'starving' : 'down to a handful of people'}. Their stores and valuables are poorly guarded.`, data: { weak }, options: [{ label: 'Strike now', hint: `Lead a raid while they are weak: about ${Math.round(raidChance(W, c, weak, 1.5) * 100)}% to win` }, { label: 'Send them food', hint: 'Turn an enemy into a friend' }, { label: 'Leave them be' }] }); return; }
     }
     // sickness
     if (r > 0.4 && r < 0.4 + (c.settled ? 0.004 : 0.0015) && c.people.length > 15) {
@@ -3496,7 +3599,7 @@
     for (const c of t.clans) {
       reveal(W, c.x, c.y, 22000);
       // hunters, foragers and wanderers range further every season: the known world creeps outward
-      if (W.rand() < 0.35 + Math.min(0.4, c.people.length / 100)) { const a = W.rand() * 6.283, r = 25000 + W.rand() * 30000, x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r; if (x > 0 && y > 0 && x < WORLD && y < WORLD && W.land[cellAt(x, y)]) reveal(W, x, y, 9000 + W.rand() * 6000); }
+      if (W.rand() < 0.35 + Math.min(0.4, c.people.length / 100)) { const a = W.rand() * 6.283, r = 25000 + W.rand() * 60000, x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r; if (x > 0 && y > 0 && x < WORLD && y < WORLD && W.land[cellAt(x, y)]) reveal(W, x, y, 9000 + W.rand() * 6000); }
       // strangers seen near our camps
       for (const o of nearClans(W, c.x, c.y, 40000)) if (o.tribe !== t) reveal(W, o.x, o.y, 9000);
     }
@@ -3555,6 +3658,36 @@
       else notice(W, `The ${t.name} submit`, `The ${t.name} bow to ${K.name}, ${rulerOf(cf, K)}, and must pay tribute.`);
     }
   }
+  // signs of peoples beyond the fog, found by our own hunters: yearly, for the player's tribe only (the world's peoples have no fog of war)
+  function addSign(P, s) { P.signs = [s].concat((P.signs || []).filter(q => q.t !== s.t)).slice(0, 8); }
+  function keptSigns(W) { const P = W.player; if (!P || !P.signs) return []; return P.signs.filter(s => { const o = W.tribes.find(x => x.id === s.t); return o && o.clans.length && !knowsTribe(W, o); }); }
+  // signs shown to the player: not older than ten years (an old one is kept only so the same news is not told again)
+  function liveSigns(W) { return keptSigns(W).filter(s => W.week - s.w < 520); }
+  // is there already a sign for this people from the last ten years, or any sign that says the same (direction and days)?
+  const signTold = (W, P, o, d, dir) => (P.signs || []).some(s => s.t === o.id && (W.week - s.w < 520 || (s.dir === dir && daysWalk(s.km * 1000) === daysWalk(d))));
+  function signsYear(W) {
+    const P = W.player; if (!P || P.over || !P.known || !P.head.alive || !P.head.clan) return;
+    const mine = P.head.clan.tribe; if (P.signs) P.signs = keptSigns(W);
+    const best = new Map(); // tribe -> nearest hidden camp to our own clan (the one the explore route measures from)
+    { const c = P.head.clan; for (const o of signCamps(W, c)) { const d = Math.hypot(o.x - c.x, o.y - c.y), b = best.get(o.tribe); if (!b || d < b.d) best.set(o.tribe, { d, c, o }); } }
+    const list = [...best.entries()].filter(([o, b]) => !knowsTribe(W, o) && !signTold(W, P, o, b.d, compass(b.o.x - b.c.x, b.o.y - b.c.y))).sort((a, b) => a[1].d - b[1].d);
+    for (const [o, b] of list) {
+      const p = b.d < 80000 ? 0.5 : b.d < 180000 ? 0.3 : 0.15;
+      if (W.rand() < p) { const dir = compass(b.o.x - b.c.x, b.o.y - b.c.y); addSign(P, { t: o.id, dir, km: Math.round(b.d / 1000), w: W.week, kind: 'track' });
+        houseNote(W, `Hunters of the ${b.c.name} clan came on a sign: ${signSentence(b.d, dir)}. Someone lives there.`); break; }
+    }
+  }
+  // a trader of ours reaches a village: the hosts tell of peoples they have dealings with that we do not know
+  function traderTale(W, r) {
+    const P = W.player; if (!P || P.over || !P.known || !P.head.clan || r.home.tribe !== P.head.clan.tribe) return;
+    const mine = P.head.clan.tribe; let best = null;
+    for (const id of r.to.tribe.rel.keys()) { const o = W.tribes.find(x => x.id === id); if (!o || o === mine || !o.clans.length || knowsTribe(W, o)) continue;
+      for (const oc of o.clans) { const c = P.head.clan, d = Math.hypot(oc.x - c.x, oc.y - c.y); if (d <= SIGN_R && (!best || d < best.d) && !signTold(W, P, o, d, compass(oc.x - c.x, oc.y - c.y))) best = { d, o, c, oc }; } }
+    if (!best) return;
+    const dir = compass(best.oc.x - best.c.x, best.oc.y - best.c.y);
+    addSign(P, { t: best.o.id, dir, km: Math.round(best.d / 1000), w: W.week, kind: 'tale', name: best.o.name });
+    houseNote(W, `At ${r.to.village || r.to.name} our trader heard tell of the ${best.o.name}, who live to the ${dir}, ${walkWord(best.d)}.`);
+  }
   function fogYear(W) {
     const P = W.player; if (!P || P.over || !P.known || !P.head.alive || !P.head.clan) return;
     const t = P.head.clan.tribe;
@@ -3573,15 +3706,24 @@
 
   // ---- expeditions ----
   const EXP_GOODS = { flint: 4, axe: 2, amber: 3, ochre: 3, salt: 3, copper: 3, tin: 2, clay: 4 };
-  // ---- word of peoples beyond the fog: only a hint, and only when a people really lives within about 150 km that way ----
-  // the camps of other peoples that lie on land the house has not seen, within 150 km of the clan's camp
-  function hiddenCamps(W, c) { return nearClans(W, c.x, c.y, 150000).filter(o => o.tribe !== c.tribe && o.people.length > 3 && !knows(W, o.x, o.y)); }
-  // what an explorer sees of them: smoke from the nearer camps, the tracks and old hearths of the further ones; never a name, never a distance
-  function signWord(d, dir) { return d < 80000 ? `The smoke of camps was seen far to the ${dir}` : `The tracks and old hearths of strangers lead ${dir}`; }
-  function routeSign(W, c, r, hid) { // is there a people beyond the fog on the way this route heads?
-    let best = null; for (const o of hid) if (compass(o.x - c.x, o.y - c.y) === r.dir) { const d = Math.hypot(o.x - c.x, o.y - c.y); if (!best || d < best) best = d; }
-    return best == null ? '' : signWord(best, r.dir);
-  }
+  // ---- word of peoples beyond the fog: signs reach as far as an expedition can walk (SIGN_R), and say how far ----
+  const SIGN_R = 340000, SIGN_NEAR = 150000, DAY_M = 25000; // a party walks about 25 km a day; one helper turns metres into days
+  const daysWalk = d => Math.max(1, Math.round(d / DAY_M));
+  const walkWord = d => { const n = daysWalk(d); return n === 1 ? "a day's walk" : `some ${n} days' walk`; };
+  // expedition danger per man: on land, across the sea, and if they meet a hostile people; the leader risks LEADER_RISK of that
+  const EXP_RISK = 0.03, EXP_RISK_SEA = 0.06, EXP_RISK_FOE = 0.18, LEADER_RISK = 0.6;
+  const expLeader = h => h.age >= 16 && h.age < 58 && h.sex === 'M'; // the head goes and risks his own life only in these years
+  const riskPct = v => Math.round(v * 1000) / 10;
+  // the chance that the head who leads a raid falls: shown in the choice, rolled in the deed
+  const raidHeadRisk = (won, n) => (won ? 0.04 : 0.15) / Math.sqrt(Math.max(1, n / 8));
+  // the camps of other peoples that lie on land the house has not seen, within SIGN_R of the clan's camp
+  // hidden camps of peoples we do not know that a party could really walk to: what signs and sign routes are about
+  const signCamps = (W, c) => hiddenCamps(W, c).filter(o => !knowsTribe(W, o.tribe) && W.land[cellAt(o.x, o.y)] && !W.lake[cellAt(o.x, o.y)] && canReach(W, c, o.x, o.y));
+  function hiddenCamps(W, c) { return nearClans(W, c.x, c.y, SIGN_R).filter(o => o.tribe !== c.tribe && o.people.length > 3 && !knows(W, o.x, o.y)); }
+  // what an explorer finds of them, by true distance: smoke of near camps, tracks of the middle ones, worked flint of the far ones
+  function signText(d, dir) { return d < 80000 ? `the smoke of camps was seen far to the ${dir}` : d < 180000 ? `tracks and old hearths of strangers lead ${dir}` : `worked flint of a strange make was found; it came from the ${dir}, from far off`; }
+  const signSentence = (d, dir) => `${signText(d, dir)}, ${walkWord(d)}`;
+  const capFirst = x => x[0].toUpperCase() + x.slice(1);
   // after a journey: camps of other peoples within 70 km of the path or its end, not met, that the party would have seen the smoke of
   function smokeSeen(W, c, pts, ex, ey) {
     const seen = []; for (const o of W.clans) { if (o.tribe === c.tribe || !o.people.length || knows(W, o.x, o.y)) continue; if (pts.every(([px, py]) => Math.hypot(o.x - px, o.y - py) > 25000) && pts.some(([px, py]) => Math.hypot(o.x - px, o.y - py) <= 70000) && Math.hypot(o.x - c.x, o.y - c.y) <= 190000) seen.push(o); }
@@ -3609,8 +3751,25 @@
       const across = W.comp[cellAt(b.x, b.y)] !== W.comp[cellAt(c.x, c.y)];
       out.push({ pts, x: ex, y: ey, dir: compass(ux, uy), km: Math.round(b.d / 1000), unk: unk / Math.max(1, tot), across });
     }
-    { const hid = hiddenCamps(W, c); for (const r of out) r.sign = routeSign(W, c, r, hid); }
-    return out.filter(r => r.unk > 0.06).sort((p, q) => (q.sign ? 1 : 0) - (p.sign ? 1 : 0) || q.unk - p.unk).slice(0, 4);
+    // routes aimed straight at a hidden camp: the nearest in each of the eight sectors, nearest first, come before the unknown-land routes
+    const sr = [], nearest = new Array(8).fill(null);
+    // a party follows signs to camps near enough to see them by (within SIGN_NEAR), or to peoples our hunters or traders have already come on signs of
+    const known = new Set(liveSigns(W).map(s => s.t));
+    const nearT = new Map(); // people -> its nearest camp, so one people makes one route
+    for (const o of signCamps(W, c)) { const d = Math.hypot(o.x - c.x, o.y - c.y), b = nearT.get(o.tribe); if (d > 0 && (!b || d < b.d)) nearT.set(o.tribe, { o, d }); }
+    for (const { o } of nearT.values()) { const dx = o.x - c.x, dy = o.y - c.y, d = Math.hypot(dx, dy), sec = ((Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) % 8) + 8) % 8; if (d > SIGN_NEAR && !known.has(o.tribe.id)) continue; if (d > 0 && (!nearest[sec] || nearest[sec].d > d)) nearest[sec] = { o, d, dx, dy }; }
+    for (let sec = 0; sec < 8; sec++) { const n = nearest[sec]; if (!n) continue;
+      const ci = cellAt(n.o.x, n.o.y); if (!W.land[ci] || W.lake[ci] || !canReach(W, c, n.o.x, n.o.y)) continue;
+      const across = W.comp[ci] !== W.comp[cellAt(c.x, c.y)], L = Math.min(n.d + 30000, 340000), ux = n.dx / n.d, uy = n.dy / n.d, pts = [];
+      let ex = n.o.x, ey = n.o.y, ok = true;
+      for (let d = 10000; d <= L; d += 10000) { const px = clamp(c.x + ux * d, 2000, WORLD - 2000), py = clamp(c.y + uy * d, 2000, WORLD - 2000); pts.push([px, py]); const ok2 = W.land[cellAt(px, py)]; if (!ok2 && d <= n.d + 5000 && !across) ok = false; if (ok2) { ex = px; ey = py; } }
+      if (!ok) continue;
+      let unk = 0, tot = 0; for (const [px, py] of pts) for (let s2 = 0; s2 < 6; s2++) { const qx = px + Math.cos(s2) * 15000, qy = py + Math.sin(s2) * 15000; if (!W.land[cellAt(qx, qy)]) continue; tot++; if (!knows(W, qx, qy)) unk++; }
+      sr.push({ pts, x: ex, y: ey, dir: compass(ux, uy), km: Math.round(n.d / 1000), unk: unk / Math.max(1, tot), across, signed: true, d: n.d, sign: capFirst(signSentence(n.d, compass(ux, uy))) });
+    }
+    sr.sort((p, q) => p.d - q.d);
+    const taken = new Set(sr.map(r => r.dir));
+    return sr.slice(0, 4).concat(out.filter(r => r.unk > 0.06 && !taken.has(r.dir)).sort((p, q) => q.unk - p.unk)).slice(0, 4);
   }
   function expeditionTargets(W, c) {
     return W.deposits.filter(d => EXP_GOODS[d.type] && knows(W, d.x, d.y) && Math.hypot(d.x - c.x, d.y - c.y) < 260000 && canReach(W, c, d.x, d.y))
@@ -3622,29 +3781,30 @@
     let lost = 0, headFell = false;
     const men = c.people.filter(q => q.sex === 'M' && !q.slave && q.age >= 16 && q.age < 45 && q !== h);
     for (const q of men.slice(0, 4)) if (W.rand() < risk) { die(W, c, q, others ? `killed by the ${others.name} on an expedition` : 'lost on an expedition'); lost++; }
-    if (leader && h.alive && W.rand() < risk * 0.6) { die(W, c, h, others ? `killed by the ${others.name} on an expedition` : 'lost on an expedition'); headFell = true; }
+    if (leader && h.alive && W.rand() < risk * LEADER_RISK) { die(W, c, h, others ? `killed by the ${others.name} on an expedition` : 'lost on an expedition'); headFell = true; }
     c.people = c.people.filter(q => q.alive);
     return { lost, headFell };
   }
   function doExplore(W, c, h, route) {
-    const P = W.player, leader = h.age >= 16 && h.age < 58 && h.sex === 'M', before = new Set(W.deposits.filter(d => knows(W, d.x, d.y)));
+    const P = W.player, leader = expLeader(h), before = new Set(W.deposits.filter(d => knows(W, d.x, d.y)));
     let n = 0; for (const [px, py] of route.pts) n += reveal(W, px, py, 25000);
     wear(W, c.x, c.y, route.x, route.y, 0.4);
     const found = W.deposits.filter(d => !before.has(d) && knows(W, d.x, d.y));
     const met = W.tribes.filter(o => o !== c.tribe && o.clans.some(oc => route.pts.some(([px, py]) => Math.hypot(oc.x - px, oc.y - py) < 25000)));
     let hostile = null;
     for (const o of met) { const r = c.tribe.rel.get(o.id); if (!r) { affect(W, c.tribe, o, 4, `First met on an expedition led by ${h.name}`); affect(W, o, c.tribe, W.rand() < 0.7 ? 3 : -8, 'Strangers came through our land'); } if (opinion(o, c.tribe) < -15 && !hostile) hostile = o; }
-    const R = expeditionRisk(W, c, h, leader, hostile, hostile ? 0.18 : route.across ? 0.06 : 0.03);
+    const R = expeditionRisk(W, c, h, leader, hostile, hostile ? EXP_RISK_FOE : route.across ? EXP_RISK_SEA : EXP_RISK);
     for (const d of found) { if (EXP_GOODS[d.type] || d.type === 'grain') c.tribe.seen.add(d.type); }
     P.renown += 1 + found.length;
     const who = leader ? h.name : `Young men sent by ${h.name}`;
     const txt = `${who} ${leader ? 'leads an' : 'go on an'} expedition ${route.km} km ${route.dir}${route.across ? ', across the sea' : ''}, mapping some ${Math.round(n * CELL * CELL / 1e6).toLocaleString()} km² of new land.`;
     houseNote(W, txt + (found.length ? ` Found: ${[...new Set(found.map(d => DEPOSITS[d.type].name.toLowerCase()))].join(', ')}.` : ''));
     for (const d of found) logEvent(W, `🧭 The ${c.tribe.name} learn of ${DEPOSITS[d.type].name.toLowerCase()} — ${d.note}.`, c.tribe, 'trade');
-    return { title: found.length || met.length ? 'The explorers return' : 'Empty lands', text: `${txt}<br><br>${found.length ? `<b>They found:</b> ${foundList(found)}. You can now send an expedition to gather from these.<br>` : 'They found nothing of special value.<br>'}${met.length ? `They met ${met.map(o => 'the ' + o.name).join(', ')}.` : 'They met no one.'}${met.length ? '' : ' ' + smokeSeen(W, c, route.pts, route.x, route.y)}${hostile ? ` The ${hostile.name} were not friendly.` : ''}${R.lost ? ` ${R.lost} of our men did not come back.` : ''}${R.headFell ? ` <b>${h.name} never returned.</b>` : ''}` };
+    const smoke = met.length ? '' : smokeSeen(W, c, route.pts, route.x, route.y);
+    return { title: found.length || met.length ? 'The explorers return' : smoke ? 'Smoke on the far hills' : 'Empty lands', text: `${txt}<br><br>${found.length ? `<b>They found:</b> ${foundList(found)}. You can now send an expedition to gather from these.<br>` : 'They found nothing of special value.<br>'}${met.length ? `They met ${met.map(o => 'the ' + o.name).join(', ')}.` : 'They met no one.'}${smoke ? ' ' + smoke : ''}${hostile ? ` The ${hostile.name} were not friendly.` : ''}${R.lost ? ` ${R.lost} of our men did not come back.` : ''}${R.headFell ? ` <b>${h.name} never returned.</b>` : ''}` };
   }
   function doExpedition(W, c, h, tg) {
-    const P = W.player, d = tg.d, leader = h.age >= 16 && h.age < 58 && h.sex === 'M', t = c.tribe;
+    const P = W.player, d = tg.d, leader = expLeader(h), t = c.tribe;
     let amount = EXP_GOODS[d.type], risk = 0.02, note2 = '';
     const guards = tg.guard; let hostile = null;
     if (guards.length) {
@@ -4028,6 +4188,7 @@
         if (!Object.keys(back).length && o.grain > needsWeek(o) * 4) { r.food = needsWeek(r.home); o.grain -= r.food; } else r.food = 0;
         r.gave = r.pack; r.pack = back; r.leg = 1;
         affect(W, o, r.home, 5, `Traders came from ${r.home.village || r.home.name}`); if (o.tribe !== r.home.tribe) { affect(W, o.tribe, r.home.tribe, 4, 'Trade'); rel(o.tribe, r.home.tribe).trade++; }
+        traderTale(W, r);
         // crafts travel with the goods
         if (r.home.tribe.metal >= 0.3 && o.tribe.metal < 0.3 && o.settled && W.rand() < 0.1) o.tribe.metal = Math.max(o.tribe.metal, 0.12);
       } else { // home again
@@ -4049,8 +4210,11 @@
   //  DEALINGS — standing orders. The house says once how it answers a killing, a sworn vengeance, raiders,
   //  and who may share its sources; the game then acts on that by itself and reports what happened.
   // =====================================================================
-  function pol(W) { const P = W.player; if (!P.pol) P.pol = { blood: 'comp', threat: 'guard', raid: 'ask', quarrel: 'ask', deal: {} }; if (!P.pol.quarrel) P.pol.quarrel = 'ask'; return P.pol; }
-  const AUTOKEY = { blood: 'blood', vengeance: 'threat', raided: 'raid', quarrel: 'quarrel' }, AUTOIX = { blood: { revenge: 0, comp: 1, forgive: 2 }, threat: { comp: 0, guard: 1, ignore: 2 }, raid: { fight: 0, pay: 1, flee: 2 }, quarrel: { peace: 0, stand: 1, fight: 2 } };
+  function pol(W) { const P = W.player; if (!P.pol) P.pol = { blood: 'comp', threat: 'guard', raid: 'ask', quarrel: 'ask', deal: {} }; if (!P.pol.quarrel) P.pol.quarrel = 'ask'; for (const k of ROUTINE_KEYS) if (!P.pol[k]) P.pol[k] = 'ask'; return P.pol; }
+  const AUTOKEY = { blood: 'blood', vengeance: 'threat', raided: 'raid', quarrel: 'quarrel', gathering: 'gather', omen: 'omen', toobig: 'split', friendneed: 'friend', sickness: 'sick', exiles: 'exiles', oath: 'oath', foundling: 'found' }, AUTOIX = { blood: { revenge: 0, comp: 1, forgive: 2 }, threat: { comp: 0, guard: 1, ignore: 2 }, raid: { fight: 0, pay: 1, flee: 2 }, quarrel: { peace: 0, stand: 1, fight: 2 },
+    gather: { gifts: 0, trade: 1, keep: 2 }, omen: { offer: 0, quiet: 1, sign: 2 }, split: { letgo: 0, hold: 1 }, friend: { give: 0, send: 1 }, sick: { scatter: 0, tend: 1 }, exiles: { place: 0, feed: 1, turn: 2 }, oath: { swear: 0, friendship: 1, refuse: 2 }, found: { take: 0, other: 1, refuse: 2 } };
+  // routine matters the house may answer by standing order; they are answered quietly (a house note, no notice) so skipping ahead runs on
+  const ROUTINE_KEYS = ['gather', 'omen', 'split', 'friend', 'sick', 'exiles', 'oath', 'found'], ROUTINE = new Set(['gathering', 'omen', 'toobig', 'friendneed', 'sickness', 'exiles', 'oath', 'foundling']);
   function notice(W, title, text) { (W.notices = W.notices || []).push({ title, text }); if (W.notices.length > 5) W.notices.shift(); }
   // sharing: an explicit choice for a clan, or automatic — own tribe, allies and anyone not hostile may share
   function dealWith(W, o) {
@@ -4063,6 +4227,7 @@
       const P = W.player; if (!P || P.over || !P.head.alive || !P.head.clan) break;
       const last = P.hist[P.hist.length - 1]; W.lastResult = null; ev.id = -1;
       resolve(W, ev, k);
+      if (ROUTINE.has(ev.type)) { const lr = W.lastResult; W.lastResult = null; { const li = last ? P.hist.lastIndexOf(last) : -1; if (lr && lr.text && (li >= 0 || !last) && P.hist.length - li - 1 === 1) P.hist.pop(); } const sh = lr && lr.text ? lr.text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : '', sn = sh.length > 140 ? (sh.slice(0, 140).replace(/[^.!?]*$/, '').trim() || sh.slice(0, 137).replace(/\s\S*$/, '') + '...') : sh; const ol = ev.options[k] && ev.options[k].label; houseNote(W, `By standing order: ${ev.title}${ol ? ' (' + ol + ')' : ''}${lr && lr.title ? ' — ' + lr.title : ''}.${sn ? ' ' + sn : ''}`); continue; }
       const added = P.hist.slice(P.hist.lastIndexOf(last) + 1).map(e => e.t); W.lastResult = null;
       if (ev.type === 'vengeance') { const av = ev.data.c; notice(W, 'Vengeance sworn', `The ${av.name} clan swore to avenge their dead on us. ${added.join(' ') || 'We did nothing.'}`); }
       else if (ev.type === 'blood') notice(W, ev.title, added.join(' ') || `The ${ev.data.byClan.name} clan owe us blood.`);
@@ -4092,7 +4257,7 @@
   }
   function settleFeud(W, id, forgive) {
     const P = W.player, c = P.head.clan, o = W.ents.get(id); if (!o || !o.alive) return null;
-    if (forgive) { const r = rel(c, o); r.grudge = 0; r.op += 8; affect(W, o, c, 6, `The House of ${P.house} forgave us our killing`); houseNote(W, `${P.head.name} forgave the ${o.name} clan the blood they owed.`); return { title: 'Forgiven', text: `The blood the ${o.name} clan owed is forgiven.` }; }
+    if (forgive) { const r = rel(c, o); r.grudge = 0; r.op += 8; clearWrong(c, o); affect(W, o, c, 6, `The House of ${P.house} forgave us our killing`); houseNote(W, `${P.head.name} forgave the ${o.name} clan the blood they owed.`); return { title: 'Forgiven', text: `The blood the ${o.name} clan owed is forgiven.` }; }
     W.lastResult = null; const ev = { type: 'vengeance', id: -1, data: { c: o, o: c }, options: [] }; resolve(W, ev, 0); const r = W.lastResult; W.lastResult = null; return r;
   }
 
@@ -4625,7 +4790,7 @@
     if (c.settled && freeCount(c) >= splitCap(W, c) - 6 && !(c.works && c.works.hall) && can('build')) return { text: `The village is near the size at which it splits (${freeCount(c)} of ${splitCap(W, c)}). A great hall lets it hold together past a hundred.`, deed: 'build' };
     if (!(P.claims && P.claims.length) && can('claim')) { const a = can('claim'); return { text: `${a.targets[0].label.replace(/^\\S+\\s/, '')} lies unclaimed. Claim it and your household brings goods home every season.`, deed: 'claim' }; }
     if (c.head !== h && h.sex === leaderSex(t) && h.age >= 25 && c.head && prestige(h) > prestige(c.head) * 0.95 && can('challengeClan')) return { text: `Your standing (${prestige(h).toFixed(2)}) matches that of ${c.head.name} (${prestige(c.head).toFixed(2)}), who leads the clan. You could challenge.`, deed: 'challengeClan' };
-    if (!knownOthers(W, t).length && can('explore')) return { text: 'You know of no other people. Send an expedition: neighbours mean trade, marriages and allies.', deed: 'explore' };
+    if (!knownOthers(W, t).length && can('explore')) { const sg = (can('explore').targets || []).find(x => x.ref && x.ref.signed); return { text: sg ? `You know of no other people. Follow the signs to the ${sg.ref.dir}, ${walkWord(sg.ref.d)}: neighbours mean trade, marriages and allies.` : 'You know of no other people. Send an expedition: neighbours mean trade, marriages and allies.', deed: 'explore' }; }
     if (t.headman === h && can('ally')) return { text: 'A friendly people would take your hand. Propose an alliance.', deed: 'ally' };
     if (c.settled && can('build')) return { text: 'The village has stores to spare. Set it to build: a granary, a hall or a palisade.', deed: 'build' };
     const am = (P.amb || []).find(a => !a.done); if (am) return { text: `${h.name} has set ${h.sex === 'F' ? 'her' : 'his'} heart on this: ${am.text.toLowerCase()}.` };
@@ -5117,7 +5282,7 @@
       if (r.t === W.week) continue; r.t = W.week;
       r.op *= 0.985; r.grudge *= 0.965;
       // forget faded acquaintances to keep memory small
-      if (Math.abs(r.op) < 2 && r.grudge < 1 && !r.allied && !r.kin && !r.feasts && !r.trade && !r.pact && !r.tribute) { e.rel.delete(oid); const o = W.ents.get(oid); if (o) o.rel.delete(e.id); }
+      if (Math.abs(r.op) < 2 && r.grudge < 1 && !r.allied && !r.kin && !r.feasts && !r.trade && !r.pact && !r.tribute && !(r.peaceUntil > W.week)) { e.rel.delete(oid); const o = W.ents.get(oid); if (o) o.rel.delete(e.id); }
     }
   }
 
@@ -5130,7 +5295,7 @@
     for (const t of W.tribes) { t.popHist.push(tribeSize(t)); if (t.popHist.length > 200) t.popHist.shift(); }
     houseSummary(W);
     playerYear(W);
-    fogYear(W);
+    fogYear(W); signsYear(W);
     houseFlow(W);
     fieldsYear(W); mythYear(W); beastYear(W); claimsYear(W); chainsYear(W);
     diplomacyYear(W);
@@ -5161,6 +5326,7 @@
       fogMonth(W);
       slaveMonth(W);
       warParties(W);
+      paybackMonth(W);
       if (W.week % 12 === 0) { claimsTrips(W); aiClaims(W); }
       traderMonth(W);
       updateSettlements(W);
@@ -5183,7 +5349,7 @@
     if (W.week % 52 === 0) yearEnd(W);
   }
 
-  return { tribeKnown, N, CELL, WORLD, HA, FORAGE_R, TRIBE_MAX, tribeMax, BIOMES, GROVES, DEPOSITS, GOOD_NAMES, createWorld, seedFirstPop, step, clanSize, tribeSize, familiesOf, famMembers, needsWeek, opinion, prestige, isAllied, sameConfed, tribeCenter, roadLevel, pactRoute, playerActions, doAction, dealings, settleFeud, policy: W => pol(W), setPolicy: (W, k, v) => { pol(W)[k] = v; }, setDeal: (W, id, v) => { if (v === 'auto') delete pol(W).deal[id]; else pol(W).deal[id] = v; }, dealMode: (W, o) => dealWith(W, o), clanHeir, FAITHS, isMatri, faithOf, cultureName, MON, checkPlace, und, speechWord, kultInfo, grainInfo, clanFlow, HOME_R, CREATION, claimsYear, ring, ringSay, BEASTS, beastNm, beastTale, beastOdds, beastWhere, beastToll, beastNear, saveGame, loadGame, saveInfo, ruleInfo, advice, legacy, legacyHTML, TRAITS, epithet, hasTrait, leadWeight, standingWhy, villageInfo, RANKS, SOCIETY, societyOf, rankOf, WORKS, JOBS, walls, canBuild, releaseClaim: (W, i) => { const P = W.player; if (P && P.claims && P.claims[i]) { houseNote(W, `The house gave up its claim to the ${DEPOSITS[P.claims[i].d.type].name.toLowerCase()}.`); P.claims.splice(i, 1); } }, weaponsName, houseSlaves, slaveCount, freeCount, knows, knowsTribe, foodDays, GIFTABLE, STAGES, BOAT_STAGES, METAL_STAGES, boatStage, metalStage, arms, canReach, houseCandidates, choosePlayer, resolve, dynMembers, titlesOf, relWord, vigor, tribeVigor, statureCm, farmSuit, fieldInfo, potential, cellFood, foodBreakdown, kingshipBid, warriors, tribeWealth, confedTribes, confedPeople, newConfed, joinConfed, leaveConfed, formAlliance, kinOf, rulerWord, realmWord, realmInfo, realmHeir, realmRisk, realmPutDown, realmWarList, realmRiseOdds, realmStay, realmNext, realmKingdomNeeds, succession, confedYear,
+  return { bondWord, tribeKnown, liveSigns, walkWord, SIGN_R, N, CELL, WORLD, HA, FORAGE_R, TRIBE_MAX, tribeMax, BIOMES, GROVES, DEPOSITS, GOOD_NAMES, createWorld, seedFirstPop, step, clanSize, tribeSize, battleOdds, warSides, warBegin, realmWarcall, familiesOf, famMembers, needsWeek, opinion, prestige, isAllied, sameConfed, tribeCenter, roadLevel, pactRoute, playerActions, doAction, dealings, settleFeud, policy: W => pol(W), setPolicy: (W, k, v) => { const p = pol(W); if (k === 'deal' || !(k in p) || (v !== 'ask' && !(AUTOIX[k] && v in AUTOIX[k]))) return; p[k] = v; }, setDeal: (W, id, v) => { if (v === 'auto') delete pol(W).deal[id]; else pol(W).deal[id] = v; }, dealMode: (W, o) => dealWith(W, o), clanHeir, FAITHS, isMatri, faithOf, cultureName, MON, checkPlace, und, speechWord, kultInfo, grainInfo, clanFlow, HOME_R, CREATION, claimsYear, ring, ringSay, BEASTS, beastNm, beastTale, beastOdds, beastWhere, beastToll, beastNear, saveGame, loadGame, saveInfo, ruleInfo, advice, legacy, legacyHTML, TRAITS, epithet, hasTrait, leadWeight, standingWhy, villageInfo, RANKS, SOCIETY, societyOf, rankOf, WORKS, JOBS, walls, canBuild, releaseClaim: (W, i) => { const P = W.player; if (P && P.claims && P.claims[i]) { houseNote(W, `The house gave up its claim to the ${DEPOSITS[P.claims[i].d.type].name.toLowerCase()}.`); P.claims.splice(i, 1); } }, weaponsName, houseSlaves, slaveCount, freeCount, knows, knowsTribe, foodDays, GIFTABLE, STAGES, BOAT_STAGES, METAL_STAGES, boatStage, metalStage, arms, canReach, houseCandidates, choosePlayer, resolve, dynMembers, bloodCount, titlesOf, relWord, vigor, tribeVigor, statureCm, farmSuit, fieldInfo, potential, cellFood, foodBreakdown, kingshipBid, warriors, tribeWealth, confedTribes, confedPeople, newConfed, joinConfed, leaveConfed, formAlliance, kinOf, rulerWord, realmWord, realmInfo, realmHeir, realmRisk, realmPutDown, realmWarList, realmRiseOdds, realmStay, realmNext, realmKingdomNeeds, succession, confedYear,
     seasonOf, seasonName, tempOffset, cellAt, lifeStage, siler, fecund, makePerson, stepPop };
 })();
 if (typeof module !== 'undefined') module.exports = SIM;

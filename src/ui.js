@@ -349,7 +349,7 @@
           v /= ws; if (v <= 0) { ownBuf[k] = -1; continue; }
           ownBuf[k] = O; ownV[k] = v; ownH[k] = hd / ws; } }
       if (rm.sig) realmDist(ownBuf, ownR, ownD, w, h, rm.of);
-      const rbw = Math.max(2, Math.round(6 / q)), rgp = Math.max(1, Math.round(2 / q));
+      const zf = Math.min(1.7, Math.max(1, Math.sqrt(0.0016 / cam.s))), rbw = Math.max(2, Math.round(6 * zf / q)), rgp = Math.max(1, Math.round(2.6 * zf / q)); // the outline is about 6 px at the default zoom and 10 px when the whole isles are in view on a phone (up to 9 px at rest on a large screen); a kingdom's gap grows with it (offsets stay under the 255 limit of ownD: worst case (2*5+2)*10 = 120)
       const fillC = tribes.map(t => hsl2rgb(show.kult && t.kult ? t.kult.hue : t.hue, 0.55, 0.45)), edgeC = tribes.map(t => hsl2rgb(show.kult && t.kult ? t.kult.hue : t.hue, 0.6, 0.28)), a = ownImg.data, hv = hover && hover.e;
       for (let y = 0, k = 0; y < h; y++) for (let x = 0; x < w; x++, k++) {
         const o = ownBuf[k], p = k * 4; if (o < 0) { a[p + 3] = 0; continue; }
@@ -833,6 +833,14 @@
       <div class="ord"><div class="k">When a clan swears vengeance on you</div>${seg('threat', [['comp', 'Pay them'], ['guard', 'Post guards'], ['ignore', 'Do nothing'], ['ask', 'Ask me']])}</div>
       <div class="ord"><div class="k">When raiders come for your camp</div>${seg('raid', [['fight', 'Stand and fight'], ['pay', 'Pay them off'], ['flee', 'Flee'], ['ask', 'Ask me']])}</div>
       <div class="ord"><div class="k">When a quarrel with another house turns ugly</div>${seg('quarrel', [['peace', 'Make peace'], ['stand', 'Stand our ground'], ['fight', 'Fight'], ['ask', 'Ask me']])}</div>
+      <div class="ord"><div class="k">When the clans meet at a gathering</div>${seg('gather', [['gifts', 'Gifts or a feast'], ['trade', 'Trade'], ['keep', 'Keep apart'], ['ask', 'Ask me']])}</div>
+      <div class="ord"><div class="k">When a sign is seen</div>${seg('omen', [['offer', 'Offer'], ['quiet', 'Keep quiet'], ['sign', 'Just a sign'], ['ask', 'Ask me']])}</div>
+      <div class="ord"><div class="k">When the clan outgrows its home</div>${seg('split', [['letgo', 'Let a clan go'], ['hold', 'Hold together'], ['ask', 'Ask me']])}</div>
+      <div class="ord"><div class="k">When a friend comes in need</div>${seg('friend', [['give', 'Give'], ['send', 'Send away'], ['ask', 'Ask me']])}</div>
+      <div class="ord"><div class="k">When sickness comes</div>${seg('sick', [['scatter', 'Scatter'], ['tend', 'Tend them'], ['ask', 'Ask me']])}</div>
+      <div class="ord"><div class="k">When exiles ask for shelter</div>${seg('exiles', [['place', 'Take them in'], ['feed', 'Feed them'], ['turn', 'Turn away'], ['ask', 'Ask me']])}</div>
+      <div class="ord"><div class="k">When one asks for your oath</div>${seg('oath', [['swear', 'Swear it'], ['friendship', 'Friendship only'], ['refuse', 'Refuse'], ['ask', 'Ask me']])}</div>
+      <div class="ord"><div class="k">When a lost child is found</div>${seg('found', [['take', 'Take the child'], ['other', 'Another house'], ['refuse', 'Not ours'], ['ask', 'Ask me']])}</div>
       <div class="k sec">Clans you deal with</div>
       <div class="muted" style="margin-bottom:2px">Choose who may work the sources your house has claimed. On automatic, your house shares with its own tribe and with any people who are not its enemies, and keeps enemies out.</div>`;
     if (!D.length) return html + '<div class="muted" style="margin-top:8px">No other clans nearby yet.</div>' + pactRest(new Set());
@@ -927,7 +935,7 @@
     o += ts.map(x => `<div class="card"><div class="rh"><span><span class="dot" style="background:hsl(${x.t.hue},70%,55%);margin-right:6px"></span>${link(x.t, 'the ' + x.t.name)}${x.t === cap ? ' <span class="muted">rules</span>' : ''}</span><span class="badge">${esc(x.statusWord)}</span></div>
       <div class="muted">${x.people} people · ${x.warriors} warriors · ${x.leader ? 'led by ' + link(x.leader, x.leader.name) : 'no leader'} · joined year ${yr(x.joined)}${x.t !== cap ? ` · <span style="color:${opCol(x.feeling)}">${opWord(x.feeling)}</span> toward the ${esc(cap.name)}` : ''}</div>
       <div style="font-size:12.5px;color:${stayCol(x.stayWord)}">${esc(x.stayWord[0].toUpperCase() + x.stayWord.slice(1))}${' if the ' + esc(rw.toLowerCase()) + ' died today'}</div></div>`).join('');
-    o += `<div class="k sec">Wars</div>${R.wars.length ? R.wars.map(t => `<div class="row2">⚔ ${link(t, 'the ' + t.name)} <span class="muted">${SIM.warriors(t)} warriors</span></div>`).join('') : '<div class="muted">At peace.</div>'}`;
+    o += `<div class="k sec">Wars</div>${R.wars.length ? R.wars.map(t => `<div class="row2">⚔ ${link(t, 'the ' + t.name)} <span class="muted">${SIM.warriors(t)} warriors${R.warText && R.warText[t.id] ? ' · ' + (R.warFrom && R.warFrom[t.id] != null ? 'since year ' + yr(R.warFrom[t.id]) + '; ' : '') + esc(R.warText[t.id]) : ''}</span></div>`).join('') : '<div class="muted">At peace.</div>'}`;
     o += `<div class="k sec">Earlier rulers</div><div class="muted">${R.past && R.past.length ? R.past.map(esc).join(' → ') : 'None before this one.'}</div>`;
     return o;
   }
@@ -1057,7 +1065,7 @@
       const P = W.player;
       if (!P) html = '<div class="lede">You are watching without a house. Open the menu and start a new world to choose one.</div>';
       else {
-        const h = P.head, alive = h.alive && h.clan, mem = SIM.dynMembers(W);
+        const h = P.head, alive = h.alive && h.clan, mem = SIM.dynMembers(W), BC = SIM.bloodCount(W);
         const story = () => `<div class="card"><div class="muted">${SIM.legacyHTML(SIM.legacy(W))}</div></div><div class="k sec">Heads of the house</div>${P.heads.map(x => `<div class="row2"><b>${esc(x.name)}</b> <span class="muted">year ${yr(x.from)} to ${x.to ? yr(x.to) : 'now'}${x.titles.length ? ', ' + x.titles.join(', ') : ''}</span></div>`).join('')}
           <div class="k sec">The saga of the house</div>${P.hist.length ? (() => { const by = new Map(); for (const e of P.hist.slice(-160)) { const y = yr(e.w); if (!by.has(y)) by.set(y, []); by.get(y).push(e.t); } return [...by.entries()].reverse().map(([y, ts]) => `<div class="ev"><span class="yr">Year ${y}</span>${iconize(esc(ts.join(' ')))}</div>`).join(''); })() : '<div class="muted">Nothing yet.</div>'}`;
         html = `<div class="ph">${!P.over && P.head && P.head.alive && P.head.clan ? ART.faceImg(P.head, P.head.clan.tribe.hue, 58, 'hd', true) : ''}<b>House of ${esc(P.house)}</b><span class="muted">${P.over ? 'ended' : `${Math.round(P.renown)} renown, ${P.heads.length} generation${P.heads.length === 1 ? '' : 's'}`}</span></div>`;
@@ -1105,7 +1113,7 @@
               ${(P.claims || []).length ? `<div class="k sec">Sources your house works</div>` + P.claims.map((k, i) => `<div class="row2">${depIc(k.d.type)}<b>${DEPOSITS[k.d.type].name}</b> <span class="muted">${esc(k.d.note)}, ${Math.round(Math.hypot(k.d.x - c.x, k.d.y - c.y) / 1000)} km away. ${k.got || 0} brought back since year ${yr(k.since)}${k.trouble ? `, <span style="color:#a83a22">${k.trouble} trips driven off</span>` : ''}</span> <a data-release="${i}" style="margin-left:auto;cursor:pointer;color:#a03a20">give up</a></div>`).join('') : ''}
               <div class="k sec">Standing</div><div class="tiles">
                 <div class="tile"><div class="k">Heir</div><div class="v">${heir ? esc(heir.name) : 'None'}</div><div class="muted">${heir ? `${SIM.relWord(heir, h)}, ${Math.floor(heir.age)}` : 'the line is at risk'}</div></div>
-                <div class="tile"><div class="k">Of the blood</div><div class="v">${c.people.filter(q => q.dyn).length} <span class="muted" style="font-size:13px">in your clan</span></div><div class="muted">${mem.length} living kin of the house in all. Only those in your clan can inherit</div></div>
+                <div class="tile"><div class="k">Of the blood</div><div class="v">${c.people.filter(q => q.dyn).length} <span class="muted" style="font-size:13px">in your clan</span></div><div class="muted">${BC.tribe} of the blood in your tribe (${BC.all} across the isles). Only those in your clan can inherit</div></div>
                 <div class="tile"><div class="k">${matri ? 'Clan mother' : 'Clan head'}</div><div class="v">${ch ? esc(ch.name) + (ch === h ? ' (you)' : '') : 'None'}</div><div class="muted">${SIM.freeCount(c)} people, ${SIM.warriors({ clans: [c] })} spears${ch && ch !== h ? ` · standing ${SIM.prestige(ch).toFixed(2)}, yours ${SIM.prestige(h).toFixed(2)}` : ch === h ? ` · standing ${SIM.prestige(h).toFixed(2)}` : ''}</div></div>
                 <div class="tile"><div class="k">${hm ? titleWord(hm, 'headman')[0].toUpperCase() + titleWord(hm, 'headman').slice(1) : 'Headman'}</div><div class="v">${hm ? esc(hm.name) + (hm === h ? ' (you)' : '') : 'None'}</div><div class="muted">${SIM.tribeSize(t)} people in ${t.clans.length} clan${t.clans.length > 1 ? 's' : ''}${hm && ch && hm.clan !== c ? ` · weight ${SIM.leadWeight(hm).toFixed(2)}, your clan's ${SIM.leadWeight(ch).toFixed(2)}` : ''}</div></div>
               </div>
@@ -1146,7 +1154,7 @@
         ts.map(t => { const m = cf.members.get(t.id), op = t === cap ? 100 : SIM.opinion(t, cap); return `<div class="card"><div class="rh">${link(t, 'the ' + t.name)}<span class="badge">${m.status === 'core' ? '👑 heartland' : m.status === 'subject' ? '⛓ subject' : 'ally'}</span></div>
           ${t !== cap ? `<div class="mini"><span>loyalty</span><div class="rbar"><i style="left:${op < 0 ? 50 + op / 2 : 50}%;width:${Math.abs(op) / 2}%;background:${opCol(op)}"></i></div></div>` : ''}
           <div class="muted">${SIM.tribeSize(t)} people · joined year ${yr(m.joined)}${m.status === 'subject' ? ' · pays tribute' : ''}</div></div>`; }).join('') +
-        `<div class="k sec">Wars</div>${cf.wars.size ? [...cf.wars.keys()].map(id => W.ents.get(id)).filter(Boolean).map(t => `<div class="row2">⚔ ${link(t, 'the ' + t.name)} <span class="muted">${SIM.warriors(t)} warriors</span></div>`).join('') : '<div class="muted">At peace.</div>'}
+        `<div class="k sec">Wars</div>${cf.wars.size ? [...cf.wars.keys()].map(id => W.ents.get(id)).filter(Boolean).map(t => `<div class="row2">⚔ ${link(t, 'the ' + t.name)} <span class="muted">${SIM.warriors(t)} warriors${R.warText && R.warText[t.id] ? ' · ' + (R.warFrom && R.warFrom[t.id] != null ? 'since year ' + yr(R.warFrom[t.id]) + '; ' : '') + esc(R.warText[t.id]) : ''}</span></div>`).join('') : '<div class="muted">At peace.</div>'}
         <div class="k sec">Rulers</div><div class="muted">${cf.kings.map(esc).join(' → ')}</div>
         <div class="k sec">Chronicle of the confederacy</div>${histList(cf, 20)}`;
     } else if (panel === 'clan') {
@@ -1219,10 +1227,11 @@
     } else if (panel === 'chart') {
       html = `<div class="ph"><b>History of the isles</b><span class="muted">people (ink) · tribes (blue) · alliances (gold) · confederacies (red)</span></div><canvas id="chart" width="600" height="230"></canvas>`;
     } else if (panel === 'tribes') {
-      const ts = W.tribes.filter(t => SIM.knowsTribe(W, t)).sort((a, b) => SIM.tribeSize(b) - SIM.tribeSize(a)), hidden = W.tribes.length - ts.length, me = W.player && W.player.head.clan ? W.player.head.clan.tribe : null;
+      const ts = W.tribes.filter(t => SIM.knowsTribe(W, t)).sort((a, b) => SIM.tribeSize(b) - SIM.tribeSize(a)), hidden = W.tribes.length - ts.length, sgs = SIM.liveSigns(W), me = W.player && W.player.head.clan ? W.player.head.clan.tribe : null;
       const vs = (W.settlements || []).filter(S => S.clans && S.clans[0] && SIM.knows(W, S.clans[0].x, S.clans[0].y)).sort((a, b) => b.pop - a.pop), gs = W.sites.filter(s => SIM.knows(W, s.x, s.y)).sort((a, b) => b.prestige - a.prestige);
-      const stand = t => { if (!me || t === me) return t === me ? '<span class="badge">your tribe</span>' : ''; const o = SIM.opinion(me, t); return SIM.isAllied(me, t) ? '<span style="color:#7a5a10">allies</span>' : `<span style="color:${opCol(o)}">${o > 15 ? 'friendly' : o < -15 ? 'hostile' : 'neutral'}</span>`; };
-      html = `<div class="ph"><b>Peoples you know</b><span class="muted">${hidden ? 'There are rumours of others beyond the known lands.' : 'You know every people on the isles.'}</span></div>` +
+      const stand = t => { if (!me || t === me) return t === me ? '<span class="badge">your tribe</span>' : ''; const o = SIM.opinion(me, t); return SIM.isAllied(me, t) ? `<span style="color:#7a5a10">${SIM.bondWord(W, me, t).replace(/^your /, '')}</span>` : `<span style="color:${opCol(o)}">${o > 15 ? 'friendly' : o < -15 ? 'hostile' : 'neutral'}</span>`; };
+      html = `<div class="ph"><b>Peoples you know</b><span class="muted">${hidden ? (sgs.length ? '' : 'There are rumours of others beyond the known lands.') : 'You know every people on the isles.'}</span></div>` +
+        (hidden && sgs.length ? sgs.map(g => `<div class="muted" style="margin:2px 0">${g.kind === 'tale' ? `The ${esc(g.name)}, to the ${g.dir}, ${SIM.walkWord(g.km * 1000)} (a trader's tale, year ${yr(g.w)})` : `Signs of strangers to the ${g.dir}, ${SIM.walkWord(g.km * 1000)} (year ${yr(g.w)})`}</div>`).join('') : '') +
         (W.confeds.length ? `<div class="k sec">Confederacies</div>` + W.confeds.filter(cf => SIM.knowsTribe(W, cf.capital)).map(cf => `<div class="row2">${ART.img('crown', 15)}${link(cf, cf.name)} <span class="muted">${rulerWord(cf, cf.king)} ${esc(cf.king.name)}, ${SIM.confedTribes(W, cf).length} tribes, ${SIM.confedPeople(W, cf)} people</span></div>`).join('') : '') +
         (() => { const ks = [...new Set(ts.map(t => t.kult).filter(Boolean))].sort((a, b) => b.n - a.n); if (!ks.length) return '';
           return `<div class="k sec">Cultures and tongues (${ks.length})</div><div class="muted" style="margin-bottom:6px">Peoples who share a tongue trust each other sooner. Speech drifts apart with distance and time.</div>` + ks.map(K => { const mine = me && me.kult === K, first = ts.find(t => t.kult === K), u = me && first ? Math.max(...ts.filter(t => t.kult === K).map(t => SIM.und(me, t))) : null;
@@ -1465,14 +1474,16 @@
     $('#watchBtn').onclick = () => { m.style.display = 'none'; picking = false; running = true; $('#play').textContent = '❚❚'; };
     $('#rerollBtn').onclick = () => { m.style.display = 'none'; picking = false; newWorld(Math.floor(Math.random() * 1e9)); };
   }
+  // routine matters that can be answered by a standing order: card type -> [policy key, value for each option in order]
+  const ROUTINE_POL = { gathering: ['gather', ['gifts', 'trade', 'keep']], omen: ['omen', ['offer', 'quiet', 'sign']], toobig: ['split', ['letgo', 'hold']], friendneed: ['friend', ['give', 'send']], sickness: ['sick', ['scatter', 'tend']], exiles: ['exiles', ['place', 'feed', 'turn']], oath: ['oath', ['swear', 'friendship', 'refuse']], foundling: ['found', ['take', 'other', 'refuse']] };
   function showDecision(ev) {
     modalEv = ev; wasRunning = running || wasRunning; running = false; $('#play').textContent = '▶';
     const P = W.player;
     modalDismiss = ev.options.length === 1 ? () => choose(0) : null;
     const ringS = P && !P.over ? SIM.ringSay(W, ev) : [], hue = P && P.head && P.head.clan ? P.head.clan.tribe.hue : null, first = Math.max(0, ringS.findIndex(r => r.text));
-    const html = (modalDismiss ? '<button class="xbtn" data-x title="Close (Esc)">✕</button>' : '') + `<img class="plate" src="${ART.scene(ev.type, ev.type === 'beast' && ev.data && ev.data.b ? ev.data.b.kind : '')}" alt=""><div class="evhead">${P ? `House of ${esc(P.house)}, year ${yr(W.week)}` : ''}</div><h2>${esc(ev.title)}</h2><p>${iconize(ev.text)}</p>` +
+    const html = (modalDismiss ? '<button class="xbtn" data-x title="Close (Esc)">✕</button>' : '') + `<img class="plate" src="${ART.scene(ev.type, ev.type === 'beast' && ev.data && ev.data.b ? ev.data.b.kind : '')}" alt=""><div class="evhead">${P ? `House of ${esc(P.house)}, year ${yr(W.week)}` : ''}</div><h2>${esc(ev.title)}</h2><p>${iconize(ev.text)}</p>` + (ROUTINE_POL[ev.type] && P && !P.over ? '<label class="setline"><input type="checkbox" id="standOrd"><span>From now on, answer such matters the same way</span></label>' : '') +
       ev.options.map((o, k) => `<button class="opt${o.off ? ' off' : ''}" data-k="${k}"${o.off ? ' disabled' : ''}><span class="num">${k + 1}</span><span><b>${esc(o.label)}</b>${o.hint ? `<br><span class="muted">${esc(o.hint)}</span>` : ''}</span></button>`).join('') +
-      (ringS.some(r => r.text) ? `<div class="ringbox"><div class="bubble" id="ringSay"></div><div class="ring">${ringS.map((r, i) => `<button class="rf${i === first ? ' on' : ''}${r.text ? '' : ' mute'}" data-r="${i}" title="${esc(r.q.name)}">${ART.faceImg(r.q, hue, 50)}</button>`).join('')}</div></div>` : '');
+            (ringS.some(r => r.text) ? `<div class="ringbox"><div class="bubble" id="ringSay"></div><div class="ring">${ringS.map((r, i) => `<button class="rf${i === first ? ' on' : ''}${r.text ? '' : ' mute'}" data-r="${i}" title="${esc(r.q.name)}">${ART.faceImg(r.q, hue, 50)}</button>`).join('')}</div></div>` : '');
     const m = $('#modal'); m.querySelector('.card2').innerHTML = html; m.style.display = 'flex';
     if (P && P.head && P.head.clan) { const c = ev.data && (ev.data.byClan || ev.data.foe || (ev.data.q && ev.data.q.clan)) || P.head.clan; if (c && c.x != null) centerOn(c.x, c.y); }
     m.querySelectorAll('.opt').forEach(b => b.onclick = () => choose(+b.dataset.k));
@@ -1554,6 +1565,7 @@
     const ev = modalEv; if (!ev) return;
     if (ev.act) { if (k >= ev.n) return; const b = $('#modal').querySelector(`.opt[data-k="${k}"]`); if (b && b.disabled) return; modalEv = null; ev.pick(k); return; }
     modalEv = null; modalDismiss = null;
+    { const cb = $('#modal').querySelector('#standOrd'), rp = ROUTINE_POL[ev.type]; if (cb && cb.checked && rp && rp[1][k]) SIM.setPolicy(W, rp[0], rp[1][k]); }
     SIM.resolve(W, ev, k); $('#modal').style.display = 'none';
     if (W.lastResult && (W.lastResult.text || '').length > 200) { const r = W.lastResult; if (panel === 'house') renderPanel(); updateTop(); return showResult(r); } // a long account (who backed whom, and why) gets a card that waits to be read
     if (W.lastResult) { toast(W.lastResult); W.lastResult = null; }
