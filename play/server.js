@@ -43,7 +43,7 @@ function state(G, brief) {
     const near = W.deposits.filter(d => S.knows(W, d.x, d.y)).map(d => ({ d, km: Math.hypot(d.x - c.x, d.y - c.y) / 1000 })).filter(o => o.km < 120).sort((a, b) => a.km - b.km).slice(0, 8);
     L.push(`Known resources nearby: ${near.map(o => `${S.DEPOSITS[o.d.type].name} ${Math.round(o.km)} km ${compass(o.d.x - c.x, o.d.y - c.y)}`).join('; ') || 'none known'}.`);
     const others = W.tribes.filter(o => o !== t && S.knowsTribe(W, o)).map(o => ({ o, km: Math.hypot(S.tribeCenter(o)[0] - c.x, S.tribeCenter(o)[1] - c.y) / 1000 })).sort((a, b) => a.km - b.km).slice(0, 6);
-    L.push(`Neighbouring tribes: ${others.map(({ o, km }) => `${o.name} (${S.tribeSize(o)} people, ${Math.round(km)} km ${compass(S.tribeCenter(o)[0] - c.x, S.tribeCenter(o)[1] - c.y)}, opinion ${Math.round(S.opinion(t, o))}${S.isAllied(t, o) ? ', ALLY' : ''}${t.atWar && t.atWar.has(o.id) ? ', AT WAR' : ''}, ${S.speechWord(S.und(t, o))})`).join('; ') || 'none known'}.`);
+    L.push(`Neighbouring tribes: ${others.map(({ o, km }) => `${o.name} (${S.tribeSize(o)} people, ${Math.round(km)} km ${compass(S.tribeCenter(o)[0] - c.x, S.tribeCenter(o)[1] - c.y)}, opinion ${Math.round(S.opinion(t, o))}${S.isAllied(t, o) ? ', ' + S.bondWord(W, t, o).replace(/^your /, '').toUpperCase() : ''}${t.atWar && t.atWar.has(o.id) ? ', AT WAR' : ''}, ${S.speechWord(S.und(t, o))})`).join('; ') || 'none known'}.`);
   }
   return L.join('\n');
 }
