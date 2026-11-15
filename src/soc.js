@@ -655,6 +655,8 @@
         if (!fams.length) continue;
         fams.sort((a, b) => opinion(f, b) - opinion(f, a));
         const g = fams[0]; for (const q of mem) q.fam = g; groups = null;
+        { const P1 = W.player, yh = P1 && !P1.over && mem.includes(P1.head) && P1.head.age < 16 ? P1.head : null, ad = yh && (g.head && g.head.alive && g.head.clan === c ? g.head : c.people.find(q => q.fam === g && isAdult(q)));
+          if (ad) { const hp = yh.sex === 'F' ? 'her' : 'his', par = yh.father === ad ? 'father' : yh.mother === ad ? 'mother' : null, gp = (yh.father && (yh.father.father === ad || yh.father.mother === ad)) || (yh.mother && (yh.mother.father === ad || yh.mother.mother === ad)) ? 'grand' + (ad.sex === 'M' ? 'father' : 'mother') : null, rw = par ? `${hp} ${par}` : gp ? `${hp} ${gp}` : relWord(ad, yh); houseNote(W, `Young ${yh.name} now lives in the household of ${ad.name}${rw.startsWith('of ') ? (ad.dyn ? ', of the blood' : '') : ', ' + rw}.`); } }
         note(W, g, `Took in the orphaned children of the house of ${f.name}.`); affect(W, c, c, 0);
         kill(W, f);
       }
@@ -2674,6 +2676,8 @@
     const first = cl[0], head = nw(first[0]); houseNote(W, `${head[0].toUpperCase() + head.slice(1)} more of our blood in the clan ${first[1]} this year${cl.slice(1).map(c => '; ' + nw(c[0]) + ' ' + c[1]).join('')}.`);
   }
   const dynMembers = W => { const out = []; for (const c of W.clans) for (const q of c.people) if (q.dyn) out.push(q); return out; };
+  // the blood living in the player's own tribe, and across the isles (the first drives renown; the second is only told)
+  const bloodCount = W => { const P = W.player, h = P && P.head, t = h && h.clan && h.clan.tribe; let all = 0, tribe = 0; for (const c of W.clans) { let n = 0; for (const q of c.people) if (q.dyn) n++; all += n; if (t && c.tribe === t) tribe += n; } return { tribe, all }; };
   function titlesOf(q) { const t = []; if (!q || !q.clan || !q.alive) return t; if (q.clan.head === q) t.push('clan head'); if (q.clan.tribe.headman === q) t.push('headman'); const cf = q.clan.tribe.confed; if (cf && cf.king === q) t.push('king'); return t; }
   const isHead = (W, q) => W.player && !W.player.over && W.player.head === q;
   const MINOR = new Set(['marriage', 'gathering', 'scouts', 'opportunity', 'challenge', 'sickness']);
@@ -2681,12 +2685,14 @@
     if (!W.player || W.player.over) return;
     if (W.pending.some(e => e.type === ev.type && e.key === ev.key)) return;
     const P = W.player;
-    if (AUTOKEY[ev.type]) { const v = pol(W)[AUTOKEY[ev.type]]; if (v !== 'ask') { (W.autoQ = W.autoQ || []).push([ev, AUTOIX[AUTOKEY[ev.type]][v]]); return; } }
+    const autoK = AUTOKEY[ev.type], autoV = autoK && pol(W)[autoK], autoI = autoV && autoV !== 'ask' ? AUTOIX[autoK][autoV] : undefined;
+    if (autoI !== undefined && !ROUTINE.has(ev.type)) { (W.autoQ = W.autoQ || []).push([ev, autoI]); return; }
     if (MINOR.has(ev.type)) {
       // don't bury the player in decisions: at most one minor matter every ~9 months
-      if (W.week - (P.lastMinor || -1e9) < 40 || W.pending.length) { if (ev.type === 'sickness') { ev.id = -1; resolve(W, ev, 1); W.lastResult = null; } return; }
+      if (W.week - (P.lastMinor || -1e9) < 40 || W.pending.length) { if (ev.type === 'sickness') { if (autoI !== undefined && ev.options[autoI] && !ev.options[autoI].off) (W.autoQ = W.autoQ || []).push([ev, autoI]); else { ev.id = -1; resolve(W, ev, 1); W.lastResult = null; } } return; }
       P.lastMinor = W.week;
     }
+    if (autoI !== undefined && ev.options[autoI] && !ev.options[autoI].off) { (W.autoQ = W.autoQ || []).push([ev, autoI]); return; }
     ev.id = (W.evId = (W.evId || 0) + 1); ev.week = W.week; W.pending.push(ev);
   }
   const relWord = (q, h) => { const p = h.sex === 'F' ? 'her' : 'his', sb = (a, b) => a && b && a !== b && ((a.father && a.father === b.father) || (a.mother && a.mother === b.mother)), sx = a => a.sex === 'M' ? 'brother' : 'sister'; return (q.father === h || q.mother === h) ? `${p} ${q.sex === 'M' ? 'son' : 'daughter'}` : ((h.father && q.father === h.father) || (h.mother && q.mother === h.mother)) ? `${p} ${q.sex === 'M' ? 'brother' : 'sister'}` : ((q.father && (q.father.father === h || q.father.mother === h)) || (q.mother && (q.mother.father === h || q.mother.mother === h))) ? `${p} grand${q.sex === 'M' ? 'son' : 'daughter'}` : sb(q.father, h) ? `${p} ${sx(q.father)}'s ${q.sex === 'M' ? 'son' : 'daughter'}` : sb(q.mother, h) ? `${p} ${sx(q.mother)}'s ${q.sex === 'M' ? 'son' : 'daughter'}` : sb(q, h.father) ? `${p} father's ${sx(q)}` : sb(q, h.mother) ? `${p} mother's ${sx(q)}` : `of ${p} blood`; };
@@ -2942,7 +2948,7 @@
         if (k === 0) { const hungry = q.clan.cond < 0.9, tr = hungry ? null : GIFTABLE.find(g => c.goods[g] > 0); if (tr) { c.goods[tr]--; q.clan.goods[tr] = (q.clan.goods[tr] || 0) + 1; } else { const amt = Math.min(c.store, needsWeek(c) * 1.5); c.store -= amt; q.clan.store += amt; }
           affect(W, q.fam, h.fam, 30, `${h.name} helped us when we had nothing`); if (q.clan !== c) affect(W, q.clan, c, 8, `${h.name} helped ${q.name} in need`); P.renown += 2;
           houseNote(W, `${h.name} gave ${q.name} what ${q.sex === 'F' ? 'she' : 'he'} needed, and asked nothing for it.`); W.lastResult = { title: 'A debt of the heart', text: `${q.name} takes it without a word and grips your arm. ${q.sex === 'F' ? 'Her' : 'His'} house will stand with yours when the clans choose a leader, and ${q.sex === 'F' ? 'her' : 'his'} clan thinks better of yours (+8).` }; }
-        else { affect(W, q.fam, h.fam, -30, `${h.name} turned us away when we were in need`); houseNote(W, `${h.name} sent ${q.name} away empty-handed.`); W.lastResult = { title: 'He goes home empty-handed', text: `${q.name} nods, thanks you for the fire, and leaves. Something has gone out of the friendship (−30).` }; }
+        else { affect(W, q.fam, h.fam, -30, `${h.name} turned us away when we were in need`); houseNote(W, `${h.name} sent ${q.name} away empty-handed.`); W.lastResult = { title: `${q.sex === 'F' ? 'She' : 'He'} goes home empty-handed`, text: `${q.name} nods, thanks you for the fire, and leaves. Something has gone out of the friendship (−30).` }; }
         return;
       }
       case 'slight': {
@@ -3113,7 +3119,7 @@
     castYear(W);
     const tt = titlesOf(h), cur = P.heads[P.heads.length - 1];
     for (const x of tt) if (!cur.titles.includes(x)) { cur.titles.push(x); houseNote(W, `${h.name} became ${x === 'king' ? rulerOf(h.clan.tribe.confed, h) : x === 'headman' ? `headman of the ${h.clan.tribe.name}` : `head of the ${h.clan.name} clan`}.`); }
-    P.renown += (tt.includes('king') ? 8 : tt.includes('headman') ? 3 : tt.includes('clan head') ? 1 : 0) + dynMembers(W).length * 0.05 + (h.clan.goods.amber * 0.1);
+    P.renown += (tt.includes('king') ? 8 : tt.includes('headman') ? 3 : tt.includes('clan head') ? 1 : 0) + Math.min(200, bloodCount(W).tribe) * 0.05 + (h.clan.goods.amber * 0.1);
   }
 
   // =====================================================================
@@ -4200,8 +4206,11 @@
   //  DEALINGS — standing orders. The house says once how it answers a killing, a sworn vengeance, raiders,
   //  and who may share its sources; the game then acts on that by itself and reports what happened.
   // =====================================================================
-  function pol(W) { const P = W.player; if (!P.pol) P.pol = { blood: 'comp', threat: 'guard', raid: 'ask', quarrel: 'ask', deal: {} }; if (!P.pol.quarrel) P.pol.quarrel = 'ask'; return P.pol; }
-  const AUTOKEY = { blood: 'blood', vengeance: 'threat', raided: 'raid', quarrel: 'quarrel' }, AUTOIX = { blood: { revenge: 0, comp: 1, forgive: 2 }, threat: { comp: 0, guard: 1, ignore: 2 }, raid: { fight: 0, pay: 1, flee: 2 }, quarrel: { peace: 0, stand: 1, fight: 2 } };
+  function pol(W) { const P = W.player; if (!P.pol) P.pol = { blood: 'comp', threat: 'guard', raid: 'ask', quarrel: 'ask', deal: {} }; if (!P.pol.quarrel) P.pol.quarrel = 'ask'; for (const k of ROUTINE_KEYS) if (!P.pol[k]) P.pol[k] = 'ask'; return P.pol; }
+  const AUTOKEY = { blood: 'blood', vengeance: 'threat', raided: 'raid', quarrel: 'quarrel', gathering: 'gather', omen: 'omen', toobig: 'split', friendneed: 'friend', sickness: 'sick', exiles: 'exiles', oath: 'oath', foundling: 'found' }, AUTOIX = { blood: { revenge: 0, comp: 1, forgive: 2 }, threat: { comp: 0, guard: 1, ignore: 2 }, raid: { fight: 0, pay: 1, flee: 2 }, quarrel: { peace: 0, stand: 1, fight: 2 },
+    gather: { gifts: 0, trade: 1, keep: 2 }, omen: { offer: 0, quiet: 1, sign: 2 }, split: { letgo: 0, hold: 1 }, friend: { give: 0, send: 1 }, sick: { scatter: 0, tend: 1 }, exiles: { place: 0, feed: 1, turn: 2 }, oath: { swear: 0, friendship: 1, refuse: 2 }, found: { take: 0, other: 1, refuse: 2 } };
+  // routine matters the house may answer by standing order; they are answered quietly (a house note, no notice) so skipping ahead runs on
+  const ROUTINE_KEYS = ['gather', 'omen', 'split', 'friend', 'sick', 'exiles', 'oath', 'found'], ROUTINE = new Set(['gathering', 'omen', 'toobig', 'friendneed', 'sickness', 'exiles', 'oath', 'foundling']);
   function notice(W, title, text) { (W.notices = W.notices || []).push({ title, text }); if (W.notices.length > 5) W.notices.shift(); }
   // sharing: an explicit choice for a clan, or automatic — own tribe, allies and anyone not hostile may share
   function dealWith(W, o) {
@@ -4214,6 +4223,7 @@
       const P = W.player; if (!P || P.over || !P.head.alive || !P.head.clan) break;
       const last = P.hist[P.hist.length - 1]; W.lastResult = null; ev.id = -1;
       resolve(W, ev, k);
+      if (ROUTINE.has(ev.type)) { const lr = W.lastResult; W.lastResult = null; { const li = last ? P.hist.lastIndexOf(last) : -1; if (lr && lr.text && (li >= 0 || !last) && P.hist.length - li - 1 === 1) P.hist.pop(); } const sh = lr && lr.text ? lr.text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : '', sn = sh.length > 140 ? (sh.slice(0, 140).replace(/[^.!?]*$/, '').trim() || sh.slice(0, 137).replace(/\s\S*$/, '') + '...') : sh; const ol = ev.options[k] && ev.options[k].label; houseNote(W, `By standing order: ${ev.title}${ol ? ' (' + ol + ')' : ''}${lr && lr.title ? ' — ' + lr.title : ''}.${sn ? ' ' + sn : ''}`); continue; }
       const added = P.hist.slice(P.hist.lastIndexOf(last) + 1).map(e => e.t); W.lastResult = null;
       if (ev.type === 'vengeance') { const av = ev.data.c; notice(W, 'Vengeance sworn', `The ${av.name} clan swore to avenge their dead on us. ${added.join(' ') || 'We did nothing.'}`); }
       else if (ev.type === 'blood') notice(W, ev.title, added.join(' ') || `The ${ev.data.byClan.name} clan owe us blood.`);
@@ -5335,7 +5345,7 @@
     if (W.week % 52 === 0) yearEnd(W);
   }
 
-  return { bondWord, tribeKnown, liveSigns, walkWord, SIGN_R, N, CELL, WORLD, HA, FORAGE_R, TRIBE_MAX, tribeMax, BIOMES, GROVES, DEPOSITS, GOOD_NAMES, createWorld, seedFirstPop, step, clanSize, tribeSize, battleOdds, warSides, warBegin, realmWarcall, familiesOf, famMembers, needsWeek, opinion, prestige, isAllied, sameConfed, tribeCenter, roadLevel, pactRoute, playerActions, doAction, dealings, settleFeud, policy: W => pol(W), setPolicy: (W, k, v) => { pol(W)[k] = v; }, setDeal: (W, id, v) => { if (v === 'auto') delete pol(W).deal[id]; else pol(W).deal[id] = v; }, dealMode: (W, o) => dealWith(W, o), clanHeir, FAITHS, isMatri, faithOf, cultureName, MON, checkPlace, und, speechWord, kultInfo, grainInfo, clanFlow, HOME_R, CREATION, claimsYear, ring, ringSay, BEASTS, beastNm, beastTale, beastOdds, beastWhere, beastToll, beastNear, saveGame, loadGame, saveInfo, ruleInfo, advice, legacy, legacyHTML, TRAITS, epithet, hasTrait, leadWeight, standingWhy, villageInfo, RANKS, SOCIETY, societyOf, rankOf, WORKS, JOBS, walls, canBuild, releaseClaim: (W, i) => { const P = W.player; if (P && P.claims && P.claims[i]) { houseNote(W, `The house gave up its claim to the ${DEPOSITS[P.claims[i].d.type].name.toLowerCase()}.`); P.claims.splice(i, 1); } }, weaponsName, houseSlaves, slaveCount, freeCount, knows, knowsTribe, foodDays, GIFTABLE, STAGES, BOAT_STAGES, METAL_STAGES, boatStage, metalStage, arms, canReach, houseCandidates, choosePlayer, resolve, dynMembers, titlesOf, relWord, vigor, tribeVigor, statureCm, farmSuit, fieldInfo, potential, cellFood, foodBreakdown, kingshipBid, warriors, tribeWealth, confedTribes, confedPeople, newConfed, joinConfed, leaveConfed, formAlliance, kinOf, rulerWord, realmWord, realmInfo, realmHeir, realmRisk, realmPutDown, realmWarList, realmRiseOdds, realmStay, realmNext, realmKingdomNeeds, succession, confedYear,
+  return { bondWord, tribeKnown, liveSigns, walkWord, SIGN_R, N, CELL, WORLD, HA, FORAGE_R, TRIBE_MAX, tribeMax, BIOMES, GROVES, DEPOSITS, GOOD_NAMES, createWorld, seedFirstPop, step, clanSize, tribeSize, battleOdds, warSides, warBegin, realmWarcall, familiesOf, famMembers, needsWeek, opinion, prestige, isAllied, sameConfed, tribeCenter, roadLevel, pactRoute, playerActions, doAction, dealings, settleFeud, policy: W => pol(W), setPolicy: (W, k, v) => { const p = pol(W); if (k === 'deal' || !(k in p) || (v !== 'ask' && !(AUTOIX[k] && v in AUTOIX[k]))) return; p[k] = v; }, setDeal: (W, id, v) => { if (v === 'auto') delete pol(W).deal[id]; else pol(W).deal[id] = v; }, dealMode: (W, o) => dealWith(W, o), clanHeir, FAITHS, isMatri, faithOf, cultureName, MON, checkPlace, und, speechWord, kultInfo, grainInfo, clanFlow, HOME_R, CREATION, claimsYear, ring, ringSay, BEASTS, beastNm, beastTale, beastOdds, beastWhere, beastToll, beastNear, saveGame, loadGame, saveInfo, ruleInfo, advice, legacy, legacyHTML, TRAITS, epithet, hasTrait, leadWeight, standingWhy, villageInfo, RANKS, SOCIETY, societyOf, rankOf, WORKS, JOBS, walls, canBuild, releaseClaim: (W, i) => { const P = W.player; if (P && P.claims && P.claims[i]) { houseNote(W, `The house gave up its claim to the ${DEPOSITS[P.claims[i].d.type].name.toLowerCase()}.`); P.claims.splice(i, 1); } }, weaponsName, houseSlaves, slaveCount, freeCount, knows, knowsTribe, foodDays, GIFTABLE, STAGES, BOAT_STAGES, METAL_STAGES, boatStage, metalStage, arms, canReach, houseCandidates, choosePlayer, resolve, dynMembers, bloodCount, titlesOf, relWord, vigor, tribeVigor, statureCm, farmSuit, fieldInfo, potential, cellFood, foodBreakdown, kingshipBid, warriors, tribeWealth, confedTribes, confedPeople, newConfed, joinConfed, leaveConfed, formAlliance, kinOf, rulerWord, realmWord, realmInfo, realmHeir, realmRisk, realmPutDown, realmWarList, realmRiseOdds, realmStay, realmNext, realmKingdomNeeds, succession, confedYear,
     seasonOf, seasonName, tempOffset, cellAt, lifeStage, siler, fecund, makePerson, stepPop };
 })();
 if (typeof module !== 'undefined') module.exports = SIM;
