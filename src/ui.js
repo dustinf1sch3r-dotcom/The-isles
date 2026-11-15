@@ -349,7 +349,7 @@
           v /= ws; if (v <= 0) { ownBuf[k] = -1; continue; }
           ownBuf[k] = O; ownV[k] = v; ownH[k] = hd / ws; } }
       if (rm.sig) realmDist(ownBuf, ownR, ownD, w, h, rm.of);
-      const rbw = Math.max(2, Math.round(6 / q)), rgp = Math.max(1, Math.round(2 / q));
+      const zf = Math.min(1.7, Math.max(1, Math.sqrt(0.0016 / cam.s))), rbw = Math.max(2, Math.round(6 * zf / q)), rgp = Math.max(1, Math.round(2.6 * zf / q)); // the outline is about 6 px at the default zoom and 10 px when the whole isles are in view on a phone (up to 9 px at rest on a large screen); a kingdom's gap grows with it (offsets stay under the 255 limit of ownD: worst case (2*5+2)*10 = 120)
       const fillC = tribes.map(t => hsl2rgb(show.kult && t.kult ? t.kult.hue : t.hue, 0.55, 0.45)), edgeC = tribes.map(t => hsl2rgb(show.kult && t.kult ? t.kult.hue : t.hue, 0.6, 0.28)), a = ownImg.data, hv = hover && hover.e;
       for (let y = 0, k = 0; y < h; y++) for (let x = 0; x < w; x++, k++) {
         const o = ownBuf[k], p = k * 4; if (o < 0) { a[p + 3] = 0; continue; }

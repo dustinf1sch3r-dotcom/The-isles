@@ -858,8 +858,8 @@ const SIM = (() => {
     W.flow.fill(0);
     for (const i of W.order) { W.flow[i] += W.runoff[i]; const d = W.down[i]; if (d >= 0 && W.land[d]) W.flow[d] += W.flow[i]; }
     if (W.week % 2 === 0) {
-      const g2 = W.game.slice();
-      for (const i of W.landIdx) { const x = i % N, y = (i / N) | 0; if (x < 1 || y < 1 || x > N - 2 || y > N - 2) continue; let s4 = 0, c4 = 0; for (const j of [i - 1, i + 1, i - N, i + N]) if (W.land[j] && !W.lake[j]) { s4 += g2[j]; c4++; } if (c4) W.game[i] = 0.84 * g2[i] + 0.16 * s4 / c4; }
+      const g2 = W._g2 || (W._g2 = new W.game.constructor(W.game.length)); g2.set(W.game);
+      for (const i of W.landIdx) { const x = i % N, y = (i / N) | 0; if (x < 1 || y < 1 || x > N - 2 || y > N - 2) continue; let s4 = 0, c4 = 0; let j = i - 1; if (W.land[j] && !W.lake[j]) { s4 += g2[j]; c4++; } j = i + 1; if (W.land[j] && !W.lake[j]) { s4 += g2[j]; c4++; } j = i - N; if (W.land[j] && !W.lake[j]) { s4 += g2[j]; c4++; } j = i + N; if (W.land[j] && !W.lake[j]) { s4 += g2[j]; c4++; } if (c4) W.game[i] = 0.84 * g2[i] + 0.16 * s4 / c4; }
     }
     if (W.week % 52 === 51) classifyBiomes(W);
   }
@@ -6873,7 +6873,7 @@ const ART = (() => {
           v /= ws; if (v <= 0) { ownBuf[k] = -1; continue; }
           ownBuf[k] = O; ownV[k] = v; ownH[k] = hd / ws; } }
       if (rm.sig) realmDist(ownBuf, ownR, ownD, w, h, rm.of);
-      const rbw = Math.max(2, Math.round(6 / q)), rgp = Math.max(1, Math.round(2 / q));
+      const zf = Math.min(1.7, Math.max(1, Math.sqrt(0.0016 / cam.s))), rbw = Math.max(2, Math.round(6 * zf / q)), rgp = Math.max(1, Math.round(2.6 * zf / q)); // the outline is about 6 px at the default zoom and 10 px when the whole isles are in view on a phone (up to 9 px at rest on a large screen); a kingdom's gap grows with it (offsets stay under the 255 limit of ownD: worst case (2*5+2)*10 = 120)
       const fillC = tribes.map(t => hsl2rgb(show.kult && t.kult ? t.kult.hue : t.hue, 0.55, 0.45)), edgeC = tribes.map(t => hsl2rgb(show.kult && t.kult ? t.kult.hue : t.hue, 0.6, 0.28)), a = ownImg.data, hv = hover && hover.e;
       for (let y = 0, k = 0; y < h; y++) for (let x = 0; x < w; x++, k++) {
         const o = ownBuf[k], p = k * 4; if (o < 0) { a[p + 3] = 0; continue; }

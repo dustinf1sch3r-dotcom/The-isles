@@ -374,8 +374,8 @@ const SIM = (() => {
     W.flow.fill(0);
     for (const i of W.order) { W.flow[i] += W.runoff[i]; const d = W.down[i]; if (d >= 0 && W.land[d]) W.flow[d] += W.flow[i]; }
     if (W.week % 2 === 0) {
-      const g2 = W.game.slice();
-      for (const i of W.landIdx) { const x = i % N, y = (i / N) | 0; if (x < 1 || y < 1 || x > N - 2 || y > N - 2) continue; let s4 = 0, c4 = 0; for (const j of [i - 1, i + 1, i - N, i + N]) if (W.land[j] && !W.lake[j]) { s4 += g2[j]; c4++; } if (c4) W.game[i] = 0.84 * g2[i] + 0.16 * s4 / c4; }
+      const g2 = W._g2 || (W._g2 = new W.game.constructor(W.game.length)); g2.set(W.game);
+      for (const i of W.landIdx) { const x = i % N, y = (i / N) | 0; if (x < 1 || y < 1 || x > N - 2 || y > N - 2) continue; let s4 = 0, c4 = 0; let j = i - 1; if (W.land[j] && !W.lake[j]) { s4 += g2[j]; c4++; } j = i + 1; if (W.land[j] && !W.lake[j]) { s4 += g2[j]; c4++; } j = i - N; if (W.land[j] && !W.lake[j]) { s4 += g2[j]; c4++; } j = i + N; if (W.land[j] && !W.lake[j]) { s4 += g2[j]; c4++; } if (c4) W.game[i] = 0.84 * g2[i] + 0.16 * s4 / c4; }
     }
     if (W.week % 52 === 51) classifyBiomes(W);
   }
