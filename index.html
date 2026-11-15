@@ -1972,7 +1972,7 @@ const SIM = (() => {
       const near = o.clans.filter(x => Math.hypot(x.x - c.x, x.y - c.y) <= 160000), cen = tribeCenter(o), km = Math.round(Math.hypot(cen[0] - c.x, cen[1] - c.y) / 1000);
       if (km > 260) continue;
       let why;
-      if (peaceHeld(W, t, o)) { const r = t.rel.get(o.id); const py = Math.floor((r.peaceFrom != null ? r.peaceFrom : r.peaceUntil - 520) / 52) + 1, pn = Math.ceil((r.peaceUntil - W.week) / 52); why = `${r.peaceBy === 'player' ? 'you made peace with them' : 'the two peoples have been at peace'}${r.peaceBy === 'player' ? ' in' : ' since'} year ${py} (${pn} more year${pn === 1 ? '' : 's'})`; }
+      if (peaceHeld(W, t, o)) { const r = t.rel.get(o.id); const py = Math.floor((r.peaceFrom != null ? r.peaceFrom : r.peaceUntil - 520) / 52) + 1, py2 = Math.floor(r.peaceUntil / 52) + 1; why = `${r.peaceBy === 'player' ? 'you made peace with them' : 'the two peoples have been at peace'}${r.peaceBy === 'player' ? ' in' : ' since'} year ${py} (it holds until year ${py2})`; }
       else if (isAllied(t, o)) why = 'they are ' + bondWord(W, t, o);
       else if (!near.length) why = `their nearest camp is ${Math.round(Math.min(...o.clans.map(x => Math.hypot(x.x - c.x, x.y - c.y))) / 1000)} km away, past the 160 km a raiding party can go`;
       else if (!near.some(x => knows(W, x.x, x.y))) { const y = o.seenW == null ? null : Math.floor((W.week - o.seenW) / 52); why = y == null ? 'no camp of theirs has been seen' : y < 1 ? 'no camp of theirs lies on land you have seen' : `no camp of theirs has been seen for ${y} year${y === 1 ? '' : 's'}`; }
@@ -2943,7 +2943,7 @@ const SIM = (() => {
           note(W, cf, `Victory over the ${t.name}: ${b.dL} of theirs fell and ${b.aL} of ours.`);
           if (t.warLosses >= 2 || b.r > WAR_CRUSH) {
             warOver(W, cf, tid); joinConfed(W, cf, t, 'subject'); t.warLosses = 0;
-            logEvent(W, `The ${t.name} submit to ${rulerMid(cf)} ${king.name} and must pay tribute to ${cf.name} (${b.dL} of theirs fell and ${b.aL} of ours in the last battle).`, cf, 'king');
+            logEvent(W, `The ${t.name} submit to ${rulerMid(cf)} ${king.name} and must pay tribute to ${cf.name} (${b.dL} of the ${t.name} and ${b.aL} of the host fell in the last battle).`, cf, 'king');
           } else logEvent(W, `Battle: ${rulerWord(cf)} ${king.name}'s warriors defeat the ${t.name} (${b.dL} of the ${t.name} and ${b.aL} of the host fell).`, t, 'blood');
         } else {
           { const L = cf.warLog && cf.warLog[tid], P = W.player, pc = L && L.stand != null ? W.ents.get(L.stand) : null, lc = t.headman && t.headman.clan; if (P && !P.over && pc && pc.alive && pc.tribe === t) { P.renown += 2; if (lc) affect(W, lc, pc, 8, `Stood with us against the ${rulerWord(cf).toLowerCase()}`); houseNote(W, `The ${t.name} turned back ${rulerMid(cf, K0)} ${K0.name}'s host, and our men stood in the field. Our house gains 2 renown.`); } }
@@ -4036,7 +4036,7 @@ const SIM = (() => {
     // raid
     { const tg = raidTargets(W, c), F = raidForces(W, c, h), ok = adult && F.length && tg.length && ready('raid', 3), wn = raidWhyNot(W, c, new Set(tg.map(x => x.o.tribe))), wnTxt = wn.map(x => `the ${x.o.name} (${x.km} km ${x.dir}): ${x.why}`).join('; ');
       A.push({ id: 'raid', icon: '⚔', label: 'Lead a raiding party', hint: `Take food, grain and valuables from another tribe — you can call ${F.map(f => f.n + ' ' + f.short).join(', ') || 'no one'}.${wnTxt ? ' Peoples you know of but cannot raid: ' + wnTxt + '.' : ''}`, forces: F, ok, why: !adult ? 'Your head is too young or too old to lead a raid' : !F.length ? 'Too few warriors will follow you' : !tg.length ? `No camps of strangers you know of within 160 km — explore to find some.${wnTxt ? ' Known peoples: ' + wnTxt + '.' : ''}` : !ready('raid', 3) ? `Your warriors need rest (${yl('raid', 3)})` : '',
-        targets: tg.map(({ o, w, wrongd }) => ({ ref: o, label: `the ${o.name} ${o.settled ? 'village' : 'camp'} of the ${o.tribe.name}`, hint: `${wrongd ? 'They raided you in year ' + (Math.floor(c.wrong.w / 52) + 1) + ' · ' : ''}${F.length ? 'chance of winning ' + F.map(f => `about ${Math.round(raidChance(W, c, o, raidBonus(c, h, f)) * 100)}%${F.length > 1 ? ' with ' + f.n + ' ' + (f.id === 'clan' ? 'of the clan and volunteers' : f.short) : ' with ' + f.n}`).join(', ') + ' · ' : ''}${opinion(c.tribe, o.tribe) > 15 ? 'They count you as friends: a raid ends that · ' : ''}${o.people.length} people · ${w} fighting men${o.settled ? ' · stored grain' : ''}${o.goods.amber + o.goods.bronze + o.goods.metal ? ' · valuables' : ''} · ${o.tribe.stage === 3 ? 'farmers (weaker fighters)' : 'foragers'}${o.goods.bronze ? ' · bronze weapons!' : ''}${o.works && o.works.pal ? ' · behind a palisade!' : ''}${und(t, o.tribe) < 0.15 ? ' · speech unknown to us' : ''} · they think of you as ${opinion(o.tribe, t) > 15 ? 'friends' : opinion(o.tribe, t) < -15 ? 'enemies' : 'strangers'}` })) }); }
+        targets: tg.map(({ o, w, wrongd }) => ({ ref: o, label: `the ${o.name} ${o.settled ? 'village' : 'camp'} of the ${o.tribe.name}`, hint: `${wrongd ? 'They raided you in year ' + (Math.floor(c.wrong.w / 52) + 1) + ' · ' : ''}${F.length ? 'chance of winning ' + F.map(f => `about ${Math.round(raidChance(W, c, o, raidBonus(c, h, f)) * 100)}%${F.length > 1 ? ' with ' + f.n + ' ' + (f.id === 'clan' ? 'of the clan and volunteers' : f.short) : ' with ' + f.n}`).join(', ') + ' · you yourself may fall: ' + F.map(f => `about ${riskPct(raidHeadRisk(true, f.n))}% if you win, ${riskPct(raidHeadRisk(false, f.n))}% if you lose${F.length > 1 ? ' with ' + f.n : ''}`).join(', ') + ' · ' : ''}${opinion(c.tribe, o.tribe) > 15 ? 'They count you as friends: a raid ends that · ' : ''}${o.people.length} people · ${w} fighting men${o.settled ? ' · stored grain' : ''}${o.goods.amber + o.goods.bronze + o.goods.metal ? ' · valuables' : ''} · ${o.tribe.stage === 3 ? 'farmers (weaker fighters)' : 'foragers'}${o.goods.bronze ? ' · bronze weapons!' : ''}${o.works && o.works.pal ? ' · behind a palisade!' : ''}${und(t, o.tribe) < 0.15 ? ' · speech unknown to us' : ''} · they think of you as ${opinion(o.tribe, t) > 15 ? 'friends' : opinion(o.tribe, t) < -15 ? 'enemies' : 'strangers'}` })) }); }
     // migrate & found a new tribe
     { const head = c.head === h, fol = head ? c.people.length : houseFollowers(W, c, h).length, ok = adult && h.age >= 18 && fol >= 6 && ready('migrate', 4);
       A.push({ id: 'migrate', icon: '🧭', label: head ? 'Lead your clan to new lands' : 'Lead your household to new lands', hint: head ? (t.clans.length > 1 ? `Break from the ${t.name} and found a new tribe with ${h.name} as its headman` : 'Move your people to a new homeland') : `${fol} people of your house and its friends will follow ${h.name} to found a new clan and tribe`, ok, why: fol < 6 ? 'Too few would follow you' : !adult || h.age < 18 ? 'Your head is not of an age to lead' : !ready('migrate', 4) ? `Your people are still settling in (${yl('migrate', 4)})` : '',
@@ -4209,7 +4209,7 @@ const SIM = (() => {
       }
       const nCap = (R0.captives || []).length, freed = (R0.captives || []).filter(q => !q.slave), slaves = (R0.captives || []).filter(q => q.slave), lost = b4.mine - (c.people.length - nCap), killed = b4.theirs - o.people.length - nCap, gained = R0.win ? 1 : 0, tre = c.goods.amber + c.goods.bronze + c.goods.metal + c.goods.axe + c.goods.flint - b4.gd;
       let headFell = false;
-      if (h.alive && W.rand() < (gained > 0 ? 0.04 : 0.15) / Math.sqrt(Math.max(1, F.n / 8))) { die(W, c, h, `killed leading a raid on the ${o.name}`); c.people = c.people.filter(q => q.alive); headFell = true; }
+      if (h.alive && W.rand() < raidHeadRisk(gained > 0, F.n)) { die(W, c, h, `killed leading a raid on the ${o.name}`); c.people = c.people.filter(q => q.alive); headFell = true; }
       P.renown += gained > 0 ? 3 + killed : -1;
       houseNote(W, `${h.name} led a raid on the ${o.name} of the ${o.tribe.name}: ${killed} of theirs fell, ${lost + (headFell ? 1 : 0)} of ours${headFell ? `, and ${h.name} ${h.sex === 'F' ? 'herself' : 'himself'} was slain` : ''}${gained > 0 ? '; we came home with plunder' : '; we came home empty-handed'}.`);
       return { title: gained > 0 ? 'The raid succeeds' : 'The raid fails', text: `${F.n} warriors (${F.mix || F.label.replace(/^Call up /, '')}) struck the ${o.name} ${o.settled ? 'village' : 'camp'}. ${killed} of theirs fell and ${lost + (headFell ? 1 : 0)} of ours.${gained > 0 ? ` You carried off ${(d => d >= 1 ? d + (d === 1 ? ' day' : ' days') + ' of food' : 'a little food')(Math.round((c.store + c.grain - b4.store) / Math.max(1, needsWeek(c) / 7)))}${tre > 0 ? ` and ${tre} valuable thing${tre > 1 ? 's' : ''}` : ''}${o.settled ? ' and grain from their stores' : ''}.` : ' They drove you off.'}${slaves.length ? ` <b>${slaves.length} captive${slaves.length > 1 ? 's' : ''}</b> (${slaves.map(q => `${q.name}, ${Math.floor(q.age)}`).join('; ')}) now belong${slaves.length > 1 ? '' : 's'} to ${h.name}.` : ''}${freed.length ? ` <b>${freed.map(q => q.name).join(' and ')}</b>, of the blood of your house, ${freed.length > 1 ? 'were' : 'was'} among the captives and came home free, not as ${freed.length > 1 ? 'slaves' : 'a slave'}.` : ''} The chance of winning was about ${odds}%.${headFell ? ` <b>${h.name} was killed in the fighting.</b>` : ''} The ${o.tribe.name} will not forget this.` };
@@ -4533,8 +4533,8 @@ const SIM = (() => {
   function signsYear(W) {
     const P = W.player; if (!P || P.over || !P.known || !P.head.alive || !P.head.clan) return;
     const mine = P.head.clan.tribe; if (P.signs) P.signs = keptSigns(W);
-    const best = new Map(); // tribe -> nearest hidden camp to any clan of ours
-    for (const c of mine.clans) for (const o of signCamps(W, c)) { const d = Math.hypot(o.x - c.x, o.y - c.y), b = best.get(o.tribe); if (!b || d < b.d) best.set(o.tribe, { d, c, o }); }
+    const best = new Map(); // tribe -> nearest hidden camp to our own clan (the one the explore route measures from)
+    { const c = P.head.clan; for (const o of signCamps(W, c)) { const d = Math.hypot(o.x - c.x, o.y - c.y), b = best.get(o.tribe); if (!b || d < b.d) best.set(o.tribe, { d, c, o }); } }
     const list = [...best.entries()].filter(([o, b]) => !knowsTribe(W, o) && !signTold(W, P, o, b.d, compass(b.o.x - b.c.x, b.o.y - b.c.y))).sort((a, b) => a[1].d - b[1].d);
     for (const [o, b] of list) {
       const p = b.d < 80000 ? 0.5 : b.d < 180000 ? 0.3 : 0.15;
@@ -4579,6 +4579,8 @@ const SIM = (() => {
   const EXP_RISK = 0.03, EXP_RISK_SEA = 0.06, EXP_RISK_FOE = 0.18, LEADER_RISK = 0.6;
   const expLeader = h => h.age >= 16 && h.age < 58 && h.sex === 'M'; // the head goes and risks his own life only in these years
   const riskPct = v => Math.round(v * 1000) / 10;
+  // the chance that the head who leads a raid falls: shown in the choice, rolled in the deed
+  const raidHeadRisk = (won, n) => (won ? 0.04 : 0.15) / Math.sqrt(Math.max(1, n / 8));
   // the camps of other peoples that lie on land the house has not seen, within SIGN_R of the clan's camp
   // hidden camps of peoples we do not know that a party could really walk to: what signs and sign routes are about
   const signCamps = (W, c) => hiddenCamps(W, c).filter(o => !knowsTribe(W, o.tribe) && W.land[cellAt(o.x, o.y)] && !W.lake[cellAt(o.x, o.y)] && canReach(W, c, o.x, o.y));
@@ -4618,7 +4620,9 @@ const SIM = (() => {
     const sr = [], nearest = new Array(8).fill(null);
     // a party follows signs to camps near enough to see them by (within SIGN_NEAR), or to peoples our hunters or traders have already come on signs of
     const known = new Set(liveSigns(W).map(s => s.t));
-    for (const o of signCamps(W, c)) { const dx = o.x - c.x, dy = o.y - c.y, d = Math.hypot(dx, dy), sec = ((Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) % 8) + 8) % 8; if (d > SIGN_NEAR && !known.has(o.tribe.id)) continue; if (d > 0 && (!nearest[sec] || nearest[sec].d > d)) nearest[sec] = { o, d, dx, dy }; }
+    const nearT = new Map(); // people -> its nearest camp, so one people makes one route
+    for (const o of signCamps(W, c)) { const d = Math.hypot(o.x - c.x, o.y - c.y), b = nearT.get(o.tribe); if (d > 0 && (!b || d < b.d)) nearT.set(o.tribe, { o, d }); }
+    for (const { o } of nearT.values()) { const dx = o.x - c.x, dy = o.y - c.y, d = Math.hypot(dx, dy), sec = ((Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) % 8) + 8) % 8; if (d > SIGN_NEAR && !known.has(o.tribe.id)) continue; if (d > 0 && (!nearest[sec] || nearest[sec].d > d)) nearest[sec] = { o, d, dx, dy }; }
     for (let sec = 0; sec < 8; sec++) { const n = nearest[sec]; if (!n) continue;
       const ci = cellAt(n.o.x, n.o.y); if (!W.land[ci] || W.lake[ci] || !canReach(W, c, n.o.x, n.o.y)) continue;
       const across = W.comp[ci] !== W.comp[cellAt(c.x, c.y)], L = Math.min(n.d + 30000, 340000), ux = n.dx / n.d, uy = n.dy / n.d, pts = [];
