@@ -99,20 +99,22 @@ Lines are very long, often a whole function on one line. Do not print whole file
 - **Roads and farming:** trade pacts make roads. Clearing fields shows on the map and drives beasts off, and wildlife thins as the land fills.
 - **Way of working:** Dustin likes the strongest model to plan and check, with cheaper agents building and play-testing, and every claim checked before it is reported.
 
-## Where things stand (November 2026)
-Five automated testers last played the war and unification game, and their bugs were fixed (see `docs/war-test-reports.md`). Checks at that point:
-- Fuzz gave 0 errors.
-- 14 unattended games had no house die out.
-- Five game years take about 2 seconds at year 200.
+## Where things stand (15 November 2026)
+This round (GitHub issues #1 to #3, built by agent engineers from briefs, each checked by two skeptics, then play-tested on the combined build):
+- **Signs of other peoples (#1).** Signs reach 340 km; hunters find them yearly and traders bring tales; the explore deed follows a sign straight to a people (camps within 150 km, or peoples the house has a sign of). First contact when exploring: 5.5 years on average over eight seeds (was 25).
+- **War with risk (#2).** A raided clan may strike back within six years (`c.wrong`, `paybackMonth`); the raiders' card, the raid deed (including the head's own risk) and the realm war deed show the chances they roll; a peace binds both sides; a ruler can call off a war; a house whose tribe is attacked while it does not lead gets a card (send the men or keep them home). Subjects are no longer called allies.
+- **Quieter late game (#3).** Standing orders for eight routine card types, set from the card; renown counts only the blood in the house's tribe (at most 200); a note when a child head is fostered; a cheaper `stepEnv` (bit-identical); the realm outline widens when zoomed out.
+- Checks on the combined build: fuzz 0 errors; saves and a save from before this round load; head_swap 0; balance on eight seeds: no house ended, world population 2.6% above the old game in total.
 
 Still open or worth doing next:
-- Nobody has play-tested the latest fixes by hand.
-- Finding neighbours early can take a long time on some seeds; explore routes follow a sign (a camp of a people not yet known, within SIGN_R = 340 km and reachable) when there is one; signs come yearly and from traders' tales.
+- The map is crowded once many peoples exist (issue #5, a declutter change, follows this round).
+- A realm only marches on a people at most 1/1.6 of its strength and within 90 km of its host, so the "send our men or keep them home" card nearly always shows about 0% both ways, and the player's own war deed is rarely reachable in honest play. Realm wars need a rule that makes them closer and more common.
+- Late game is slow: about 1.2 seconds a year at year 250 on seed 2 in the text front-end, growing faster than population (per-month loops over all tribes and clans: `kultYear`, `marriages`, `revenge`, `traderMonth`, `slaveMonth`). `stepEnv` was made cheaper but saves only a few percent.
+- Seeds whose nearest people is beyond 340 km or across the sea without boats still get no sign (seed 6 met no one by year 19).
+- Raiding every chance now costs the house about three times the dead it did (paybacks); no house ended in the tests.
 - No world kingdom arose by itself in the tests. The kingdom needs 400 people and a great hall.
-- Being raided, or attacked by another realm, was never seen by testers, so those decisions are untested in play.
 - A tribe's leader-for-life can be replaced in one edge case (a woman who led only because no eligible man existed).
 - Late-game population runs higher than before, partly from richer fields.
-- The realm outline is drawn the same width at every zoom, so it is thin at whole-isles zoom.
 
 ## Testing a change
 Do all of these before committing:
