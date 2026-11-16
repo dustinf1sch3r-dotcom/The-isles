@@ -442,7 +442,7 @@
     // roads, paths, tracks and sea lanes, worn in by use
     if (show.roads) { const lv = [new Path2D(), new Path2D(), new Path2D(), new Path2D()], lane = new Path2D(), zs = clamp(zoomed / 8, 0.7, 1.8);
       for (const [k, v] of W.roads) {
-        const L = SIM.roadLevel(v); if (!L) continue;
+        const L = SIM.roadLevel(v); if (!L || (L < 2 && zoomed < LOD_FAR)) continue; // from far out only paths and roads
         const a = Math.floor(k / 40000), b = k % 40000, [x1, y1] = cellS(a), [x2, y2] = cellS(b);
         if ((x1 < -20 && x2 < -20) || (y1 < -20 && y2 < -20) || (x1 > w + 20 && x2 > w + 20) || (y1 > h + 20 && y2 > h + 20)) continue;
         const p = W.land[a] && W.land[b] ? lv[L] : lane; p.moveTo(x1, y1); p.lineTo(x2, y2);

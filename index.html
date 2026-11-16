@@ -2708,7 +2708,52 @@ const SIM = (() => {
   //  summer gatherings, and traffic between settlements. Routes bend around lakes and steep climbs.
   //  Edge traffic fades unless used, so tracks come and go; busy ones become paths, then roads.
   // =====================================================================
+  // A way that exists is cheaper to walk: a step along a road costs x0.35, a path x0.5, a track x0.75, so new trips follow old ways.
+  const ROUTE_DISC = [1, 0.75, 0.5, 0.35], ROUTE_BOX_M = 15000, ROUTE_BOX_SHARE = 0.35, ROUTE_MAX_OPEN = 6000;
+  const rtG = new Float64Array(N * N), rtSeen = new Int32Array(N * N), rtPar = new Int32Array(N * N), rtDone = new Int32Array(N * N); let rtStamp = 0;
+  const rtHeapI = [], rtHeapF = [];
+  function rtPush(i, f) { let k = rtHeapI.length; rtHeapI.push(i); rtHeapF.push(f); while (k > 0) { const p = (k - 1) >> 1; if (rtHeapF[p] <= f) break; rtHeapI[k] = rtHeapI[p]; rtHeapF[k] = rtHeapF[p]; k = p; } rtHeapI[k] = i; rtHeapF[k] = f; }
+  function rtPop() {
+    const top = rtHeapI[0], li = rtHeapI.pop(), lf = rtHeapF.pop(), n = rtHeapI.length; if (n) { let k = 0; for (;;) { let c = 2 * k + 1; if (c >= n) break; if (c + 1 < n && rtHeapF[c + 1] < rtHeapF[c]) c++; if (rtHeapF[c] >= lf) break; rtHeapI[k] = rtHeapI[c]; rtHeapF[k] = rtHeapF[c]; k = c; } rtHeapI[k] = li; rtHeapF[k] = lf; }
+    return top;
+  }
+  // least-cost walk (A*) over the 8-neighbour grid inside a corridor round start and goal; null if it fails (the caller then walks greedily)
+  // The terrain part of a step never changes in a world (land, climb, slope, lake, marsh), so it is worked out once per directed step and kept.
+  const rtBase = new Float64Array(N * N * 8), RTX = NB8.map(d => d[0]), RTY = NB8.map(d => d[1]); let rtBaseW = null;
+  function routeSearch(W, start, goal) {
+    if (rtBaseW !== W) { rtBase.fill(-1); rtBaseW = W; }
+    const gx = PX[goal], gy = PY[goal], dist = Math.sqrt((gx - PX[start]) ** 2 + (gy - PY[start]) ** 2), pad = Math.max(ROUTE_BOX_M, dist * ROUTE_BOX_SHARE);
+    const bx0 = Math.min(PX[start], gx) - pad, bx1 = Math.max(PX[start], gx) + pad, by0 = Math.min(PY[start], gy) - pad, by1 = Math.max(PY[start], gy) + pad;
+    const st = ++rtStamp, roads = W.roads, hd = ROUTE_DISC[3], anyRoad = roads.size > 0; rtHeapI.length = 0; rtHeapF.length = 0;
+    rtG[start] = 0; rtSeen[start] = st; rtPar[start] = -1; rtPush(start, dist * hd);
+    let opened = 0;
+    while (rtHeapI.length) {
+      const i = rtPop(); if (rtDone[i] === st) continue; rtDone[i] = st;
+      if (i === goal) { const out = []; for (let c = goal; c >= 0; c = rtPar[c]) out.push(c); return out.reverse(); }
+      if (++opened > ROUTE_MAX_OPEN) return null;
+      const x = i % N, y = (i / N) | 0, gi = rtG[i], landI = W.land[i];
+      for (let d = 0; d < 8; d++) {
+        const xx = x + RTX[d], yy = y + RTY[d]; if (xx < 0 || yy < 0 || xx >= N || yy >= N) continue;
+        const j = yy * N + xx; if (rtDone[j] === st || PX[j] < bx0 || PX[j] > bx1 || PY[j] < by0 || PY[j] > by1) continue;
+        let cost = rtBase[i * 8 + d];
+        if (cost < 0) {
+          const step = cdist(i, j) * CELL; cost = step;
+          if (W.land[j]) cost += Math.max(0, W.elev[j] - (landI ? W.elev[i] : 0)) * 30 + W.slope[j] * step * 3 + (W.lake[j] ? step * 4 : 0) + (W.biome[j] === 8 ? step * 0.6 : 0);
+          else cost += step * 0.5; // open water: canoes
+          rtBase[i * 8 + d] = cost;
+        }
+        if (anyRoad) { const v = roads.get(i < j ? i * 40000 + j : j * 40000 + i); if (v > 3) cost *= ROUTE_DISC[v > 30 ? 3 : v > 10 ? 2 : 1]; }
+        const ng = gi + cost; if (rtSeen[j] === st && rtG[j] <= ng) continue;
+        rtSeen[j] = st; rtG[j] = ng; rtPar[j] = i; rtPush(j, ng + Math.sqrt((PX[j] - gx) ** 2 + (PY[j] - gy) ** 2) * hd);
+      }
+    }
+    return null;
+  }
   function routeCells(W, x0, y0, x1, y1) {
+    const a = cellAt(x0, y0), b = cellAt(x1, y1); if (a === b) return [a];
+    return routeSearch(W, a, b) || routeGreedy(W, x0, y0, x1, y1);
+  }
+  function routeGreedy(W, x0, y0, x1, y1) {
     let i = cellAt(x0, y0); const goal = cellAt(x1, y1), gx = PX[goal], gy = PY[goal], out = [i], seen = new Set([i]);
     const maxSteps = Math.ceil(Math.hypot(x1 - x0, y1 - y0) / CELL * 2) + 4;
     for (let s = 0; i !== goal && s < maxSteps; s++) {
@@ -2734,9 +2779,10 @@ const SIM = (() => {
   //  PACT ROADS — a trade pact between two tribes wears a way between their chief places every year.
   //  Ends are remembered on the relation record (r.way = [idLow, keyLow, idHigh, keyHigh]; key 'p:Name' for a village place,
   //  'c:id' for a camp) so that one line forms. Yearly wear: 6 between two villages, 3 if either end is a camp.
-  //  A constant yearly wear w settles at w / 0.12 before the fade (post-fade 0.88 w / 0.12).
+  //  A constant yearly wear w settles at 4w for a faint way (traffic 10 or less, fade x0.8) and about w / 0.12 for a busy one (fade x0.88); a track shows above 3.
+  //  A sea lane is worn 2 a year between villages (settles at 8) and 1 with a camp at an end (settles at 4), so that either shows as a track when no other boat uses the water.
   // =====================================================================
-  const PACT_W = 6, PACT_SIGN_W = 4, PACT_LANE_W = 1, PACT_YEARS = 20;
+  const PACT_W = 6, PACT_SIGN_W = 4, PACT_LANE_W = 2, PACT_YEARS = 20;
   const roadKey = (a, b) => a < b ? a * 40000 + b : b * 40000 + a;
   function pactResolve(W, t, key) {
     if (!key) return null;
@@ -2836,7 +2882,7 @@ const SIM = (() => {
       for (const b of near) if (a.id < b.id) wear(W, a.x, a.y, b.x, b.y, Math.min(a.pop, b.pop) / 12);
     }
     pactRoadsYear(W);
-    for (const [k, v] of W.roads) { const nv = v * 0.88; if (nv < 0.4) W.roads.delete(k); else W.roads.set(k, nv); }
+    for (const [k, v] of W.roads) { const nv = v * (v > 10 ? 0.88 : 0.8); if (nv < 0.5) W.roads.delete(k); else W.roads.set(k, nv); }
     W.roadsVer = (W.roadsVer || 0) + 1;
   }
   const roadLevel = v => v > 30 ? 3 : v > 10 ? 2 : v > 3 ? 1 : 0; // track, path, road
@@ -7077,7 +7123,7 @@ const ART = (() => {
     // roads, paths, tracks and sea lanes, worn in by use
     if (show.roads) { const lv = [new Path2D(), new Path2D(), new Path2D(), new Path2D()], lane = new Path2D(), zs = clamp(zoomed / 8, 0.7, 1.8);
       for (const [k, v] of W.roads) {
-        const L = SIM.roadLevel(v); if (!L) continue;
+        const L = SIM.roadLevel(v); if (!L || (L < 2 && zoomed < LOD_FAR)) continue; // from far out only paths and roads
         const a = Math.floor(k / 40000), b = k % 40000, [x1, y1] = cellS(a), [x2, y2] = cellS(b);
         if ((x1 < -20 && x2 < -20) || (y1 < -20 && y2 < -20) || (x1 > w + 20 && x2 > w + 20) || (y1 > h + 20 && y2 > h + 20)) continue;
         const p = W.land[a] && W.land[b] ? lv[L] : lane; p.moveTo(x1, y1); p.lineTo(x2, y2);
