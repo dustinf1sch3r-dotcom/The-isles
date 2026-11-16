@@ -805,12 +805,12 @@
   }
   // the best sites for a daughter village in the ring round clan c, by the farming ground (the same scoring the world uses); no randomness
   function foundSites(W, c, o) {
-    o = o || {}; const out = [], fish = c.live === 'fishing';
+    o = o || {}; const out = [], fish = c.live === 'fishing', memo = new Map();
     for (let a = 0; a < 24; a++) for (const r of [14, 20, 26, 32, 38, 44, 50]) {
       const ang = a * Math.PI / 12 + (r % 3) * 0.05, x = c.x + Math.cos(ang) * r * 1000, y = c.y + Math.sin(ang) * r * 1000;
       if (siteWhy(W, c, x, y)) continue;
       if (o.known && !knows(W, x, y)) continue;
-      if (o.home && !inHome(c.tribe, x, y, 25000)) continue;
+      if (o.home && (!inHome(c.tribe, x, y, 25000) || landBlocked(W, c.tribe, cellAt(x, y), memo))) continue;
       let crowd = 0; for (const q of nearClans(W, x, y, 15000)) if (q.settled) crowd++;
       let rich = 0; if (fish) { const b = foodBreakdown(W, x, y, c.tool, c.tribe.boats); rich = (b.fish + b.shellfish + b.seals) / Math.max(1, needsWeek(c) * 0.4); if (rich <= 1.3) continue; } // the sea alone must feed them, by the world's own test for a fishing village
       const sc = ((fish ? rich * 0.3 : farmSuit(W, x, y)) / (1 + crowd)) * (1 - r / 400);
@@ -952,10 +952,10 @@
   // ---------- migration: a whole tribe moves to new lands ----------
   function crowdAt(W, x, y, t, r = 70000) { let n = 0; for (const o of nearClans(W, x, y, r)) if (o.tribe !== t) n += o.people.length * (1 - Math.hypot(o.x - x, o.y - y) / r); return n; }
   function findHomeland(W, t, from, dmin, dmax) {
-    const ref = t.clans[0]; let best = null, bs = -Infinity;
+    const ref = t.clans[0]; let best = null, bs = -Infinity; const memo = new Map();
     for (let k = 0; k < 70; k++) {
       const a = W.rand() * 6.283, r = dmin + W.rand() * (dmax - dmin), x = clamp(from[0] + Math.cos(a) * r, 8000, WORLD - 8000), y = clamp(from[1] + Math.sin(a) * r, 8000, WORLD - 8000);
-      const i = cellAt(x, y); if (!W.land[i] || W.lake[i] || !canReach(W, ref, x, y)) continue;
+      const i = cellAt(x, y); if (!W.land[i] || W.lake[i] || !canReach(W, ref, x, y) || landBlocked(W, t, i, memo)) continue;
       // good food, and as few other people as possible within ~70 km
       const sc = (t.stage === 3 ? farmSuit(W, x, y) * 1e7 : potential(W, x, y, 0.7, t.boats)) / (1 + crowdAt(W, x, y, t) / 40) * (1 - r / 600000);
       if (sc > bs) { bs = sc; best = [x, y]; }
@@ -975,7 +975,7 @@
       return true;
     }
     t.home = dest; t.migrating = W.week;
-    for (const c of t.clans) { const a = W.rand() * 6.283, r = 6000 + W.rand() * 22000; let x = clamp(dest[0] + Math.cos(a) * r, 3000, WORLD - 3000), y = clamp(dest[1] + Math.sin(a) * r, 3000, WORLD - 3000); if (!W.land[cellAt(x, y)]) { x = dest[0]; y = dest[1]; } wear(W, c.x, c.y, x, y, c.people.length / 15); c.tx = x; c.ty = y; c.atGathering = false; }
+    for (const c of t.clans) { const a = W.rand() * 6.283, r = 6000 + W.rand() * 22000; let x = clamp(dest[0] + Math.cos(a) * r, 3000, WORLD - 3000), y = clamp(dest[1] + Math.sin(a) * r, 3000, WORLD - 3000); if (!W.land[cellAt(x, y)] || landBlocked(W, t, cellAt(x, y), null)) { x = dest[0]; y = dest[1]; } wear(W, c.x, c.y, x, y, c.people.length / 15); c.tx = x; c.ty = y; c.atGathering = false; }
     const km = Math.round(Math.hypot(dest[0] - from[0], dest[1] - from[1]) / 1000), dir = compass(dest[0] - from[0], dest[1] - from[1]);
     const crossed = t.clans[0] && W.comp[cellAt(dest[0], dest[1])] !== W.comp[cellAt(t.clans[0].x, t.clans[0].y)];
     if (crossed) { why = `crossing the sea in their canoes${why ? '; ' + why : ''}`; for (const c of t.clans) c.sailing = W.week; }
@@ -1485,20 +1485,21 @@
     const i = cellAt(x, y); if (!W.land[i] || W.lake[i] || W.biome[i] === 2) return 0;
     return clamp(W.nit[i] / 60, 0.3, 1.2) * clamp(W.depth[i] / 0.8, 0.3, 1) * (W.slope[i] < 0.1 ? 1 : 0.5) * (W.T0[i] > 7.5 ? 1 : 0.55) * (W.isRiver[i] || W.hand[i] < 5 ? 1.25 : 0.85) * (W.om[i] > 9 ? 0.5 : 1);
   }
-  function villageSite(W, c, rmin, rmax) {
-    let best = null, bs = -Infinity;
+  function villageSite(W, c, rmin, rmax, force) {
+    let best = null, bs = -Infinity; const memo = new Map();
     for (let k = 0; k < 30; k++) {
       const a = W.rand() * 6.283, r = rmin + W.rand() * (rmax - rmin), x = clamp(c.x + Math.cos(a) * r, 3000, WORLD - 3000), y = clamp(c.y + Math.sin(a) * r, 3000, WORLD - 3000);
       if (!sameIsland(W, c, x, y) || (c.tribe.home && Math.hypot(x - c.tribe.home[0], y - c.tribe.home[1]) > (c.tribe.homeR || HOME_R) + 25000)) continue;
-      let crowd = 0; for (const o of nearClans(W, x, y, 9000)) if (o !== c && o.settled) crowd++;
-      const sc = farmSuit(W, x, y) / (1 + crowd);
+      if (!force && landBlocked(W, c.tribe, cellAt(x, y), memo)) continue; // ground another people holds, unless we are much stronger and at odds with them
+      const sc = villageScore(W, c, x, y);
       if (sc > bs) { bs = sc; best = [x, y]; }
     }
     return best;
   }
   const VILLAGE_END = ['-by', 'stead', 'ham', 'thorp', 'wick', 'ton'];
-  function settleClan(W, c) {
-    const v = villageSite(W, c, 0, 20000) || [c.x, c.y];
+  function settleClan(W, c, force) {
+    const v = villageSite(W, c, 0, 20000, force) || (!force && landBlocked(W, c.tribe, cellAt(c.x, c.y), null) ? null : [c.x, c.y]);
+    if (!v) return; // no ground that is free: the clan stays a camp for now
     c.tx = v[0]; c.ty = v[1]; c.toSettle = true;
   }
   const grainDeposits = W => W.deposits.filter(d => d.type === 'grain');
@@ -1755,7 +1756,7 @@
         // can the sea alone feed them, year in, year out?
         const b = foodBreakdown(W, c.x, c.y, c.tool, t.boats), aq = (b.fish + b.shellfish + b.seals) / Math.max(1, needsWeek(c));
         c.fishYears = aq > 1.3 ? c.fishYears + 0.25 : Math.max(0, c.fishYears - 0.125);
-        if (c.fishYears >= 8) {
+        if (c.fishYears >= 8 && !landBlocked(W, t, cellAt(c.x, c.y), null)) {
           c.settled = true; c.live = 'fishing'; c.settledAt = W.week; c.village = placeNameIn(W, c.tribe, 'haven'); c.tx = c.x; c.ty = c.y;
           note(W, c, `Settled for good at ${c.village}, living from the sea.`);
           logEvent(W, `🏘 The ${c.name} clan (${t.name}) build a permanent fishing village: ${c.village}.`, c, 'settle');
@@ -3196,6 +3197,7 @@
         W.lastResult = { title: `The ${nt.name}`, text: `The other clans leave. The ${c.name} clan stays in its lands as a people of its own, the ${nt.name}.` };
         return;
       }
+      case 'landtaken': case 'landdemand': case 'landattack': landCardResolve(W, ev, k); return;
       case 'raided': {
         const { att, def } = ev.data; if (!att.alive || !def.alive) return;
         if (k === 0) { const n0 = def.people.length, a0 = att.people.length, f0 = foodDays(def); raidCore(W, att, att, def, CARD_DEF, ev.data.attBonus, !!ev.data.payback, ev.data.ratio); houseNote(W, `The ${att.name} raided us; ${h.name} stood and fought.`); P.renown += 1;
@@ -3298,6 +3300,20 @@
     { const tg = raidTargets(W, c), F = raidForces(W, c, h), ok = adult && F.length && tg.length && ready('raid', 3), wn = raidWhyNot(W, c, new Set(tg.map(x => x.o.tribe))), wnTxt = wn.map(x => `the ${x.o.name} (${x.km} km ${x.dir}): ${x.why}`).join('; ');
       A.push({ id: 'raid', icon: '⚔', label: 'Lead a raiding party', hint: `Take food, grain and valuables from another tribe — you can call ${F.map(f => f.n + ' ' + f.short).join(', ') || 'no one'}.${wnTxt ? ' Peoples you know of but cannot raid: ' + wnTxt + '.' : ''}`, forces: F, ok, why: !adult ? 'Your head is too young or too old to lead a raid' : !F.length ? 'Too few warriors will follow you' : !tg.length ? `No camps of strangers you know of within 160 km — explore to find some.${wnTxt ? ' Known peoples: ' + wnTxt + '.' : ''}` : !ready('raid', 3) ? `Your warriors need rest (${yl('raid', 3)})` : '',
         targets: tg.map(({ o, w, wrongd }) => ({ ref: o, label: `the ${o.name} ${o.settled ? 'village' : 'camp'} of the ${o.tribe.name}`, hint: `${wrongd ? 'They raided you in year ' + (Math.floor(c.wrong.w / 52) + 1) + ' · ' : ''}${F.length ? 'chance of winning ' + F.map(f => `about ${Math.round(raidChance(W, c, o, raidBonus(c, h, f)) * 100)}%${F.length > 1 ? ' with ' + f.n + ' ' + (f.id === 'clan' ? 'of the clan and volunteers' : f.short) : ' with ' + f.n}`).join(', ') + ' · you yourself may fall: ' + F.map(f => `about ${riskPct(raidHeadRisk(true, f.n))}% if you win, ${riskPct(raidHeadRisk(false, f.n))}% if you lose${F.length > 1 ? ' with ' + f.n : ''}`).join(', ') + ' · ' : ''}${opinion(c.tribe, o.tribe) > 15 ? 'They count you as friends: a raid ends that · ' : ''}${o.people.length} people · ${w} fighting men${o.settled ? ' · stored grain' : ''}${o.goods.amber + o.goods.bronze + o.goods.metal ? ' · valuables' : ''} · ${o.tribe.stage === 3 ? 'farmers (weaker fighters)' : 'foragers'}${o.goods.bronze ? ' · bronze weapons!' : ''}${o.works && o.works.pal ? ' · behind a palisade!' : ''}${und(t, o.tribe) < 0.15 ? ' · speech unknown to us' : ''} · they think of you as ${opinion(o.tribe, t) > 15 ? 'friends' : opinion(o.tribe, t) < -15 ? 'enemies' : 'strangers'}` })) }); }
+    // land taken by a village of another people: bid it leave, or drive it out (one list of targets for both)
+    { const L = landTargets(W, t);
+      {
+        const F = raidForces(W, c, h), Fa = F.length ? F : [landForce0(W, c, h)], lead = c.head === h || t.headman === h;
+        const wh = x => landWhere(W, t, x.c.x, x.c.y), base = x => `${landV(x.c)} of the ${x.c.tribe.name}, ${wh(x).km} km ${wh(x).dir} of ${wh(x).from}`;
+        const mid = x => `${landLostNow(W, x.r) ? Math.round(landLostNow(W, x.r) * 25) + ' km² of ours already theirs' : 'no land lost yet'} · ${x.c.people.length} people · ${warriorsOf(x.c)} fighting men${walls(x.c) > 1 ? ' behind a wall' : ''}${x.r.refused ? ' · they refused you in year ' + (Math.floor(x.r.refused / 52) + 1) : ''}`;
+        const fl = f => ' with ' + f.n;
+        A.push({ id: 'landask', icon: '🕊', label: 'Demand that they leave our land', hint: `Send an envoy, with your warriors at your back, to bid a village of another people leave the ground it stands on. If they go, they walk to ground beyond our land and the land they took comes back. If they will not, they think the worse of you. Once in 2 years`, forces: Fa, ok: L.length > 0 && lead && ready('landask', 2),
+          why: !L.length ? 'No village of another people stands on our land' : !lead ? 'Only a clan head or the leader of the tribe can send the demand' : `You asked not long ago (${yl('landask', 2)})`,
+          targets: L.map(x => ({ ref: x.c, rec: x.r, label: base(x), hint: `chance they leave: ${Fa.map(f => `about ${Math.round(leaveOdds(W, t, x.c, f, h) * 100)}%${fl(f)}`).join(', ')} · ${mid(x)}` })) });
+        A.push({ id: 'landdrive', icon: '🔥', label: 'Drive them from our land', hint: `Take spears to a village of another people on our ground. A win: they leave, their wall and hall burn, half their food comes to us and the land is ours again; a loss costs us more men than them. Once in 3 years`, forces: F, ok: L.length > 0 && adult && F.length > 0 && ready('landdrive', 3),
+          why: !L.length ? 'No village of another people stands on our land' : !adult ? 'Your head is too young or too old to lead men' : !F.length ? 'Too few warriors will follow you' : `Your warriors need rest (${yl('landdrive', 3)})`,
+          targets: L.map(x => ({ ref: x.c, rec: x.r, label: base(x), hint: `${F.length ? 'chance of winning ' + F.map(f => `about ${Math.round(driveOutOdds(W, c, x.c, f) * 100)}%${fl(f)}`).join(', ') + ' · you yourself may fall: ' + F.map(f => `about ${riskPct(raidHeadRisk(true, f.n))}% if you win, ${riskPct(raidHeadRisk(false, f.n))}% if you lose${F.length > 1 ? ' with ' + f.n : ''}`).join(', ') + ' · ' : ''}${mid(x)}` })) });
+      } }
     // migrate & found a new tribe
     { const head = c.head === h, fol = head ? c.people.length : houseFollowers(W, c, h).length, ok = adult && h.age >= 18 && fol >= 6 && ready('migrate', 4);
       A.push({ id: 'migrate', icon: '🧭', label: head ? 'Lead your clan to new lands' : 'Lead your household to new lands', hint: head ? (t.clans.length > 1 ? `Break from the ${t.name} and found a new tribe with ${h.name} as its headman` : 'Move your people to a new homeland') : `${fol} people of your house and its friends will follow ${h.name} to found a new clan and tribe`, ok, why: fol < 6 ? 'Too few would follow you' : !adult || h.age < 18 ? 'Your head is not of an age to lead' : !ready('migrate', 4) ? `Your people are still settling in (${yl('migrate', 4)})` : '',
@@ -3316,13 +3332,13 @@
     if (!c.settled && !c.toSettle) A.push({ id: 'movecamp', icon: '⛺', label: c.head === h || !c.head ? 'Move camp' : `Ask ${c.head.name} to move the camp`, hint: `Choose where your clan camps, up to 80 km away: beside the wild grain, a flint source, the shore. The camp stays there until it is moved again${c.head && c.head !== h ? `. ${c.head.name} leads the clan and may say no` : ''}`, ok: ready('movecamp', c.head === h ? 1 : 2),
       why: c.head === h ? 'The clan has only just pitched camp (1 yr)' : `You asked not long ago (${yl('movecamp', 2)})`, targets: [{ pick: { maxKm: 80 }, label: 'Choose the place on the map…', hint: 'Any land you know of within 80 km that your people can reach' }] });
     // move the village to a site of our choosing (fresh fields, a better shore)
-    if (c.settled && c.head === h) A.push({ id: 'movevillage', icon: '🏚', label: `Move ${c.village || 'the village'}`, hint: 'Rebuild on fresh ground within 40 km — new fields, full soil', ok: ready('movevillage', 8), why: `The village was only just built (${yl('movevillage', 8)})`, targets: [{ pick: { maxKm: 40 }, label: 'Choose the new site on the map…', hint: 'Anywhere on land within 40 km' }] });
+    if (c.settled && c.head === h) A.push({ id: 'movevillage', icon: '🏚', label: `Move ${c.village || 'the village'}`, hint: 'Rebuild on fresh ground within 40 km — new fields, full soil', ok: ready('movevillage', 8), why: `The village was only just built (${yl('movevillage', 8)})`, targets: [{ pick: { maxKm: 40 }, label: 'Choose the new site on the map…', hint: 'Anywhere on land within 40 km. Ground another people holds is theirs: they may demand that you leave' }] });
     // found a daughter village: the head of a village, or the leader of the tribe, sends its younger houses to new ground
     { const lead = t.headman === h, mine = c.head === h, grown = h.age >= 16;
       const cl = [...(mine || lead ? [c] : []), ...(lead ? t.clans.filter(o => o !== c && o.alive) : [])].filter(o => o.settled || o === c), good = [], bad = [];
       for (const o of cl) { const plan = {}, why = foundWhy(W, o, plan), sites = !why ? foundSites(W, o, { known: true, n: o === c ? 3 : 1 }) : []; if (!why && !sites.length) bad.push({ o, why: `No good ground is known within ${FOUND_MAX / 1000} km of ${o.village || 'the village'} that is free of other villages` }); else if (why) bad.push({ o, why }); else good.push({ o, plan, sites }); }
       const targets = []; for (const g of good) { const o = g.o, rest = o.people.length - g.plan.leavers.length;
-        for (const st of g.sites) targets.push({ clan: o, ref: { x: st.x, y: st.y }, label: `${o === c ? '' : `The ${o.name} clan: `}${Math.round(st.km)} km ${compass(st.x - o.x, st.y - o.y)}`, hint: `${describePlace(W, st.x, st.y, o)} · about ${g.plan.leavers.length} of ${o.people.length} would go, ${goName(g.plan, o)}; ${rest} stay` });
+        for (const st of g.sites) targets.push({ clan: o, ref: { x: st.x, y: st.y }, label: `${o === c ? '' : `The ${o.name} clan: `}${Math.round(st.km)} km ${compass(st.x - o.x, st.y - o.y)}`, hint: `${describePlace(W, st.x, st.y, o)}${landWarn(W, t, st.x, st.y) ? ' · ' + landWarn(W, t, st.x, st.y) : ''} · about ${g.plan.leavers.length} of ${o.people.length} would go, ${goName(g.plan, o)}; ${rest} stay` });
         if (o === c) targets.push({ clan: o, pick: { maxKm: FOUND_MAX / 1000 }, label: 'Choose the site on the map…', hint: `Known land ${FOUND_MIN / 1000} to ${FOUND_MAX / 1000} km away, ${c.live === 'fishing' ? 'on the shore, ' : ''}at least ${FOUND_APART / 1000} km from any other village` }); }
       const nm = bad.find(b => b.o === c) || bad[0];
       A.push({ id: 'foundvillage', icon: '🏘', label: 'Found a daughter village', hint: `Send a quarter to a third of a crowded village — the houses least close to the head's own, never the head's own household or the heir's — to raise a village of their own ${FOUND_MIN / 1000} to ${FOUND_MAX / 1000} km away. They take their share of the food and grain, and stay kin to you. Once in ${FOUND_YEARS} years for each village`, ok: grown && good.length > 0 && (mine || lead), targets,
@@ -3427,7 +3443,7 @@
     // settle
     if (!c.settled && !c.toSettle) {
       const b = c.coastal && t.boats >= 0.3 ? foodBreakdown(W, c.x, c.y, c.tool, t.boats) : null, aq = b ? (b.fish + b.shellfish + b.seals) / Math.max(1, needsWeek(c)) : 0;
-      A.push({ id: 'settle', icon: '🏠', label: t.stage >= 2 ? 'Build a farming village' : 'Build a fishing village', hint: t.stage >= 2 ? 'Stay by your fields for good — grain stores and many children' : 'Live from the sea in one place for good', targets: [{ ref: 'auto', label: 'Let the elders choose the best spot', hint: t.stage >= 2 ? 'Good soil nearby' : 'Right here on the shore' }, { pick: { maxKm: 40 }, label: 'Choose the spot on the map…', hint: t.stage >= 2 ? 'Anywhere on land within 40 km' : 'On the shore, within 40 km' }], ok: t.stage >= 2 || aq > 0.9, why: t.stage < 2 && !(aq > 0.9) ? (t.stage < 2 && !c.coastal ? 'Your people do not yet sow grain, and you are far from rich waters' : 'The waters here are not rich enough, or you lack boats') : '' });
+      A.push({ id: 'settle', icon: '🏠', label: t.stage >= 2 ? 'Build a farming village' : 'Build a fishing village', hint: t.stage >= 2 ? 'Stay by your fields for good — grain stores and many children' : 'Live from the sea in one place for good', targets: [{ ref: 'auto', label: 'Let the elders choose the best spot', hint: t.stage >= 2 ? 'Good soil nearby' : 'Right here on the shore' }, { pick: { maxKm: 40 }, label: 'Choose the spot on the map…', hint: (t.stage >= 2 ? 'Anywhere on land within 40 km' : 'On the shore, within 40 km') + '. Ground another people holds is theirs: they may demand that you leave' }], ok: t.stage >= 2 || aq > 0.9, why: t.stage < 2 && !(aq > 0.9) ? (t.stage < 2 && !c.coastal ? 'Your people do not yet sow grain, and you are far from rich waters' : 'The waters here are not rich enough, or you lack boats') : '' });
     }
     if (P.quietUntil && now < P.quietUntil) { const n = Math.max(1, Math.ceil((P.quietUntil - now) / 52)); for (const a of A) if (QUIET.includes(a.id)) { a.ok = false; a.why = `The clan is keeping the quiet after the sign (${n} yr${n > 1 ? 's' : ''} left)`; } }
     W._acts = { week: W.week, head: h, A }; return A;
@@ -3485,6 +3501,11 @@
       P.renown += gained > 0 ? 3 + killed : -1;
       houseNote(W, `${h.name} led a raid on the ${o.name} of the ${o.tribe.name}: ${killed} of theirs fell, ${lost + (headFell ? 1 : 0)} of ours${headFell ? `, and ${h.name} ${h.sex === 'F' ? 'herself' : 'himself'} was slain` : ''}${gained > 0 ? '; we came home with plunder' : '; we came home empty-handed'}.`);
       return { title: gained > 0 ? 'The raid succeeds' : 'The raid fails', text: `${F.n} warriors (${F.mix || F.label.replace(/^Call up /, '')}) struck the ${o.name} ${o.settled ? 'village' : 'camp'}. ${killed} of theirs fell and ${lost + (headFell ? 1 : 0)} of ours.${gained > 0 ? ` You carried off ${(d => d >= 1 ? d + (d === 1 ? ' day' : ' days') + ' of food' : 'a little food')(Math.round((c.store + c.grain - b4.store) / Math.max(1, needsWeek(c) / 7)))}${tre > 0 ? ` and ${tre} valuable thing${tre > 1 ? 's' : ''}` : ''}${o.settled ? ' and grain from their stores' : ''}.` : ' They drove you off.'}${slaves.length ? ` <b>${slaves.length} captive${slaves.length > 1 ? 's' : ''}</b> (${slaves.map(q => `${q.name}, ${Math.floor(q.age)}`).join('; ')}) now belong${slaves.length > 1 ? '' : 's'} to ${h.name}.` : ''}${freed.length ? ` <b>${freed.map(q => q.name).join(' and ')}</b>, of the blood of your house, ${freed.length > 1 ? 'were' : 'was'} among the captives and came home free, not as ${freed.length > 1 ? 'slaves' : 'a slave'}.` : ''} The chance of winning was about ${odds}%.${headFell ? ` <b>${h.name} was killed in the fighting.</b>` : ''} The ${o.tribe.name} will not forget this.` };
+    }
+    if (id === 'landask' || id === 'landdrive') {
+      const tg = A.targets[k]; if (!tg) return null; const F = A.forces[f || 0] || A.forces[0], cl = tg.ref;
+      if (!landLive(W, t).includes(tg.rec) || !cl.alive || !cl.settled) { delete cd[id]; return { title: 'Too late', text: `The ${cl.name} clan have already left.` }; }
+      return id === 'landask' ? landDoAsk(W, tg.rec, cl, F) : landDoDrive(W, tg.rec, cl, F);
     }
     if (id === 'invite') {
       const x = A.targets[k] && A.targets[k].ref; if (!x || !x.f.alive || x.f.clan !== x.o) return null;
@@ -3566,7 +3587,7 @@
       if (!place) return null;
       c.tx = place.x; c.ty = place.y; c.soil = 1; c.settledAt = W.week; wear(W, c.x, c.y, place.x, place.y, c.people.length / 10);
       houseNote(W, `${h.name} moved ${c.village || 'the village'} ${Math.round(Math.hypot(place.x - c.x, place.y - c.y) / 1000)} km ${compass(place.x - c.x, place.y - c.y)}.`);
-      return { title: 'A new site', text: `The people of ${c.village || 'the village'} pull down their houses and rebuild ${Math.round(Math.hypot(place.x - c.x, place.y - c.y) / 1000)} km ${compass(place.x - c.x, place.y - c.y)}, on fresh ground.` };
+      return { title: 'A new site', text: `The people of ${c.village || 'the village'} pull down their houses and rebuild ${Math.round(Math.hypot(place.x - c.x, place.y - c.y) / 1000)} km ${compass(place.x - c.x, place.y - c.y)}, on fresh ground.${landWarn(W, t, place.x, place.y) ? '<br><br>' + landWarn(W, t, place.x, place.y) : ''}` };
     }
     if (id === 'trader') {
       const o = A.targets[k] && A.targets[k].ref; if (!o) return null; const r = sendTrader(W, c, o, null);
@@ -3611,7 +3632,7 @@
       note(W, o, `${h.name} sent ${lv.length} people of ${goName(plan, o)} to raise a daughter village ${km} km ${dir}: the ${nc.name} clan.`); note(W, nc, `Sent out from ${from} with the blessing of the ${o.name} clan, to raise a village ${km} km ${dir}.`);
       logEvent(W, `The ${o.name} clan of ${from} sends ${lv.length} people to found a daughter village: the ${nc.name} clan, ${km} km ${dir}.`, nc, 'info');
       houseNote(W, `${h.name} sent ${lv.length} people of ${who} village to raise the ${nc.name} clan's ${fish ? 'fishing ' : ''}village ${km} km ${dir}. ${rest} stay${o === c ? ' with us' : ''}.${bl.length ? ` Of our blood, ${bl.length > 3 ? bl.length + ' went, among them ' + nameList(bl) : nameList(bl) + ' went'}.` : ''}`);
-      return { title: 'A daughter village', text: `${lv.length} people of ${from}, ${goName(plan, o)}, take their share of the stores and set out as the ${nc.name} clan, kin and friends of the ${o.name}. They will walk ${km} km ${dir} and raise a ${fish ? 'fishing ' : ''}village on the ground you chose; it will stand a few weeks after they arrive. ${rest} remain in ${from}${H ? `, under ${H.name}` : ''}.${bl.length ? `<br><br>Of your blood, ${bl.length > 3 ? bl.length + ' go, among them ' + nameList(bl) : nameList(bl) + (bl.length > 1 ? ' go' : ' goes') + ' with them'}.` : ''}${sl.length ? ` ${sl.length === 1 ? sl[0].name + ', a slave of the house, goes' : sl.length + ' slaves of the house go'} too.` : ''}` };
+      return { title: 'A daughter village', text: `${lv.length} people of ${from}, ${goName(plan, o)}, take their share of the stores and set out as the ${nc.name} clan, kin and friends of the ${o.name}. They will walk ${km} km ${dir} and raise a ${fish ? 'fishing ' : ''}village on the ground you chose; it will stand a few weeks after they arrive. ${rest} remain in ${from}${H ? `, under ${H.name}` : ''}.${bl.length ? `<br><br>Of your blood, ${bl.length > 3 ? bl.length + ' go, among them ' + nameList(bl) : nameList(bl) + (bl.length > 1 ? ' go' : ' goes') + ' with them'}.` : ''}${sl.length ? ` ${sl.length === 1 ? sl[0].name + ', a slave of the house, goes' : sl.length + ' slaves of the house go'} too.` : ''}${landWarn(W, t, site[0], site[1]) ? '<br><br>' + landWarn(W, t, site[0], site[1]) : ''}` };
     }
     if (id === 'migrate') {
       const d = place ? { x: place.x, y: place.y, km: Math.round(Math.hypot(place.x - c.x, place.y - c.y) / 1000), dir: compass(place.x - c.x, place.y - c.y), label: 'Chosen' } : A.targets[k] && A.targets[k].ref; if (!d || d.pick) return null;
@@ -3660,12 +3681,12 @@
       const tx = `${rulerWord(cf)} ${h.name} called off the war on the ${o.name}.`; logEvent(W, tx, cf, 'king'); note(W, cf, tx); note(W, o, tx); houseNote(W, tx); return { title: 'The war is called off', text: `${tx} The host goes home. The ${o.name} are glad of it; our house loses 3 renown.` }; }
     if (id === 'war') { const o = A.targets[k] && A.targets[k].ref; if (!o) return null; const cf = t.confed; if (!realmWarList(W, cf).ok.some(x => x.o === o)) return { title: 'No war', text: `The host cannot march on the ${o.name} now.` }; cf.wars.set(o.id, 0); o.warLosses = 0; warBegin(W, cf, o); realmWarAllies(W, cf, o); logEvent(W, `⚔ ${rulerWord(cf)} ${h.name} of ${cf.name} goes to war to subjugate the ${o.name}.`, cf, 'blood'); houseNote(W, `${rulerWord(cf)} ${h.name} went to war against the ${o.name}.`); return { title: 'War', text: `${h.name}'s warriors march against the ${o.name}. Battles will be fought each year until they submit — or you give up.` }; }
     if (id === 'settle') {
-      if (t.stage >= 2) { c.live = 'farm'; settleClan(W, c); if (place) { c.tx = place.x; c.ty = place.y; } c.holdUntil = 0; t.dom = Math.min(0.6, t.dom + 0.05);
+      if (t.stage >= 2) { c.live = 'farm'; settleClan(W, c, true); if (place) { c.tx = place.x; c.ty = place.y; } c.holdUntil = 0; t.dom = Math.min(0.6, t.dom + 0.05);
         const km = Math.round(Math.hypot(c.tx - c.x, c.ty - c.y) / 1000); P.renown += 2; houseNote(W, `${h.name} led the ${c.name} clan to build a permanent village.`);
-        return { title: km > 2 ? 'The clan sets out' : 'A village is founded', text: km > 2 ? `The ${c.name} clan pack up and walk ${km} km to the chosen ground. The village will stand as soon as they arrive, in a few weeks. After that they wander no more: stores that last the winter, many more children, and a place raiders know where to find.` : `The ${c.name} clan begin to build where they stand. They will wander no more: stores that last the winter, many more children, and a place raiders know where to find.` }; }
+        return { title: km > 2 ? 'The clan sets out' : 'A village is founded', text: km > 2 ? `The ${c.name} clan pack up and walk ${km} km to the chosen ground. The village will stand as soon as they arrive, in a few weeks. After that they wander no more: stores that last the winter, many more children, and a place raiders know where to find.${landWarn(W, t, c.tx, c.ty) ? '<br><br>' + landWarn(W, t, c.tx, c.ty) : ''}` : `The ${c.name} clan begin to build where they stand. They will wander no more: stores that last the winter, many more children, and a place raiders know where to find.${landWarn(W, t, c.tx, c.ty) ? '<br><br>' + landWarn(W, t, c.tx, c.ty) : ''}` }; }
       else { c.settled = true; c.live = 'fishing'; c.settledAt = W.week; c.village = placeNameIn(W, c.tribe, 'haven'); c.tx = place ? place.x : c.x; c.ty = place ? place.y : c.y; logEvent(W, `🏘 The ${c.name} clan (${t.name}) build a permanent fishing village: ${c.village}.`, c, 'settle'); }
       P.renown += 2; houseNote(W, `${h.name} led the ${c.name} clan to build a permanent village.`);
-      return { title: 'A village is founded', text: `The ${c.name} clan will wander no more. Expect stores that last the winter, many more children — and a place raiders know where to find.` };
+      return { title: 'A village is founded', text: `The ${c.name} clan will wander no more. Expect stores that last the winter, many more children — and a place raiders know where to find.${landWarn(W, t, c.tx, c.ty) ? '<br><br>' + landWarn(W, t, c.tx, c.ty) : ''}` };
     }
   }
   function houseFollowers(W, c, h) {
@@ -5018,7 +5039,7 @@
   const freshFeat = (t, rand) => { const used = (t.myths || []).map(m => m.text).join(' '); const free = FEATS.filter(f => !used.includes(f)); return pick(free.length ? free : FEATS, rand); };
   const BYNAMES = ['the Tall', 'Long-arm', 'the Grey', 'Twice-born', 'Deer-foot', 'the Singer', 'Far-seer', 'the Unsleeping'];
   const OMENS = ['A white stag was seen standing at the edge of the camp at dawn, and it did not run.', 'The moon rose red as ochre, three nights running.', 'A whale came ashore below the camp and died there, though the sea was calm.', 'A child was born with a caul over its face.', 'The sun went dark at midday, and the birds fell silent.', 'An owl called by day from the roof-pole of your own house.', 'A star with a tail hung over the hills for nine nights.', 'The spring ran cloudy, and frogs were found dead around it.', 'The tide went out further than anyone living had seen, and stayed out half a day.', 'Lightning split the old tree in the middle of the camp out of a clear sky.', 'Bees swarmed on the door-post of the oldest house and would not be smoked off.', 'All the dogs howled through one night, facing the same way.', 'A fawn with two heads was found in the reeds, alive.'];
-  const QUIET = ['raid', 'explore', 'expedition', 'voyage', 'migrate', 'trader', 'claim', 'movecamp', 'movevillage', 'foundvillage'];
+  const QUIET = ['raid', 'explore', 'expedition', 'voyage', 'migrate', 'trader', 'claim', 'movecamp', 'movevillage', 'foundvillage', 'landdrive'];
   const READING = { mother: 'The elders say the Mother is asking for something back.', spirits: 'The shaman says the spirits are uneasy and want quiet.', totem: 'The elders say the clan-beast is warning its children.', ancestors: 'The elders say the dead are hungry and have been forgotten.', sky: 'The seers say the sky hunter has marked your people.' };
   function addMyth(W, t, m) {
     t.myths = t.myths || []; m.y = Math.floor(W.week / 52); t.myths.push(m);
@@ -5301,16 +5322,18 @@
         if (riverK[j] > 0.35 && r0 <= 0.35) step += 1 + 3 * riverK[j];
         const c1 = c0 + step * sc; if (c1 < 1 && c1 < best[j]) push(c1, j, id, sc); } }
     // claims: land held is claimed and the claim hardens; a claim nobody walks any more fades over a generation; a claim another people now holds is worn away and then taken
-    const press = new Map(), cl = W.claim, cs = W.claimS, hf = W._held && W._held.length === n ? W._held : (W._held = new Uint8Array(n));
+    const flips = [], press = new Map(), cl = W.claim, cs = W.claimS, hf = W._held && W._held.length === n ? W._held : (W._held = new Uint8Array(n));
     for (const t of W.tribes) { t.landC = 0; t.landH = 0; }
     for (let i = 0; i < n; i++) { if (!W.land[i]) continue; const h = held[i], o = cl[i]; let s = cs[i]; hf[i] = 0;
       if (h >= 0) { const H = byId.get(h);
         if (o === h || o < 0) { cl[i] = h; s = init ? 255 : Math.min(255, s + 50); hf[i] = 1; }
-        else { const O = byId.get(o), young = W.week - H.founded < 156; s -= !O ? 90 : young ? 255 : 36; if (O && !young) { const k = o + ':' + h; press.set(k, (press.get(k) || 0) + 1); }
-          if (s <= 0) { cl[i] = h; s = 70; hf[i] = 1; if (O && !young) { const k = 'w' + o + ':' + h; press.set(k, (press.get(k) || 0) + 1); } } } }
+        else { const O = byId.get(o), young = W.week - H.founded < 156 && H.parent === o; s -= !O ? 90 : young ? 255 : 36; if (O && !young) { const k = o + ':' + h; press.set(k, (press.get(k) || 0) + 1); }
+          if (s <= 0) { if (O && O.seized && O.seized.length) flips.push(i, o, h); cl[i] = h; s = 70; hf[i] = 1; if (O && !young) { const k = 'w' + o + ':' + h; press.set(k, (press.get(k) || 0) + 1); } } } }
       else if (o >= 0) { s -= byId.has(o) ? 10 : 40; if (s <= 0) { cl[i] = -1; s = 0; } }
       cs[i] = s; const T = cl[i] >= 0 ? byId.get(cl[i]) : null; if (T) { T.landC++; if (hf[i]) T.landH++; } }
     W.claimVer = (W.claimVer || 0) + 1;
+    for (let k = 0; k < flips.length; k += 3) { const i = flips[k], O = byId.get(flips[k + 1]); if (!O) continue; // a cell a village's people took from O joins the record, if it lies within 40 km of the village
+      for (const r of O.seized) if (r.t === flips[k + 2] && r.cells.length < 200 && Math.hypot((i % N + 0.5) * CELL - r.x, ((i / N | 0) + 0.5) * CELL - r.y) <= LAND_R) r.cells.push(i); }
     if (init) return;
     // pressing on another people's land sours things between them; taking a good piece of it is remembered
     const P = W.player, pt = P && !P.over && P.head.alive && P.head.clan ? P.head.clan.tribe : null;
@@ -5320,6 +5343,275 @@
       logEvent(W, `The ${H.name} now hold land the ${O.name} long called their own.`, H, 'conflict');
       if (pt === O) notice(W, 'Our land is taken', `The ${H.name} have grown into country the ${O.name} claimed, and our people no longer go there. About ${cnt * 25} km² is theirs now.`);
       else if (pt === H) notice(W, 'New land', `The ${H.name} have grown into country the ${O.name} once claimed. About ${cnt * 25} km² is ours now, and the ${O.name} have not forgotten it.`); }
+  }
+  // =====================================================================
+  //  LAND TAKEN BY A VILLAGE: a village raised on ground another people holds is remembered (O.seized); the owner may bid the village leave,
+  //  or drive it out; the world's peoples do the same by the same rules (landYear), and the player answers for his own people (cards, deeds)
+  // =====================================================================
+  const LAND_YEARS = 25, LAND_R = 40000;
+  const playerClan = W => { const P = W.player; return P && !P.over && P.head.alive && P.head.clan || null; };
+  // the living people that holds cell i firmly (claim 100 or more) and is not t, else null
+  function foreignHeld(W, t, i) {
+    const o = W.claim ? W.claim[i] : -1; if (o < 0 || o === t.id || W.claimS[i] < 100) return null;
+    const O = W.ents.get(o); return O && O.alive && O.kind === 'tribe' && O.clans.length ? O : null;
+  }
+  // a much stronger people at odds with the owner may take ground anyway
+  const landGrab = (W, t, O) => warriors(t) >= 1.5 * warriors(O) && opinion(t, O) < -10;
+  // true if people t may not site a village on cell i (memo: a Map to spare the counting of men)
+  function landBlocked(W, t, i, memo) {
+    const O = foreignHeld(W, t, i); if (!O) return false;
+    let g = memo ? memo.get(O.id) : undefined; if (g === undefined) { g = landGrab(W, t, O); if (memo) memo.set(O.id, g); }
+    return !g;
+  }
+  const villageScore = (W, c, x, y) => { let crowd = 0; for (const o of nearClans(W, x, y, 9000)) if (o !== c && o.settled) crowd++; return farmSuit(W, x, y) / (1 + crowd); };
+  const landV = c => c.village || `the ${c.name} clan's village`;
+  // any cell of O within m metres of (x,y)
+  // any cell claimed by a people other than t within m metres of (x,y)
+  function landNearOther(W, t, x, y, m) {
+    const gx = clamp(Math.floor(x / CELL), 0, N - 1), gy = clamp(Math.floor(y / CELL), 0, N - 1), k = Math.ceil(m / CELL);
+    for (let dy = -k; dy <= k; dy++) for (let dx = -k; dx <= k; dx++) { const xx = gx + dx, yy = gy + dy; if (xx < 0 || yy < 0 || xx >= N || yy >= N) continue; const o = W.claim[yy * N + xx]; if (o >= 0 && o !== t.id) return true; }
+    return false;
+  }
+  function landNear(W, O, x, y, m) {
+    const gx = clamp(Math.floor(x / CELL), 0, N - 1), gy = clamp(Math.floor(y / CELL), 0, N - 1), k = Math.ceil(m / CELL), lim = (m / CELL + 0.3) * (m / CELL + 0.3);
+    for (let dy = -k; dy <= k; dy++) for (let dx = -k; dx <= k; dx++) { const xx = gx + dx, yy = gy + dy; if (xx < 0 || yy < 0 || xx >= N || yy >= N || dx * dx + dy * dy > lim) continue; if (W.claim[yy * N + xx] === O.id) return true; }
+    return false;
+  }
+  // the records against O that still stand: the village is there, and under 25 years old (the rest are dropped)
+  function landLive(W, O) {
+    const L = O.seized; if (!L || !L.length) return [];
+    const out = [];
+    for (let k = L.length - 1; k >= 0; k--) { const r = L[k], c = W.ents.get(r.c);
+      if (W.week - r.w > 52 * LAND_YEARS || !c || c.kind !== 'clan' || !c.alive || !c.settled || !c.people.length || !c.tribe || c.tribe === O || Math.hypot(c.x - r.x, c.y - r.y) > 3000) { L.splice(k, 1); continue; }
+      r.t = c.tribe.id; out.unshift(r); }
+    return out;
+  }
+  // land lines the chronicle keeps: all that touch the player's people, and of the rest at most two in a year, so they do not drown the other news
+  function landLog(W, text, e, kind, a, b) {
+    const pc = playerClan(W), pt = pc && pc.tribe; if (!(pt && (pt === a || pt === b))) { const y = Math.floor(W.week / 52); if (W.landLogY !== y) { W.landLogY = y; W.landLogN = 0; } if (++W.landLogN > 2) return; }
+    logEvent(W, text, e, kind);
+  }
+  const landEnd = (O, r) => { O.seized = (O.seized || []).filter(x => x !== r); };
+  const landLostNow = (W, r) => { let n = 0; for (const i of r.cells || []) if (W.claim[i] === r.t) n++; return n; };
+  function landWhere(W, t, x, y) {
+    let nv = null, nd = Infinity; for (const o of t.clans) if (o.settled) { const d = Math.hypot(o.x - x, o.y - y); if (d < nd) { nd = d; nv = o; } }
+    if (!nv) nv = playerClan(W) && playerClan(W).tribe === t ? playerClan(W) : t.clans[0]; if (!nv) return { km: 0, dir: 'east', from: 'our lands' };
+    return { km: Math.round(Math.hypot(x - nv.x, y - nv.y) / 1000), dir: compass(x - nv.x, y - nv.y), from: nv.settled && nv.village ? nv.village : `the ${nv.name} camp` };
+  }
+  // the village is seen to stand on another people's claim at the moment it is raised or moved (claims change only in claimsYear): a record, and a card for the player
+  function landScan(W) {
+    if (!W.landInit) { W.landInit = 1; for (const c of W.clans) if (c.alive && c.settled) { c.vx = c.x; c.vy = c.y; } return; }
+    for (const c of W.clans) {
+      if (!c.alive || !c.settled || !c.tribe || !c.people.length) continue;
+      if (Math.hypot(c.tx - c.x, c.ty - c.y) >= 1500) continue; // still on the road
+      if (c.vx != null && Math.hypot(c.vx - c.x, c.vy - c.y) < 3000) continue;
+      c.vx = c.x; c.vy = c.y; landSeized(W, c);
+    }
+  }
+  function landSeized(W, c) {
+    for (const T of W.tribes) if (T.seized && T.seized.length) T.seized = T.seized.filter(r => r.c !== c.id);
+    const t = c.tribe, o = W.claim ? W.claim[cellAt(c.x, c.y)] : -1; if (o < 0 || o === t.id) return;
+    const O = W.ents.get(o); if (!O || !O.alive || O.kind !== 'tribe' || !O.clans.length || isAllied(O, t)) return;
+    const r = { c: c.id, t: t.id, w: W.week, x: c.x, y: c.y, cells: [] };
+    (O.seized = O.seized || []).push(r); if (O.seized.length > 12) O.seized.shift();
+    W.nLandSeize = (W.nLandSeize || 0) + 1;
+    landLog(W, `The ${t.name} raise ${landV(c)} on land the ${O.name} call their own.`, t, 'conflict', t, O);
+    const pc = playerClan(W); if (pc && pc.tribe === O && t !== O) { W.nLandSeizeP = (W.nLandSeizeP || 0) + 1; landTakenCard(W, O, r, c); }
+  }
+  // ---- the odds, one helper each: the card, the deed and the roll all call these ----
+  const landOdds = r => r <= 0 ? 0 : clamp(1 - (1 / r - 0.6) / 0.8, 0, 1); // the fight is won when ratio * (0.6 + 0.8 u) > 1
+  function driveRatio(W, att, F, def) { return (F.n * vigor(att)) / Math.max(1, warMuster(W, def.tribe, def, playerClan(W)) * vigor(def) * walls(def) * 1.35); }
+  const driveOutOdds = (W, ourClan, theirClan, F) => landOdds(driveRatio(W, ourClan, F, theirClan));
+  function leaveOdds(W, ourTribe, theirClan, F, h) {
+    const wr = F.n / Math.max(1, warMuster(W, theirClan.tribe, theirClan, playerClan(W))), op = opinion(theirClan.tribe, ourTribe);
+    return clamp(0.10 + (wr - 1) * 0.40 + op / 200 + (hasTrait(h, 'silver') ? 0.10 : 0), 0.03, 0.85);
+  }
+  // ---- the outcomes ----
+  // the clan leaves its village and walks to the best village site at least 10 km outside the land of O (within 60 km); if there is none, 30 to 60 km away from O's nearest village
+  function landExpel(W, c, O) {
+    const t = c.tribe, fish = c.live === 'fishing', memo = new Map(); let best = null, bs = -Infinity;
+    for (let k = 0; k < 40; k++) {
+      const a = W.rand() * 6.283, r = 8000 + W.rand() * 52000, x = clamp(c.x + Math.cos(a) * r, 3000, WORLD - 3000), y = clamp(c.y + Math.sin(a) * r, 3000, WORLD - 3000), i = cellAt(x, y);
+      if (!W.land[i] || W.lake[i] || !sameIsland(W, c, x, y) || (fish && W.seaDist[i] > 2) || landNear(W, O, x, y, 10000) || landBlocked(W, t, i, memo) || landNearOther(W, t, x, y, 10000)) continue; // not on, nor within 10 km of, anyone's claim: no sooner there than moved on again
+      if (nearClans(W, x, y, 6000).some(o => o !== c && o.settled)) continue;
+      const sc = villageScore(W, c, x, y); if (sc > bs) { bs = sc; best = [x, y]; }
+    }
+    if (!best) {
+      let nv = null, nd = Infinity; for (const o of O.clans) if (o.settled) { const d = Math.hypot(o.x - c.x, o.y - c.y); if (d < nd) { nd = d; nv = o; } }
+      const base = nv ? Math.atan2(c.y - nv.y, c.x - nv.x) : W.rand() * 6.283;
+      for (let pass = 0; pass < 2 && !best; pass++) for (let j = 0; j < 12 && !best; j++) { const a = base + (j % 2 ? 1 : -1) * Math.ceil(j / 2) * 0.5, r = 30000 + W.rand() * 30000, x = clamp(c.x + Math.cos(a) * r, 3000, WORLD - 3000), y = clamp(c.y + Math.sin(a) * r, 3000, WORLD - 3000), i = cellAt(x, y);
+        if (W.land[i] && !W.lake[i] && sameIsland(W, c, x, y) && !landBlocked(W, t, i, memo)) best = [x, y]; } // both passes keep off ground another people holds
+    }
+    if (!best) return null;
+    const km = Math.round(Math.hypot(best[0] - c.x, best[1] - c.y) / 1000), dir = compass(best[0] - c.x, best[1] - c.y);
+    c.settled = false; c.founding = false; c.tx = best[0]; c.ty = best[1]; c.vx = null; c.vy = null; c.landOut = W.week;
+    c.toSettle = !fish && (t.stage === 3 || playerClan(W) === c); if (fish) { c.live = null; c.fishYears = 0; } // a fishing village goes back to wandering
+    W.nLandExpel = (W.nLandExpel || 0) + 1;
+    return { x: best[0], y: best[1], km, dir };
+  }
+  // the cells the village took come back to O at once
+  function landGiveBack(W, O, r) {
+    let n = 0; for (const i of r.cells || []) if (W.claim[i] === r.t) { W.claim[i] = O.id; W.claimS[i] = 120; n++; }
+    if (n) { W.claimVer = (W.claimVer || 0) + 1; W.nLandCells = (W.nLandCells || 0) + n; }
+    return n;
+  }
+  // the men who fall: in a won fight 10-20% of the village's men of fighting age and 3-7% of the owner's; in a lost one 8-15% of the owner's and 3-6% of theirs
+  function landLosses(W, att, n, def, won) {
+    const rand = W.rand, P = W.player, PH = P && !P.over && P.head, pick = (lo, hi) => lo + (hi - lo) * rand();
+    const pd = won ? pick(0.10, 0.20) : pick(0.03, 0.06), pa = won ? pick(0.03, 0.07) : pick(0.08, 0.15);
+    const dm = def.people.filter(q => q.sex === 'M' && !q.slave && q.age >= 16 && q.age < 50 && q !== PH && !kinOfHouse(W, q, att));
+    const kd = Math.min(dm.length, Math.max(won ? 1 : 0, Math.round(warriorsOf(def) * pd))); let ka = Math.max(won || n < 1 ? 0 : 1, Math.round(n * pa)), killedA = 0, killedD = 0; // a fight leaves someone dead on the losing side at least
+    for (let k = 0; k < kd; k++) { const v = dm.splice(Math.floor(rand() * dm.length), 1)[0]; die(W, def, v, `killed defending ${landV(def)} against the ${att.tribe.name}`, att); def.yr.killed++; killedD++; }
+    const pool = [att, ...att.tribe.clans.filter(o => o !== att && o.alive && Math.hypot(o.x - att.x, o.y - att.y) < 60000)];
+    for (const cl of pool) { if (killedA >= ka) break; const am = cl.people.filter(q => q.sex === 'M' && !q.slave && q.age >= 16 && q.age < 50 && q !== PH);
+      while (killedA < ka && am.length) { const v = am.splice(Math.floor(rand() * am.length), 1)[0]; die(W, cl, v, `killed driving the ${def.tribe.name} from ${landV(def)}`, def); cl.yr.killed++; killedA++; } cl.people = cl.people.filter(q => q.alive); }
+    def.people = def.people.filter(q => q.alive);
+    return { killedA, killedD };
+  }
+  // one fight over a village: att (the owner's clan, n men behind it) against the village clan def. The same ratio gives the chance shown and the roll.
+  function landFight(W, O, r, att, n, def, ratio0) {
+    const pc = playerClan(W), ratio = ratio0 != null ? ratio0 : driveRatio(W, att, { n }, def), won = ratio * (0.6 + 0.8 * W.rand()) > 1, H = def.tribe, v = landV(def);
+    const res = { won, ratio, p: landOdds(ratio), killedA: 0, killedD: 0, food: 0, grain: 0, back: 0, dest: null, worksLost: false };
+    W.nLandDrive = (W.nLandDrive || 0) + 1;
+    const L = landLosses(W, att, n, def, won); res.killedA = L.killedA; res.killedD = L.killedD;
+    if (won) {
+      W.nLandDriveWon = (W.nLandDriveWon || 0) + 1;
+      res.worksLost = !!(def.works && Object.keys(def.works).length); def.works = null; def.worksAt = null;
+      res.food = def.store * 0.5; res.grain = (def.grain || 0) * 0.5; def.store -= res.food; def.grain -= res.grain; att.store += res.food; att.grain = (att.grain || 0) + res.grain;
+      res.dest = landExpel(W, def, O);
+      if (res.dest) { res.back = landGiveBack(W, O, r); landEnd(O, r); }
+      affect(W, H, O, -30, `The ${att.name} clan drove us from ${v}`, 20);
+      def.wrong = { c: att.id, t: O.id, w: W.week, km: Math.round(Math.hypot(att.x - def.x, att.y - def.y) / 1000) };
+      note(W, def, `${res.dest ? 'Driven from' : 'Beaten at'} ${v} by the ${O.name}${L.killedD ? `; ${L.killedD} of ours fell` : ''}.`); note(W, att, `${res.dest ? 'Drove the ' + def.name + ' clan of the ' + H.name + ' from ' + v + ', off our land' : 'Beat the ' + def.name + ' clan of the ' + H.name + ' at ' + v + ', but they had nowhere to go'}${L.killedA ? `, losing ${L.killedA}` : ''}.`);
+      landLog(W, res.dest ? `The ${O.name} drive the ${def.name} clan of the ${H.name} from ${v}, which stood on their land.` : `The ${O.name} beat the ${def.name} clan of the ${H.name} at ${v}, but the clan find no ground to go to.`, O, 'blood', O, H);
+    } else {
+      affect(W, H, O, -15, `The ${att.name} clan came against ${v} and were beaten`, 5);
+      note(W, def, `Beat off the ${O.name}, who came to drive us from ${v}.`); note(W, att, `Failed to drive the ${def.name} clan from ${v}${L.killedA ? `, losing ${L.killedA}` : ''}.`);
+      landLog(W, `The ${O.name} come against ${v} of the ${H.name}, and are driven back.`, O, 'blood', O, H);
+    }
+    if (pc && pc === att) { const P = W.player; P.renown += won ? 4 : -2; houseNote(W, `${P.head.name} ${won ? (res.dest ? 'drove the ' + H.name + ' from ' : 'beat the ' + H.name + ' at ') + v : 'failed to drive the ' + H.name + ' from ' + v}: ${L.killedD} of theirs fell, ${L.killedA} of ours.`); }
+    if (pc && pc === def) { const P = W.player; P.renown += won ? -2 : 1; houseNote(W, won ? `The ${O.name} ${res.dest ? 'drove us from' : 'beat us at'} ${v}; ${L.killedD} of ours fell.` : `We beat off the ${O.name} at ${v}; ${L.killedD} of ours and ${L.killedA} of theirs fell.`); }
+    return res;
+  }
+  // an envoy bids the village leave: the same odds shown and rolled
+  function landAsk(W, O, r, def, n, h, p0) {
+    const p = p0 != null ? p0 : leaveOdds(W, O, def, { n }, h), H = def.tribe, v = landV(def), res = { p, yes: W.rand() < p, dest: null, back: 0 }, pc = playerClan(W);
+    W.nLandAsk = (W.nLandAsk || 0) + 1;
+    if (res.yes) { res.dest = landExpel(W, def, O); if (!res.dest) res.yes = false; }
+    if (res.yes) {
+      W.nLandAskYes = (W.nLandAskYes || 0) + 1; res.back = landGiveBack(W, O, r); landEnd(O, r);
+      affect(W, H, O, -8, `Bidden to leave ${v}`); note(W, def, `Left ${v} when the ${O.name} bade us, and walked beyond their land.`);
+      landLog(W, `The ${def.name} clan of the ${H.name} leave ${v} when the ${O.name} bid them go.`, O, 'conflict', O, H);
+      if (pc && pc.tribe === O) { const P = W.player; P.renown += 2; houseNote(W, `The ${H.name} left ${v} when we bade them go${res.back ? `; ${res.back * 25} km² of our land is ours again` : ''}.`); }
+    } else {
+      affect(W, H, O, -10, `Bidden to leave ${v}`, 5); r.refused = W.week; note(W, def, `The ${O.name} bade us leave ${v}; we would not.`);
+      if (pc && (pc.tribe === O || pc.tribe === H)) logEvent(W, `The ${O.name} bid the ${def.name} clan of the ${H.name} leave ${v}, and are refused.`, O, 'conflict');
+      if (pc && pc.tribe === O) houseNote(W, `The ${H.name} would not leave ${v} when we bade them.`);
+    }
+    return res;
+  }
+  // the village walks away at the owner's demand, as a clan told to go
+  function landLeave(W, O, r, def) {
+    const dest = landExpel(W, def, O), back = dest ? landGiveBack(W, O, r) : 0; if (dest) landEnd(O, r);
+    return { dest, back };
+  }
+  // ---- the player's side ----
+  const landForce0 = (W, c, h) => { const F = raidForces(W, c, h); return F.length ? F[0] : { id: 'clan', n: myWarriors(c), short: 'warriors of the clan', label: `The ${c.name} clan's warriors`, mix: `${myWarriors(c)} of the clan`, hint: '' }; };
+  const landTargets = (W, t) => landLive(W, t).map(r => ({ r, c: W.ents.get(r.c) })).filter(x => x.c);
+  const landWarn = (W, t, x, y) => { const O = foreignHeld(W, t, cellAt(x, y)); return O ? `This is land of the ${O.name}. They may demand that you leave.` : ''; };
+  // why the head may not send the demand / lead the drive now ('' if he may); the card, the deed and the answer all ask this
+  function landAskWhy(W, c, h) { const P = W.player, cd = P.cool || {};
+    if (!(c.head === h || c.tribe.headman === h)) return 'Only a clan head or the leader of the tribe can send the demand';
+    return cd.landask != null && W.week - cd.landask < yrs(2) ? 'You asked not long ago' : ''; }
+  function landDriveWhy(W, c, h) { const P = W.player, cd = P.cool || {};
+    if (!(h.age >= 16 && h.age < 62)) return 'Your head is too young or too old to lead men';
+    if (!raidForces(W, c, h).length) return 'Too few warriors will follow you';
+    if (cd.landdrive != null && W.week - cd.landdrive < yrs(3)) return 'Your warriors need rest';
+    return P.quietUntil && W.week < P.quietUntil ? 'The clan is keeping the quiet after the sign' : ''; }
+  function landTakenCard(W, O, r, c) {
+    const P = W.player, h = P.head, pc = h.clan, H = c.tribe, wh = landWhere(W, O, c.x, c.y), reach = FORAGE_R * 2.2 * clamp(Math.sqrt(c.people.length / 30), 0.7, 2); let at = 0;
+    { const k = Math.ceil(reach / CELL), gx = Math.floor(c.x / CELL), gy = Math.floor(c.y / CELL); for (let dy = -k; dy <= k; dy++) for (let dx = -k; dx <= k; dx++) { const xx = gx + dx, yy = gy + dy; if (xx < 0 || yy < 0 || xx >= N || yy >= N || Math.hypot(dx, dy) * CELL > reach) continue; if (W.claim[yy * N + xx] === O.id) at++; } }
+    const Fa = landForce0(W, pc, h), Fd = Fa, pa = leaveOdds(W, O, c, Fa, h), ratio = driveRatio(W, pc, Fd, c), pd = landOdds(ratio), theirs = warMuster(W, H, c, pc), wa = landAskWhy(W, pc, h), wd = landDriveWhy(W, pc, h), wk = !!(c.works && Object.keys(c.works).length);
+    pushEvent(W, { type: 'landtaken', key: String(c.id), title: 'Our land is taken', data: { cid: c.id, oid: O.id, pa, ratio, n: Fa.n },
+      text: `The ${c.name} clan of the ${H.name} have raised a village, ${landV(c)}, ${wh.km} km ${wh.dir} of ${wh.from}, on ground the ${O.name} hold. ${at ? `About ${at * 25} km² of our land lies within its reach, and will pass to them in a few years if they stay.` : 'Little of our land lies within its reach.'} What will ${h.name} do?`,
+      options: [{ label: 'Demand that they leave', hint: `Chance that they go: about ${Math.round(pa * 100)}% (${likely(pa)}), with ${Fa.n} of ours behind your envoy. If they will not, goodwill −10; if they go, renown +2${wa ? '. ' + wa : ''}`, off: !!wa },
+        { label: 'Drive them out', hint: `About ${Math.round(pd * 100)}% to win with ${Fd.n} of ours against their ${theirs}${walls(c) > 1 ? ' behind a wall' : ''}. You may fall: about ${riskPct(raidHeadRisk(true, Fd.n))}% if you win, ${riskPct(raidHeadRisk(false, Fd.n))}% if you lose. A win costs us 3 to 7 of every 100 of our men, them 10 to 20; we take half their food, ${wk ? 'their wall and works burn, ' : ''}the land is ours again. A loss costs us 8 to 15 of every 100 (renown −2)${wd ? '. ' + wd : ''}`, off: !!wd },
+        { label: 'Let them be', hint: 'The land will be theirs; you can still act within 25 years under Act' }] });
+  }
+  // the deed or the card: our clan bids the village leave
+  function landDoAsk(W, r, cl, F, p0) {
+    const P = W.player, h = P.head, c = h.clan, O = c.tribe, H = cl.tribe, v = landV(cl); W.nLandPAsk = (W.nLandPAsk || 0) + 1;
+    const res = landAsk(W, O, r, cl, F.n, h, p0);
+    if (res.yes) { W.nLandPAskYes = (W.nLandPAskYes || 0) + 1;
+      return { title: 'They leave', text: `${h.name}'s envoy goes to ${v} with ${F.n} of ours standing behind ${h.sex === 'F' ? 'her' : 'him'}. The ${cl.name} clan hear that the ground is ours, take down their houses and walk ${res.dest.km} km ${res.dest.dir}, beyond our land. ${res.back ? `${res.back * 25} km² of our land is ours again. ` : ''}The ${H.name} think the less of us for it (goodwill −8). Renown +2. The chance was about ${Math.round(res.p * 100)}%.` }; }
+    return { title: 'They refuse', text: `The ${cl.name} clan hear the envoy and stay. They will not forget that we asked (goodwill −10). The chance was about ${Math.round(res.p * 100)}%. You may try again in two years, or take spears to ${v}.` };
+  }
+  function landDoDrive(W, r, cl, F, ratio0) {
+    const P = W.player, h = P.head, c = h.clan, O = c.tribe, H = cl.tribe, v = landV(cl), res = landFight(W, O, r, c, F.n, cl, ratio0);
+    W.nLandPDrive = (W.nLandPDrive || 0) + 1; if (res.won) W.nLandPDriveWon = (W.nLandPDriveWon || 0) + 1;
+    let headFell = false; if (h.alive && W.rand() < raidHeadRisk(res.won, F.n)) { die(W, c, h, `killed driving the ${H.name} from ${v}`); c.people = c.people.filter(q => q.alive); headFell = true; }
+    const fd = Math.round(res.food / Math.max(1, needsWeek(c) / 7)), taken = [fd >= 1 ? `food for ${fd} day${fd === 1 ? '' : 's'}` : '', res.grain >= 1 ? 'some of their grain' : ''].filter(Boolean);
+    return { title: res.won ? (res.dest ? 'They are driven out' : 'They are beaten') : 'The attack fails', text: `${F.n} of ours (${F.mix || F.label.replace(/^Call up /, '')}) went against ${v}. ${res.killedD} of theirs fell and ${res.killedA + (headFell ? 1 : 0)} of ours.${res.won ? (res.dest ? ` The ${cl.name} clan are driven out and walk ${res.dest.km} km ${res.dest.dir}.` : ` The ${cl.name} clan are beaten, but find no ground to go to, and stay in ${v}.`) : ''}${res.won ? `${res.worksLost ? ' Their wall and works are burned.' : ''}${taken.length ? ' We take ' + taken.join(' and ') + '.' : ''}${res.dest ? ` ${res.back ? res.back * 25 + ' km² of our land is ours again.' : 'The land is ours again.'}` : ''} The ${H.name} will not forget it (goodwill −30), and the ${cl.name} may come for payment. Renown +4.` : ` They held the village. The ${H.name} think the less of us (goodwill −15). Renown −2.`} The chance of winning was about ${Math.round(res.p * 100)}%.${headFell ? ` <b>${h.name} was killed in the fighting.</b>` : ''}` };
+  }
+  // the world's own peoples answer a seizure by the same rules as the player (not against the player's own people, who answer by card)
+  // the owner's muster for a village: its leader's clan, and half the men of its other clans within 40 km of the village
+  function landMuster(W, O, lead, cl) { let n = warriorsOf(lead); for (const o of O.clans) if (o !== lead && o.alive && Math.hypot(o.x - cl.x, o.y - cl.y) < 40000) n += Math.floor(warriorsOf(o) * 0.5); return n; }
+  function landYear(W) {
+    const pc = playerClan(W), pt = pc ? pc.tribe : null;
+    for (const O of W.tribes) {
+      if (!O.alive || !O.seized || !O.seized.length || O === pt) continue;
+      for (const r of landLive(W, O)) {
+        const cl = W.ents.get(r.c); if (!cl || W.week - (r.lt != null ? r.lt : -1e9) < 52 * 2 || W.week - (cl.landOut || -1e9) < 52 * 6) continue; // a clan just sent away is left to settle
+        const lead = O.headman && O.headman.alive && O.headman.clan && O.headman.clan.tribe === O ? O.headman.clan : O.clans.slice().sort((a, b) => b.people.length - a.people.length)[0]; if (!lead) continue;
+        const mine = landMuster(W, O, lead, cl), theirs = warMuster(W, cl.tribe, cl, pc), strong = mine >= 1.2 * theirs && opinion(O, cl.tribe) < 20;
+        if (W.rand() >= 0.5) continue;
+        if (cl === pc && (r.n || 0) >= 2) { landEnd(O, r); continue; } // two tries are enough: they let it be
+        r.lt = W.week; r.n = (r.n || 0) + 1;
+        if (cl === pc) { landWorldCard(W, O, r, cl, lead, mine, strong); continue; }
+        const h = O.headman;
+        if (strong) { const res = landFight(W, O, r, lead, mine, cl); if (!res.won && r.n >= 2) landEnd(O, r); }
+        else { const res = landAsk(W, O, r, cl, mine, h); if (!res.yes && r.n >= 2) landEnd(O, r); }
+      }
+    }
+  }
+  // against the player's own village the world's demand is a card
+  function landWorldCard(W, O, r, cl, lead, mine, strong) {
+    const P = W.player, h = P.head, v = landV(cl), ratio = driveRatio(W, lead, { n: mine }, cl), p = landOdds(ratio), mm = warriorsOf(cl);
+    const wk = !!(cl.works && Object.keys(cl.works).length), leave = { label: strong ? 'Leave before blood is shed' : 'Leave', hint: `The village walks to ground outside their land${wk ? '; its wall and works are left behind' : ''}${cl.live === 'fishing' ? '; a fishing village goes back to wandering' : ''}. Renown −1; they think the better of us (goodwill +10)` };
+    if (!strong) pushEvent(W, { type: 'landdemand', key: String(cl.id), title: `The ${O.name} demand that ${v} leave their land`, data: { cid: cl.id, oid: O.id, rid: r.w }, text: `Envoys of the ${O.name} come to ${v}. They say the ground it stands on is theirs, and bid the ${cl.name} clan take down their houses and go. What will ${h.name} do?`,
+      options: [leave, { label: 'Refuse', hint: 'They will hold it against us (goodwill −15), and may come again with spears' }] });
+    else pushEvent(W, { type: 'landattack', key: String(cl.id), title: `The ${O.name} come to drive us from ${v}`, data: { cid: cl.id, oid: O.id, rid: r.w, n: mine, ratio }, text: `${mine} warrior${mine === 1 ? '' : 's'} of the ${O.name} come to drive the ${cl.name} clan from ${v}, which they say stands on their land. We have ${mm} fighting ${mm === 1 ? 'man' : 'men'}${walls(cl) > 1 ? ' behind a wall' : ''}. What will ${h.name} do?`,
+      options: [{ label: 'Stand and fight', hint: `About ${Math.round((1 - p) * 100)}% to hold the village. A defeat costs the village${wk ? ', its wall' : ''} and half its stores, and 10 to 20 of every 100 of our men (renown −2); a victory costs us 3 to 6 of every 100 (renown +1)` }, leave] });
+  }
+  // the answers to the cards; the village is looked up again by id, for it may have changed since the card was raised
+  function landCardResolve(W, ev, k) {
+    const P = W.player, h = P.head, c = h && h.clan, O = W.ents.get(ev.data.oid), cl = W.ents.get(ev.data.cid); if (!O || !cl || !c) return;
+    const r = landLive(W, O).find(x => x.c === cl.id);
+    if (ev.type === 'landtaken') {
+      if (k === 2) { houseNote(W, `${h.name} let the ${cl.tribe.name} be at ${landV(cl)}.`); return; }
+      if (!r) { W.lastResult = { title: 'They are gone', text: `The ${cl.name} clan have already left ${landV(cl)}.` }; return; }
+      const cd = P.cool || (P.cool = {}), why = k === 0 ? landAskWhy(W, c, h) : landDriveWhy(W, c, h); // asked again: the head may have changed since the card
+      if (why) { W.lastResult = { title: 'Not possible now', text: why + '.' }; return; }
+      const F0 = landForce0(W, c, h), F = { ...F0, n: ev.data.n != null ? ev.data.n : F0.n }; // the force and the chance are those the card showed
+      if (k === 0) { cd.landask = W.week; W.lastResult = landDoAsk(W, r, cl, F, ev.data.pa); }
+      else { cd.landdrive = W.week; W.lastResult = landDoDrive(W, r, cl, F, ev.data.ratio); }
+      return;
+    }
+    if (!r || cl !== c) return;
+    const leaveNow = () => { const res = landLeave(W, O, r, cl); affect(W, O, c.tribe, 10, `${landV(cl)} left at our bidding`); P.renown -= 1; houseNote(W, `${landV(cl)} left the ${O.name}'s land at their bidding.`); logEvent(W, `The ${cl.name} clan leave ${landV(cl)} at the bidding of the ${O.name}.`, O, 'conflict');
+      W.lastResult = { title: 'The village moves', text: res.dest ? `The ${cl.name} clan take down their houses and walk ${res.dest.km} km ${res.dest.dir}, beyond the land of the ${O.name}. They are glad of it (goodwill +10). Renown −1.` : `The ${cl.name} clan cannot find ground to go to, and stay for now.` }; };
+    if (ev.type === 'landdemand') {
+      if (k === 0) leaveNow();
+      else { affect(W, O, c.tribe, -15, `${landV(cl)} would not leave`, 5); houseNote(W, `We would not leave ${landV(cl)} when the ${O.name} bade us.`); logEvent(W, `The ${cl.name} clan refuse the ${O.name}, who bid them leave ${landV(cl)}.`, O, 'conflict'); W.lastResult = { title: 'You refuse', text: `The envoys go home. The ${O.name} will hold it against you (goodwill −15), and may come again.` }; }
+      return;
+    }
+    if (ev.type === 'landattack') {
+      if (k === 1) { leaveNow(); return; }
+      const att = (O.headman && O.headman.alive && O.headman.clan && O.headman.clan.tribe === O ? O.headman.clan : O.clans.slice().sort((a, b) => b.people.length - a.people.length)[0]); if (!att) return;
+      const res = landFight(W, O, r, att, ev.data.n, cl, ev.data.ratio);
+      W.lastResult = res.won ? { title: res.dest ? 'They drive us out' : 'They beat us', text: `${res.killedD} of ours and ${res.killedA} of theirs fell. The ${O.name} take half our stores${res.worksLost ? ' and burn the wall and works' : ''}. ${res.dest ? `The ${cl.name} clan walk ${res.dest.km} km ${res.dest.dir}, beyond their land.` : `The ${cl.name} clan find no ground to go to, and stay in ${landV(cl)}.`} Renown −2.` }
+        : { title: 'They are beaten off', text: `${res.killedD} of ours and ${res.killedA} of theirs fell. The ${O.name} go home, and think the less of themselves for it. Renown +1.` };
+    }
   }
   // =====================================================================
   //  TRIAL 1: WALKING A STORY. The head of the house re-enacts one of the people's own stories, at some risk, for what the story promises.
@@ -5448,7 +5740,7 @@
     playerYear(W);
     fogYear(W); signsYear(W);
     houseFlow(W);
-    fieldsYear(W); mythYear(W); beastYear(W); claimsYear(W); chainsYear(W);
+    fieldsYear(W); mythYear(W); beastYear(W); landScan(W); claimsYear(W); landYear(W); chainsYear(W);
     diplomacyYear(W);
     cultureYear(W);
     kultYear(W);
@@ -5473,6 +5765,7 @@
       for (const c of W.clans) { acquireGoods(W, c); procure(W, c); }
       farmingMonth(W);
       foundingMonth(W);
+      landScan(W);
       seaMonth(W);
       playerEvents(W);
       fogMonth(W);
@@ -5501,7 +5794,7 @@
     if (W.week % 52 === 0) yearEnd(W);
   }
 
-  return { bondWord, tribeKnown, liveSigns, walkWord, SIGN_R, N, CELL, WORLD, HA, FORAGE_R, TRIBE_MAX, tribeMax, BIOMES, GROVES, DEPOSITS, GOOD_NAMES, createWorld, seedFirstPop, step, clanSize, tribeSize, battleOdds, warSides, warBegin, realmWarcall, familiesOf, famMembers, needsWeek, opinion, prestige, isAllied, sameConfed, tribeCenter, roadLevel, pactRoute, playerActions, doAction, dealings, settleFeud, policy: W => pol(W), setPolicy: (W, k, v) => { const p = pol(W); if (k === 'deal' || !(k in p) || (v !== 'ask' && !(AUTOIX[k] && v in AUTOIX[k]))) return; p[k] = v; }, setDeal: (W, id, v) => { if (v === 'auto') delete pol(W).deal[id]; else pol(W).deal[id] = v; }, dealMode: (W, o) => dealWith(W, o), clanHeir, FAITHS, isMatri, faithOf, cultureName, MON, checkPlace, und, speechWord, kultInfo, grainInfo, clanFlow, HOME_R, CREATION, claimsYear, ring, ringSay, BEASTS, beastNm, beastTale, beastOdds, beastWhere, beastToll, beastNear, saveGame, loadGame, saveInfo, ruleInfo, advice, legacy, legacyHTML, TRAITS, epithet, hasTrait, leadWeight, standingWhy, villageInfo, RANKS, SOCIETY, societyOf, rankOf, WORKS, JOBS, walls, canBuild, releaseClaim: (W, i) => { const P = W.player; if (P && P.claims && P.claims[i]) { houseNote(W, `The house gave up its claim to the ${DEPOSITS[P.claims[i].d.type].name.toLowerCase()}.`); P.claims.splice(i, 1); } }, weaponsName, houseSlaves, slaveCount, freeCount, knows, knowsTribe, foodDays, GIFTABLE, STAGES, BOAT_STAGES, METAL_STAGES, boatStage, metalStage, arms, canReach, houseCandidates, choosePlayer, resolve, dynMembers, bloodCount, titlesOf, relWord, vigor, tribeVigor, statureCm, farmSuit, fieldInfo, potential, cellFood, foodBreakdown, kingshipBid, warriors, tribeWealth, confedTribes, confedPeople, newConfed, joinConfed, leaveConfed, formAlliance, kinOf, rulerWord, realmWord, realmInfo, realmHeir, realmRisk, realmPutDown, realmWarList, realmRiseOdds, realmStay, realmNext, realmKingdomNeeds, succession, confedYear,
+  return { bondWord, tribeKnown, liveSigns, walkWord, SIGN_R, N, CELL, WORLD, HA, FORAGE_R, TRIBE_MAX, tribeMax, BIOMES, GROVES, DEPOSITS, GOOD_NAMES, createWorld, seedFirstPop, step, clanSize, tribeSize, battleOdds, warSides, warBegin, realmWarcall, familiesOf, famMembers, needsWeek, opinion, prestige, isAllied, sameConfed, tribeCenter, roadLevel, pactRoute, playerActions, doAction, dealings, settleFeud, policy: W => pol(W), setPolicy: (W, k, v) => { const p = pol(W); if (k === 'deal' || !(k in p) || (v !== 'ask' && !(AUTOIX[k] && v in AUTOIX[k]))) return; p[k] = v; }, setDeal: (W, id, v) => { if (v === 'auto') delete pol(W).deal[id]; else pol(W).deal[id] = v; }, dealMode: (W, o) => dealWith(W, o), clanHeir, FAITHS, isMatri, faithOf, cultureName, MON, checkPlace, und, speechWord, kultInfo, grainInfo, clanFlow, HOME_R, CREATION, claimsYear, foreignHeld, landLive, landScan, landYear, driveOutOdds, leaveOdds, landTargets, ring, ringSay, BEASTS, beastNm, beastTale, beastOdds, beastWhere, beastToll, beastNear, saveGame, loadGame, saveInfo, ruleInfo, advice, legacy, legacyHTML, TRAITS, epithet, hasTrait, leadWeight, standingWhy, villageInfo, RANKS, SOCIETY, societyOf, rankOf, WORKS, JOBS, walls, canBuild, releaseClaim: (W, i) => { const P = W.player; if (P && P.claims && P.claims[i]) { houseNote(W, `The house gave up its claim to the ${DEPOSITS[P.claims[i].d.type].name.toLowerCase()}.`); P.claims.splice(i, 1); } }, weaponsName, houseSlaves, slaveCount, freeCount, knows, knowsTribe, foodDays, GIFTABLE, STAGES, BOAT_STAGES, METAL_STAGES, boatStage, metalStage, arms, canReach, houseCandidates, choosePlayer, resolve, dynMembers, bloodCount, titlesOf, relWord, vigor, tribeVigor, statureCm, farmSuit, fieldInfo, potential, cellFood, foodBreakdown, kingshipBid, warriors, tribeWealth, confedTribes, confedPeople, newConfed, joinConfed, leaveConfed, formAlliance, kinOf, rulerWord, realmWord, realmInfo, realmHeir, realmRisk, realmPutDown, realmWarList, realmRiseOdds, realmStay, realmNext, realmKingdomNeeds, succession, confedYear,
     seasonOf, seasonName, tempOffset, cellAt, lifeStage, siler, fecund, makePerson, stepPop };
 })();
 if (typeof module !== 'undefined') module.exports = SIM;
