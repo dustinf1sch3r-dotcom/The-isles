@@ -9,6 +9,7 @@ Your own game server is already running on the port named in your task. Every co
 
 `<game#>` is any number you choose; each number is a separate game. Start one with `new <seed>`. Commands:
 
+- Years: the front-end counts years as the game does (the first year is year 1; `yr = floor(week / 52) + 1`), so a year in its output is the year the game's own screens show.
 - `state` (where things stand, and any decision waiting), `adv <years>` (advance up to 20 years; it stops early when a decision needs answering), `choose <n>` (answer the waiting decision).
 - `deeds` (every deed, with AVAILABLE or the reason it cannot be done now, and numbered targets), `deed <id> <target#> [force# | DIR km]` (do one; for example `deed raid 0 1`, `deed gifts 2`, `deed movecamp 0 N 30`).
 - `people`, `family`, `log [n]` (your house's notes), `chronicle [n]` (the world's), `timeline`, `flow [years]`, `myths`, `counsel`, `legacy`, `treasures`, `beasts`, `land`.

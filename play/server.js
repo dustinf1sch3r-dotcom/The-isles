@@ -5,7 +5,7 @@ const LOGS = process.env.ISLES_LOGS || require('path').join(__dirname, '..', 'bu
 const S = require(process.env.ISLES_SIM || require('path').join(__dirname, '..', 'build', 'sim.js'));
 const games = {};
 const strip = s => String(s || '').replace(/<br\s*\/?>/g, '\n').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&');
-const yr = w => Math.floor(w / 52), SEAS = ['Winter', 'Spring', 'Summer', 'Autumn'];
+const yr = w => Math.floor(w / 52) + 1, SEAS = ['Winter', 'Spring', 'Summer', 'Autumn'];
 const season = w => SEAS[Math.floor(((w % 52) + 4) / 13) % 4];
 const DIRS = { E: [1, 0], SE: [1, 1], S: [0, 1], SW: [-1, 1], W: [-1, 0], NW: [-1, -1], N: [0, -1], NE: [1, -1] };
 const compass = (dx, dy) => ['E', 'SE', 'S', 'SW', 'W', 'NW', 'N', 'NE'][((Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) % 8) + 8) % 8];
@@ -76,7 +76,7 @@ function cmd(G, line) {
     if (a[1] === 'village') { t.stage = 3; t.dom = Math.max(t.dom || 0, 0.5); c.settled = true; c.live = 'farm'; c.village = c.village || (c.name + 'stead'); c.soil = c.soil || 1; c.works = c.works || {}; c.works.hall = c.works.hall || W.week; c.grain = (c.grain || 0) + S.needsWeek(c) * 40; return `TEST SET-UP: the ${c.name} clan now lives in a farming village with a great hall and forty weeks of grain.`; }
     if (a[1] === 'intrude') { // the nearest other people's largest clan raises a village 25 to 35 km from yours, on land your tribe claims: the real seizure code runs (record, card)
       const o = near.find(q => !S.isAllied(t, q)); if (!o) return 'No other people that is not your ally.'; const ic = o.clans.slice().sort((x, y) => y.people.length - x.people.length)[0]; let spot = null;
-      for (let r = 25000; r <= 35000 && !spot; r += 2500) for (let k = 0; k < 24 && !spot; k++) { const an = k * Math.PI / 12, x = c.x + Math.cos(an) * r, y = c.y + Math.sin(an) * r; if (x < 3000 || y < 3000 || x > S.WORLD - 3000 || y > S.WORLD - 3000) continue; const i = Math.floor(y / S.CELL) * S.N + Math.floor(x / S.CELL); if (W.land[i] && !W.lake[i] && W.claim && W.claim[i] === t.id && !W.clans.some(q => q.settled && Math.hypot(q.x - x, q.y - y) < 6000)) spot = [x, y]; }
+      for (let r = 25000; r <= 35000 && !spot; r += 2500) for (let k = 0; k < 24 && !spot; k++) { const an = k * Math.PI / 12, x = c.x + Math.cos(an) * r, y = c.y + Math.sin(an) * r; if (x < 3000 || y < 3000 || x > S.WORLD - 3000 || y > S.WORLD - 3000) continue; const i = S.cellAt(x, y); if (W.land[i] && !W.lake[i] && W.claim && W.claim[i] === t.id && !W.clans.some(q => q.settled && Math.hypot(q.x - x, q.y - y) < 6000)) spot = [x, y]; }
       if (!spot) return 'No ground of your tribe\'s claim 25 to 35 km from your clan is free of villages: advance a few years and try again.';
       S.landScan(W); /* an old save is first taken as it stands */ ic.x = ic.tx = spot[0]; ic.y = ic.ty = spot[1]; ic.settled = true; ic.toSettle = false; ic.founding = false; ic.live = 'farm'; ic.settledAt = W.week; ic.soil = 1; ic.village = ic.village || ic.name + 'stead'; ic.vx = null; ic.vy = null;
       S.landScan(W); return `TEST SET-UP: the ${ic.name} clan of the ${o.name} (${ic.people.length} people) raised ${ic.village} ${Math.round(Math.hypot(spot[0] - c.x, spot[1] - c.y) / 1000)} km from your clan, on land the ${t.name} claim.`;
@@ -102,6 +102,7 @@ function cmd(G, line) {
   if (op === 'flow') { const F = S.clanFlow(W, +a[1] || 10); return `Your clan over the last ${F.years} years — IN: ${F.born} born, ${F.marriedIn} married in, ${F.joined} joined, ${F.slaves} slaves taken. OUT: ${F.died} died (${F.infants} infants, ${F.killed} killed), ${F.marriedOut} married out, ${F.split} left to found a new clan, ${F.left} moved away, ${F.captured} carried off. Now ${F.women} women of childbearing age (${F.wives} married). The clan splits when it passes ${F.splitAt} people.`; }
   if (op === 'choose') {
     const ev = W.pending[0]; if (!ev) return 'No decision is waiting.'; const k = +a[1]; if (!(k >= 0 && k < ev.options.length)) return 'Choose a number from the list.' + pendingText(G);
+    if (ev.options[k].off) return 'That cannot be done now.' + pendingText(G); // the card stays
     W.lastResult = null; S.resolve(W, ev, k); G.choices.push({ y: yr(W.week), type: ev.type, k });
     if (W.lastResult) { out.push(`RESULT — ${strip(W.lastResult.title)}: ${strip(W.lastResult.text)}`); W.lastResult = null; }
     out.push(...newNotes(G), ...drain(G)); return (out.join('\n') || 'Done.') + pendingText(G);
@@ -121,7 +122,7 @@ function cmd(G, line) {
     const weeks = Math.round(Math.min(20, +a[1] || 1) * 52); let n = 0;
     for (; n < weeks && !over(); n++) {
       S.step(W); if (W.week % 52 === 1) snapshot(G);
-      while (W.pending.length && G.auto[W.pending[0].type] != null) { const ev = W.pending[0], k = Math.min(G.auto[ev.type], ev.options.length - 1); W.lastResult = null; S.resolve(W, ev, k); out.push(`  (auto-answered ${ev.type} "${strip(ev.title)}" with [${k}] ${strip(ev.options[k].label)}${W.lastResult ? ' → ' + strip(W.lastResult.title) : ''})`); W.lastResult = null; }
+      while (W.pending.length && G.auto[W.pending[0].type] != null) { const ev = W.pending[0], k = Math.min(G.auto[ev.type], ev.options.length - 1); if (ev.options[k].off) break; /* an option that cannot be done is not auto-answered: the card stays */ W.lastResult = null; S.resolve(W, ev, k); out.push(`  (auto-answered ${ev.type} "${strip(ev.title)}" with [${k}] ${strip(ev.options[k].label)}${W.lastResult ? ' → ' + strip(W.lastResult.title) : ''})`); W.lastResult = null; }
       if (W.pending.length) break;
     }
     fs.writeFileSync(require('path').join(LOGS, `g${G.id}.json`), JSON.stringify({ seed: G.seed, timeline: G.timeline, choices: G.choices, deeds: G.deeds, over: over(), endY: yr(W.week), hist: P.hist.map(e => ({ y: yr(e.w), t: strip(e.t) })) }));
