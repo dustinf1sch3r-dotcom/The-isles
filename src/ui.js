@@ -232,6 +232,13 @@
     if (wide()) return { x0: 0, y0: top, x1: $('.panel').getBoundingClientRect().left - 8, y1: h - 8 };
     return { x0: 0, y0: top, x1: w, y1: h - Math.min($('.panel').getBoundingClientRect().height, h * 0.45) - 8 };
   }
+  // parts of the screen the names must keep clear of (the buttons laid over the map), measured from the page, not on every frame
+  let zoneAt = -1e9, zoneKey = '', zoneBoxes = [];
+  function clearZones(w, h) {
+    const t = performance.now(), k = w + 'x' + h; if (k === zoneKey && t - zoneAt < 300) return zoneBoxes;
+    const out = []; for (const el of [$('.tools'), $('#actBtn')]) { if (!el) continue; const r = el.getBoundingClientRect(); if (r.width > 0 && r.height > 0) out.push([(r.left + r.right) / 2, (r.top + r.bottom) / 2, r.width + 8, r.height + 8]); }
+    zoneKey = k; zoneAt = t; return zoneBoxes = out;
+  }
   function fit() {
     const V = viewRect(), w = V.x1 - V.x0, top = V.y0, avail = Math.max(200, V.y1 - V.y0);
     // fit the land, not the whole sea square
@@ -414,6 +421,7 @@
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(base, cam.ox, cam.oy, WORLD * cam.s, WORLD * cam.s);
     if (detail && cam.s * WORLD / R > 1.15) { const f = cam.s / detail.s * detail.q; ctx.drawImage(detailCv, cam.ox - detail.ox / detail.q * f, cam.oy - detail.oy / detail.q * f, detailCv.width / detail.q * f, detailCv.height / detail.q * f); }
+    if (layer === 'terrain' || layer === 'food') drawFieldPatches(ctx, w, h); // fields first, so a river is never hidden by them
     // rivers: smooth curves, batched into a few strokes by width
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     const buckets = new Map();
@@ -430,7 +438,7 @@
     }
     ctx.strokeStyle = 'rgba(48,66,90,0.92)'; for (const [lw, path] of buckets) { ctx.lineWidth = lw + 1.2; ctx.stroke(path); } // rivers in blue-black ink
     ctx.strokeStyle = 'rgb(150,178,190)'; for (const [lw, path] of buckets) { if (lw < 2) continue; ctx.lineWidth = lw - 0.6; ctx.stroke(path); }
-    if (layer === 'terrain' || layer === 'food') { drawSymbols(ctx, w, h); drawFieldPatches(ctx, w, h); }
+    if (layer === 'terrain' || layer === 'food') drawSymbols(ctx, w, h);
     // roads, paths, tracks and sea lanes, worn in by use
     if (show.roads) { const lv = [new Path2D(), new Path2D(), new Path2D(), new Path2D()], lane = new Path2D(), zs = clamp(zoomed / 8, 0.7, 1.8);
       for (const [k, v] of W.roads) {
@@ -460,16 +468,28 @@
     if (fieldList.key !== key) { const cells = []; for (const i of W.landIdx) if (W.farm[i] > 0.05 && !W.lake[i] && W.elev[i] < 520 && W.slope[i] < 0.08) cells.push(i); fieldList = { key, cells }; }
     return fieldList.cells;
   }
+  // the river cells: for each, the cells before and after it along its river, so a field patch can be kept off the water
+  let riverNb = null, riverNbSrc = null;
+  function riverCellsOf() {
+    if (riverNbSrc !== rivers) { riverNb = new Map(); for (const ch of rivers) for (let m = 0; m < ch.length; m++) { let a = riverNb.get(ch[m]); if (!a) riverNb.set(ch[m], a = []); a.push([m ? ch[m - 1] : -1, ch[m], m < ch.length - 1 ? ch[m + 1] : -1]); } riverNbSrc = rivers; }
+    return riverNb;
+  }
   function drawFieldPatches(ctx, w, h) {
-    const cells = fieldCells(); if (!cells.length) return;
+    const cells = fieldCells(); if (!cells.length) return; const rn = riverCellsOf();
     const sp = ART.sprites, px = CELL * cam.s, wpx = clamp(px * 0.8, 8, 26), k0 = wpx / 18, nslot = px < 12 ? 1 : px < 24 ? 2 : px < 40 ? 3 : 4, slots = nslot === 1 ? [[0, 0]] : [[-0.23, -0.2], [0.23, 0.2], [0.24, -0.22], [-0.22, 0.24]];
     for (const i of cells) {
       const [cx, cy] = cellS(i); if (cx < -30 || cy < -30 || cx > w + 30 || cy > h + 30) continue;
       const gx = i % N, gy = (i / N) | 0, p = clamp(W.farm[i] * 2.2, 0.3, 1), regional = hash2(gx >> 1, gy >> 1, 40);
+      let rsegs = null; // the stretches of river that pass this cell or its neighbours, as screen lines with their drawn width
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const a = rn.get(i + dy * N + dx); if (!a) continue; for (const t of a) { const lw = clamp(Math.sqrt(W.acc[t[1]]) * cam.s * 105, 0.6, 5.5), c1 = cellS(t[1]); if (!rsegs) rsegs = []; if (t[0] >= 0) rsegs.push([cellS(t[0]), c1, lw]); if (t[2] >= 0) rsegs.push([c1, cellS(t[2]), lw]); } }
       for (let s = 0; s < nslot; s++) {
         if (s > 0 && hash2(gx, gy, 21 + s) > p) continue;
-        const j1 = hash2(gx, gy, 31 + s), j2 = hash2(gx, gy, 51 + s), k = k0 * (0.85 + 0.3 * j2), sx = cx + (slots[s][0] + (j1 - 0.5) * 0.18) * px, sy = cy + (slots[s][1] + (j2 - 0.5) * 0.18) * px;
+        const j1 = hash2(gx, gy, 31 + s), j2 = hash2(gx, gy, 51 + s), k = k0 * (0.85 + 0.3 * j2); let sx = cx + (slots[s][0] + (j1 - 0.5) * 0.18) * px, sy = cy + (slots[s][1] + (j2 - 0.5) * 0.18) * px;
         if (!fieldOnLand(sx, sy, 9 * k, 5 * k)) continue;
+        if (rsegs) { // a patch never lies over a river: one that would is moved to the bank, or left out if there is no room
+          const near = (x, y) => { let bd = 1e9, bx = 0, by = 0; for (const g of rsegs) { const dx = g[1][0] - g[0][0], dy = g[1][1] - g[0][1], l = dx * dx + dy * dy, u = l ? clamp(((x - g[0][0]) * dx + (y - g[0][1]) * dy) / l, 0, 1) : 0, qx = g[0][0] + u * dx, qy = g[0][1] + u * dy, d = Math.hypot(x - qx, y - qy) - g[2] / 2 - 5 * k - 1; if (d < bd) { bd = d; bx = qx; by = qy; } } return [bd, bx, by]; };
+          let ok = false; for (let it = 0; it < 3; it++) { const [d, qx, qy] = near(sx, sy); if (d >= 0) { ok = true; break; } const vx = sx - qx, vy = sy - qy, vl = Math.hypot(vx, vy) || 1; sx += (vl > 0.01 ? vx / vl : 1) * (-d + 0.5); sy += (vl > 0.01 ? vy / vl : 0) * (-d + 0.5); }
+          if (!ok || Math.hypot(sx - cx, sy - cy) > px * (nslot === 1 ? 1.2 : 0.75) || !fieldOnLand(sx, sy, 9 * k, 5 * k)) continue; }
         ART.stamp(ctx, sp[(regional * 0.6 + hash2(gx, gy, 41 + s) * 0.4) < 0.5 ? 'field' : 'field_g'], sx, sy, k);
       }
     }
@@ -614,10 +634,11 @@
     // less detail the farther out: with more than 25 camps and villages in view, the whole-isles view shows one mark for each people,
     // and the middle view joins the camps of one people that stand close together. The 'Every camp' switch turns it all off.
     // only camps the player knows and can see count (not the fog, not what lies under the sheet); it turns on above 25 and off again at 20 or fewer, so a drag does not make the map flip
-    let nOn = 0; const VR0 = viewRect(); if (!show.every && zoomed < LOD_MID) for (const c of W.clans) if (c.people.length && SIM.knows(W, c.x, c.y)) { const [x, y] = cs(c); if (x >= VR0.x0 && x <= VR0.x1 && y >= VR0.y0 && y <= VR0.y1) nOn++; }
-    crowdOn = !show.every && zoomed < LOD_MID && (nOn > 25 || (crowdOn && nOn > 20));
-    const crowd = crowdOn, far = crowd && zoomed < LOD_FAR, mid = crowd && !far, marks = [], tmk = new Map(); mkOf = tmk; grpOf = new Map();
-    const hovE = hover && hover.e, own = c => c === sc || c === pc || c === hovE;
+    let nOn = 0, nV = 0; const VR0 = viewRect(); if (!show.every && zoomed < LOD_MID) for (const c of W.clans) if (c.people.length && SIM.knows(W, c.x, c.y)) { const [x, y] = cs(c); if (x >= VR0.x0 && x <= VR0.x1 && y >= VR0.y0 && y <= VR0.y1) nOn++; }
+    if (!show.every && zoomed < LOD_FAR) for (const S of W.settlements || []) { if (!S.clans || !S.clans.length || !SIM.knows(W, S.clans[0].x, S.clans[0].y)) continue; const [x, y] = cs(S.clans[0]); if (x >= VR0.x0 && x <= VR0.x1 && y >= VR0.y0 && y <= VR0.y1) nV++; } // many known villages at the whole-isles view are joined too
+    crowdOn = !show.every && zoomed < LOD_MID && (nOn > 25 || (crowdOn && nOn > 20) || (zoomed < LOD_FAR && (nV >= 8 || (crowdOn && nV >= 6))));
+    const crowd = crowdOn, far = crowd && zoomed < LOD_FAR, mid = crowd && !far, marks = [], tmk = new Map(), tseen = new Map(); mkOf = tmk; grpOf = new Map();
+    const hovE = hover && hover.e, own = c => c === sc || c === pc || c === hovE, seenAdd = (t, x, y, r) => { let a = tseen.get(t); if (!a) tseen.set(t, a = []); a.push([x, y, r]); }; // the marks drawn and seen of each people: its names are written beside these
     try {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     if (selCell != null) { const [x, y] = cellS(selCell); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, Math.max(5, cam.s * CELL * 0.55), 0, Math.PI * 2); ctx.stroke(); }
@@ -654,10 +675,10 @@
       for (let k = 1; k < big.length; k++) { const a = big[k]; for (let it = 0; it < 4; it++) { let moved = false; for (let j = 0; j < k; j++) { const o = big[j], dx = a.px - o.px, dy = a.py - o.py, d = Math.hypot(dx, dy) || 0.01, want = (a.M + o.M) * 0.62; if (d < want) { a.px += dx / d * (want - d); a.py += dy / d * (want - d) * 0.8; moved = true; } } if (!moved) break; } }
       for (const a of list) { const x = a.px, y = a.py; if (!on(x, y, 30)) continue; const t = a.t, M = a.M, hov = hovE === t, col = `hsla(${show.kult && t.kult ? t.kult.hue : t.hue},40%,52%,1)`;
         if (hov) { ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.beginPath(); ctx.arc(x, y, M * 0.9 + 4, 0, Math.PI * 2); ctx.fill(); }
-        if (a.v * 2 > a.n) { ctx.beginPath(); ctx.ellipse(x, y + M * 0.08, M * 0.78, M * 0.62, 0, 0, Math.PI * 2); ctx.fillStyle = 'rgba(150,118,66,0.28)'; ctx.fill(); ctx.strokeStyle = hov ? '#fff' : `hsla(${t.hue},50%,34%,0.9)`; ctx.lineWidth = hov ? 2.4 : 1.5; ctx.stroke();
+        if (a.v * 2 > a.n) { ctx.beginPath(); ctx.ellipse(x, y + M * 0.08, M * 0.6, M * 0.5, 0, 0, Math.PI * 2); ctx.fillStyle = 'rgba(150,118,66,0.28)'; ctx.fill(); ctx.strokeStyle = hov ? '#fff' : `hsla(${t.hue},50%,34%,0.9)`; ctx.lineWidth = hov ? 2.4 : 1; ctx.stroke();
           const hs = M * 0.4; ART.hut(ctx, x - hs * 0.9, y + hs * 0.28, hs, ''); ART.hut(ctx, x + hs * 0.9, y + hs * 0.3, hs, ''); ART.hut(ctx, x, y - hs * 0.22, hs * 1.1, ''); }
         else { const n = a.n > 120 ? 3 : a.n > 45 ? 2 : 1; if (n > 1) ART.tent(ctx, x - M * 0.6, y + M * 0.14, M * 0.76, col); if (n > 2) ART.tent(ctx, x + M * 0.6, y + M * 0.18, M * 0.7, col); ART.tent(ctx, x, y, M, col); }
-        a.mk = [x, y, M]; tmk.set(t, a); marks.push([x, y, M * 0.8, M * 0.6]); } }
+        a.mk = [x, y, M]; tmk.set(t, a); marks.push([x, y, M * 0.8, M * 0.6]); seenAdd(t, x, y, M * 0.8); } }
     // villages: permanent places
     const vpos = []; for (const S of W.settlements || []) { if (!S.clans || !S.clans.length) continue; let sx = 0, sy = 0; for (const c of S.clans) { const p = cs(c); sx += p[0]; sy += p[1]; } vpos.push([S, sx / S.clans.length, sy / S.clans.length]); }
     for (const [S, sx, sy] of vpos) S._sx = null;
@@ -670,7 +691,8 @@
       const fishing = S.type === 'fishing', hov = hover && hover.e === S;
       ctx.beginPath(); for (let k = 0; k < 9; k++) { const a = k / 9 * Math.PI * 2, rr = R2 * (0.82 + 0.3 * (((hsh >> (k * 3)) & 7) / 7)); k ? ctx.lineTo(sx + Math.cos(a) * rr, sy + Math.sin(a) * rr * 0.8) : ctx.moveTo(sx + Math.cos(a) * rr, sy + Math.sin(a) * rr * 0.8); } ctx.closePath();
       ctx.fillStyle = 'rgba(150,118,66,0.28)'; ctx.fill(); // trodden earth
-      ctx.lineWidth = sel === S || hov ? 2.6 : 1.5; ctx.strokeStyle = sel === S || hov ? '#fff' : `hsla(${show.kult && S.tribe.kult ? S.tribe.kult.hue : S.tribe.hue},50%,34%,0.9)`; ctx.stroke();
+      { const keen = sel === S || hov || !!(pc && S.clans.includes(pc)) || show.every; // far out the rings of many villages tangle: none there, and half as thick in the middle view; the house's village and the chosen one keep theirs
+        if (keen || zoomed >= LOD_FAR) { ctx.lineWidth = sel === S || hov ? 2.6 : keen || zoomed >= LOD_MID ? 1.5 : 0.75; ctx.strokeStyle = sel === S || hov ? '#fff' : `hsla(${show.kult && S.tribe.kult ? S.tribe.kult.hue : S.tribe.hue},50%,34%,0.9)`; ctx.stroke(); } }
       { const wk = k => S.clans.some(c => c.works && c.works[k]);
         if (wk('ditch')) { ctx.beginPath(); ctx.ellipse(sx, sy, R2 * 1.42, R2 * 1.42 * 0.8, 0, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(20,14,8,0.7)'; ctx.lineWidth = 3.4; ctx.stroke(); ctx.strokeStyle = 'rgba(150,128,86,0.85)'; ctx.lineWidth = 1.1; ctx.stroke(); }
         if (wk('pal')) { const rp = R2 * 1.2, ns = Math.max(14, Math.round(rp * 1.5)), ph = clamp(R2 * 0.24, 3.2, 7);
@@ -681,7 +703,7 @@
       for (let k = 0; k < nh; k++) { const a = k / nh * Math.PI * 2 + (hsh & 15), rr = nh === 1 ? 0 : R2 * 0.5; hp.push([sx + Math.cos(a) * rr, sy + Math.sin(a) * rr * 0.75]); }
       hp.sort((a, b) => a[1] - b[1]); for (const [hx, hy] of hp) ART.hut(ctx, hx, hy, hs, fishing ? 'fish' : ''); if (S._hall) ART.hut(ctx, sx, sy + hs * 0.1, hs * 1.3, 'hall');
       if (S.metal) ART.put(ctx, S.metal === 2 ? 'bronze' : 'metal', sx + R2 * 0.95, sy - R2 * 0.75, 14);
-      if (SIM.knows(W, S.clans[0].x, S.clans[0].y)) vills.push([S, sx, sy, R2]);
+      if (SIM.knows(W, S.clans[0].x, S.clans[0].y)) { vills.push([S, sx, sy, R2]); seenAdd(S.tribe, sx, sy, R2 * 1.5); }
     }
     // wandering camps (tents); canoes on the water
     let gl = null, gskip = null;
@@ -708,7 +730,7 @@
       const n = size > 34 ? 3 : size > 16 ? 2 : 1, ring = c === sc ? '#ffffff' : (grp ? grp.cl.some(q => q.cond < 0.7) : c.cond < 0.7) ? '#ff5a4a' : null, col = clanCol(c);
       if (n > 1) ART.tent(ctx, x - ts * 0.6, y + ts * 0.14, ts * 0.76, col); if (n > 2) ART.tent(ctx, x + ts * 0.6, y + ts * 0.18, ts * 0.7, col);
       ART.tent(ctx, x, y, ts, col, ring);
-      if (SIM.knows(W, c.x, c.y)) camps.push([grp ? { name: grp.cl.length + ' camps,', people: { length: grp.n } } : c, x, y, ts]);
+      if (SIM.knows(W, c.x, c.y)) { camps.push([grp ? { name: grp.cl.length + ' camps,', people: { length: grp.n } } : c, x, y, ts]); seenAdd(c.tribe, x, y, ts * 0.75); }
     }
     // traders on the road
     for (const r of W.traders || []) { const [x, y] = toScreen(r.x, r.y); r._sx = null; if (!on(x, y) || !SIM.knows(W, r.x, r.y) || (far && !(pc && r.home === pc))) continue; ART.put(ctx, pc && r.home === pc ? 'trader_me' : 'trader', x, y - 4, 19); r._sx = x; r._sy = y - 4; }
@@ -739,9 +761,9 @@
     drawPlacePick();
     // ---- names, written last and kept clear of icons and of each other ----
     const km = cam.s * 1000, opts = [10, 25, 50, 100, 200], L = opts.find(v => v * km > 50) || 200, VR = viewRect(), by = VR.y1 - 10, bx = wide() ? 14 : 12;
-    icons.push([bx + L * km / 2, by - 7, L * km + 12, 24]); if (far) icons.push([bx + 24, by - 52, 60, 60]); // the compass
-    const placed = icons.slice(), fits = (cx, cy, tw, th) => cx - tw / 2 >= VR.x0 + 2 && cx + tw / 2 <= VR.x1 - 2 && !placed.some(p => Math.abs(p[0] - cx) < (p[2] + tw) / 2 + 2 && Math.abs(p[1] - cy) < (p[3] + th) / 2 + 1);
-    { const tb = $('.tools'), tr = tb && tb.getBoundingClientRect(); if (tr && tr.width) placed.push([(tr.left + tr.right) / 2, (tr.top + tr.bottom) / 2, tr.width + 6, tr.height + 6]); } // names are kept clear of the buttons
+    icons.push([bx + L * km / 2, by - 7, L * km + 12, 24]); icons.push([bx + 24, by - 52, 60, 60]); // the compass
+    const placed = icons.slice(), fits = (cx, cy, tw, th) => cx - tw / 2 >= VR.x0 + 2 && cx + tw / 2 <= VR.x1 - 2 && cy - th / 2 >= VR.y0 + 2 && cy + th / 2 <= VR.y1 - 2 && !placed.some(p => Math.abs(p[0] - cx) < (p[2] + tw) / 2 + 2 && Math.abs(p[1] - cy) < (p[3] + th) / 2 + 1);
+    const ZB = clearZones(w, h); for (const z of ZB) placed.push(z); // names are kept clear of the buttons
     const inkCol = f => { const m = /hsl\(([\d.]+),\s*([\d.]+)%/.exec(f || ''); return m ? `hsl(${m[1]},${Math.min(62, +m[2])}%,24%)` : '#3a2a14'; };
     const ink = (label, x, y, font, fill, lw = 3.4) => { ctx.font = font; ctx.lineWidth = lw; ctx.strokeStyle = 'rgba(247,238,206,0.94)'; ctx.strokeText(label, x, y); ctx.fillStyle = inkCol(fill); ctx.fillText(label, x, y); };
     if (W.beasts) { const bh = clamp(20 + zoomed * 1.1, 24, 40), SP = { bear: 'bear', boar: 'boar', aurochs: 'aurochs', wolf: 'wolf', stag: 'wstag', whale: 'whale' }, tt = now / 1000;
@@ -749,50 +771,96 @@
         ART.put(ctx, 'a_' + SP[b.kind] + (b.id % 2 ? '_l' : ''), x, y, bh);
         const nm = SIM.beastNm(b); ink(nm[0].toUpperCase() + nm.slice(1), x, y + bh * 0.62 + 6, `italic 600 ${zoomed > 8 ? 13 : 11}px Georgia, serif`, '#5a1e12', 3); icons.push([x, y, bh, bh]); b._sx = x; b._sy = y; b._r = bh * 0.6; } }
     for (const t of W.tribes) t._lab = null; for (const cf of W.confeds) cf._lab = null;
+    const knownAt = (x, y) => { if (x < cam.ox || y < cam.oy || x > cam.ox + WORLD * cam.s || y > cam.oy + WORLD * cam.s) return false; const [wx, wy] = toWorld(x, y); return SIM.knows(W, wx, wy); };
+    const foggy = (x, y, tw) => { if (show.every || !knownAt(x, y)) return show.every ? false : true; let u = 0; for (const dy of [-6, 0, 6]) for (const dx of [-0.45, -0.2, 0, 0.2, 0.45]) if (!knownAt(x + dx * tw, y + dy) && ++u > 3) return true; return false; }; // a name may not lie mostly on unknown parchment (15 points of its box)
     if (show.names || st || scf) {
       ctx.lineJoin = 'round';
-      for (const cf of W.confeds) {
-        if (!show.names && cf !== scf) continue;
-        const ts = SIM.confedTribes(W, cf); if (!ts.length || !cf.capital.clans.length || !cf.capital.clans.some(c => SIM.knows(W, c.x, c.y))) continue;
+      // one rule for every name: write it only where its people can be seen, touching what it names, clear of the fog, of the buttons and of the other marks and names
+      const tidy = !show.every, hT = hovE && (W.tribes.includes(hovE) ? hovE : hovE.tribe && W.tribes.includes(hovE.tribe) ? hovE.tribe : null), mine = pc && pc.tribe, hot = t => t === st || t === hT;
+      const okPt = (x, y) => x >= VR.x0 + 2 && x <= VR.x1 - 2 && y >= VR.y0 + 2 && y <= VR.y1 - 2 && !ZB.some(z => Math.abs(x - z[0]) < z[2] / 2 && Math.abs(y - z[1]) < z[3] / 2);
+      const landAt = (x, y) => { if (x < cam.ox || y < cam.oy || x > cam.ox + WORLD * cam.s || y > cam.oy + WORLD * cam.s) return false; const [wx, wy] = toWorld(x, y); return !!W.land[SIM.cellAt(wx, wy)]; }; // a realm's name is written on its land, not on the sea
+      const offLand = (x, y, tw) => { if (!tidy) return false; let sea = 0; for (const dy of [-6, 0, 6]) for (const dx of [-0.45, -0.2, 0, 0.2, 0.45]) if (!landAt(x + dx * tw, y + dy) && ++sea > 8) return true; return false; }; // nor mostly on the sea
+      const hardOk = (x, y, tw, th) => x - tw / 2 >= VR.x0 + 2 && x + tw / 2 <= VR.x1 - 2 && y - th / 2 >= VR.y0 + 2 && y + th / 2 <= VR.y1 - 2 && ![...ZB, [bx + L * km / 2, by - 7, L * km + 12, 24], [bx + 24, by - 52, 60, 60]].some(z => Math.abs(z[0] - x) < (z[2] + tw) / 2 && Math.abs(z[1] - y) < (z[3] + th) / 2); // the buttons, the scale bar and the compass are never written over
+      let nMk = 0; // placed[] holds marks and icons first, then names: a name over a name costs more than a name over a mark
+      const clashN = (x, y, tw, th) => { let n = 0; placed.forEach((p, i) => { if (Math.abs(p[0] - x) < (p[2] + tw) / 2 + 2 && Math.abs(p[1] - y) < (p[3] + th) / 2 + 1) n += i < nMk ? 0.35 : 1.4; }); return n; };
+      const seenOf = t => (tseen.get(t) || []).filter(m => okPt(m[0], m[1])); // the marks of a people that are drawn, known and in the open part of the screen
+      const capT = !tidy ? 1e9 : zoomed < LOD_FAR ? 8 : crowd ? 14 : 1e9, capR = !tidy ? 1e9 : zoomed < LOD_FAR ? 3 : crowd ? 4 : 1e9; // at the whole-isles view only a few names are written, the most important first
+      const placeRealmOld = cf => { // 'Every camp': the realm's name as it was, over the capital (or the middle of its peoples when far out)
+        const ts = SIM.confedTribes(W, cf); if (!ts.length || !cf.capital.clans.length || !cf.capital.clans.some(c => SIM.knows(W, c.x, c.y))) return false;
         let [cx, cy] = anchor(cf.capital), big = false; cy -= 40;
-        if (far) { let sx = 0, sy = 0, sn = 0; for (const t of ts) { const a = tmk.get(t); if (a) { sx += a.x; sy += a.y; sn += a.n; } } if (sn) { cx = sx / sn; cy = sy / sn; big = true; } } // far out, the realm's name is written once over the middle of its peoples' lands
+        if (far) { let sx = 0, sy = 0, sn = 0; for (const t of ts) { const a = tmk.get(t); if (a) { sx += a.x; sy += a.y; sn += a.n; } } if (sn) { cx = sx / sn; cy = sy / sn; big = true; } }
         const label = cf.name.replace(/^the /, 'The '), lf = `italic ${cf.kingdom ? 700 : 600} ${big ? (cf.kingdom ? 19 : 17) : cf.kingdom ? 17 : 15}px ${SERIF}`; ctx.font = lf; const tw = ctx.measureText(label).width + 26, th = big ? 24 : 20;
-        if (big) { cx = clamp(cx, VR.x0 + tw / 2 + 6, VR.x1 - tw / 2 - 6); cy = clamp(cy, VR.y0 + th / 2 + 4, VR.y1 - th / 2 - 4); const tb = $('.tools'), tr = tb && tb.getBoundingClientRect(); if (tr && tr.width && cy > tr.top - 14 && cy < tr.bottom + 14) cx = Math.min(cx, tr.left - tw / 2 - 6); }
-        if (big) { let ok = false; for (const [dx, dy] of [[0, 0], [0, -26], [0, 26], [0, -52], [0, 52]]) if (fits(cx + dx, cy + dy, tw, th)) { cx += dx; cy += dy; ok = true; break; } if (!ok && cf !== scf) continue; }
-        else if (!fits(cx, cy, tw, th) && cf !== scf) continue;
+        if (big) { cx = clamp(cx, VR.x0 + tw / 2 + 6, VR.x1 - tw / 2 - 6); cy = clamp(cy, VR.y0 + th / 2 + 4, VR.y1 - th / 2 - 4); }
+        if (big) { let ok = false; for (const [dx, dy] of [[0, 0], [0, -26], [0, 26], [0, -52], [0, 52]]) if (fits(cx + dx, cy + dy, tw, th)) { cx += dx; cy += dy; ok = true; break; } if (!ok) return false; }
+        else if (!fits(cx, cy, tw, th)) return false;
         placed.push([cx, cy, tw, th]); cf._lab = [cx, cy, tw, th];
-        ART.put(ctx, 'crown', cx - tw / 2 + 9, cy - 1, big ? 18 : 15); ctx.textAlign = 'left'; ink(label, cx - tw / 2 + 21, cy, lf, cf === scf ? '#fff' : '#ffe3a0', 4); ctx.textAlign = 'center';
-      }
-      for (const m of marks) placed.push(m); // the people's marks are kept clear of the banners, but not of the realm names written over them
-      // with the map coloured by culture, each people's name sits over its lands
-      if (show.kult) { const acc = new Map();
-        for (const t of W.tribes) { if (!t.kult) continue; for (const c of t.clans) { if (!SIM.knows(W, c.x, c.y)) continue; const [x, y] = cs(c), n = c.people.length, a = acc.get(t.kult) || [0, 0, 0]; a[0] += x * n; a[1] += y * n; a[2] += n; acc.set(t.kult, a); } }
-        for (const [K, a] of acc) { if (a[2] < 1) continue; const x = a[0] / a[2], y = a[1] / a[2] - 34, f = `italic 600 17px ${SERIF}`; ctx.font = f; const tw = ctx.measureText(K.name).width + 10;
-          if (!on(x, y, 40) || !fits(x, y, tw, 22)) continue; placed.push([x, y, tw, 22]); ink(K.name, x, y, f, `hsl(${K.hue},80%,82%)`, 4.5); } }
-      const showAll = zoomed > 5 || W.tribes.length <= 14, tsz = new Map(W.tribes.map(t => [t, SIM.tribeSize(t)])), mine = pc && pc.tribe, cap = t => t.confed && t.confed.capital === t ? 1 : 0;
-      for (const t of W.tribes.slice().sort((a, b) => (b === st) - (a === st) || (b === mine) - (a === mine) || cap(b) - cap(a) || tsz.get(b) - tsz.get(a))) {
-        if (!show.names && t !== st) continue;
-        if (!showAll && t !== st && t !== mine && tsz.get(t) < 100 && !(t.confed && t.confed.capital === t)) continue;
-        if (!t.clans.some(c => SIM.knows(W, c.x, c.y))) continue;
-        const mk = (tmk.get(t) || {}).mk, [ax0, ay] = mk ? mk : anchor(t), name = t.name, num = String(tsz.get(t)), hov = hover && hover.e === t, fN = `italic 600 ${t === st ? 15 : 13.5}px ${SERIF}`, fS = '600 10.5px system-ui,sans-serif';
+        ART.put(ctx, 'crown', cx - tw / 2 + 9, cy - 1, big ? 18 : 15); ctx.textAlign = 'left'; ink(label, cx - tw / 2 + 21, cy, lf, cf === scf ? '#fff' : '#ffe3a0', 4); ctx.textAlign = 'center'; return true;
+      };
+      const placeRealm = cf => { // the realm's name: small, light, spaced out; in the freest spot among its peoples' marks, or not at all
+        if (!tidy) return placeRealmOld(cf);
+        const ts = SIM.confedTribes(W, cf); if (!ts.length) return false;
+        const ms = []; for (const t of ts) for (const m of seenOf(t)) ms.push(m); if (ms.length < 2) return false;
+        let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9, mx = 0, my = 0; for (const m of ms) { x0 = Math.min(x0, m[0]); x1 = Math.max(x1, m[0]); y0 = Math.min(y0, m[1]); y1 = Math.max(y1, m[1]); mx += m[0]; my += m[1]; } mx /= ms.length; my /= ms.length;
+        const label = cf.name.replace(/^the /, 'The '), lf = `italic ${cf.kingdom ? 700 : 600} ${cf.kingdom ? 16 : 14.5}px ${SERIF}`, sp = 'letterSpacing' in ctx; ctx.font = lf; if (sp) ctx.letterSpacing = '1.5px';
+        const tw = ctx.measureText(label).width + 22, th = 19; if (sp) ctx.letterSpacing = '0px';
+        const mxm = tw * 0.45, mym = 50, wd = x1 - x0 + 2 * mxm, ht = y1 - y0 + 2 * mym; let best = null, bd = 1e9; // the box of its marks, with room round it for a long name
+        for (const fy of [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8, 0.1, 0.9]) for (const fx of [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8, 0.1, 0.9]) { const x = x0 - mxm + wd * fx, y = y0 - mym + ht * fy; if (!fits(x, y, tw, th) || foggy(x, y, tw) || !landAt(x - tw * 0.4, y) || !landAt(x, y) || !landAt(x + tw * 0.4, y)) continue; const d = Math.hypot(x - mx, y - my); if (d < bd) { bd = d; best = [x, y]; } }
+        if (!best) return false; const [cx, cy] = best;
+        placed.push([cx, cy, tw, th]); cf._lab = [cx, cy, tw, th];
+        ctx.save(); ctx.globalAlpha = 1; ART.put(ctx, 'crown', cx - tw / 2 + 8, cy - 1, 12); ctx.font = lf; if (sp) ctx.letterSpacing = '1.5px'; ctx.textAlign = 'left'; ctx.lineWidth = 3.6; ctx.strokeStyle = 'rgba(247,238,206,0.95)'; ctx.strokeText(label, cx - tw / 2 + 16, cy); ctx.fillStyle = `hsla(${cf.hue},${cf === scf ? 55 : 46}%,${cf === scf ? 16 : 22}%,1)`; ctx.fillText(label, cx - tw / 2 + 16, cy); ctx.restore(); ctx.textAlign = 'center'; return true;
+      };
+      const showAll = zoomed > 5 || W.tribes.length <= 14, tsz = new Map(W.tribes.map(t => [t, SIM.tribeSize(t)])), isCap = t => t.confed && t.confed.capital === t;
+      const placeTribe = (t, force) => { // a people's name on a ribbon beside one of its marks that is drawn and seen
+        let ms; const tk = tmk.get(t);
+        if (tidy) { ms = seenOf(t); if (!ms.length) return false;
+          let cx = 0, cy = 0, cn = 0; if (t === mine && pc) { const p = cs(pc); cx = p[0]; cy = p[1]; cn = 1; } else for (const m of ms) { cx += m[0] * m[2] * m[2]; cy += m[1] * m[2] * m[2]; cn += m[2] * m[2]; } cx /= cn || 1; cy /= cn || 1;
+          ms = ms.slice().sort((a, b) => Math.hypot(a[0] - cx, a[1] - cy) - Math.hypot(b[0] - cx, b[1] - cy)).slice(0, 4); if (t === mine && pc) { const p = cs(pc); if (okPt(p[0], p[1])) ms.unshift([p[0], p[1], 12]); } } // the house itself is the first place to write beside
+        else { if (!t.clans.some(c => SIM.knows(W, c.x, c.y))) return false; const [ax, ay] = tk ? tk.mk : anchor(t); ms = [[ax, ay, tk ? tk.mk[2] : 0]]; }
+        const name = t.name, num = String(tsz.get(t)), hov = hT === t, fN = `italic 600 ${t === st ? 15 : 13.5}px ${SERIF}`, fS = '600 10.5px system-ui,sans-serif';
         ctx.font = fN; const wN = ctx.measureText(name).width; ctx.font = fS; const wS = ctx.measureText(num).width; let tw = 17 + wN + 5 + wS, cmpct = false;
-        let ax = ax0; let cy = null, bx2 = ax; for (const [dx, dy] of mk ? [[0, -19 - mk[2] * 0.4], [0, 21 + mk[2] * 0.4], [0, -35 - mk[2] * 0.4], [0, 37 + mk[2] * 0.4], [-(tw / 2 + mk[2] * 0.5), 0], [tw / 2 + mk[2] * 0.5, 0], [-(tw / 2 + mk[2] * 0.5), -17], [tw / 2 + mk[2] * 0.5, -17], [-(tw / 2 + mk[2] * 0.5), 17], [tw / 2 + mk[2] * 0.5, 17], [0, -51 - mk[2] * 0.4], [0, 53 + mk[2] * 0.4], [-(tw / 2 + mk[2] * 0.5), -34], [tw / 2 + mk[2] * 0.5, -34], [-(tw / 2 + mk[2] * 0.5), 34], [tw / 2 + mk[2] * 0.5, 34]] : [[0, -19], [0, 21], [0, -35], [0, 37], ...(t === mine ? [[0, -51], [0, 53], [tw / 2 + 12, -19], [-tw / 2 - 12, -19], [tw / 2 + 12, 21], [-tw / 2 - 12, 21]] : [])]) if (fits(ax + dx, ay + dy, tw + 30, 17)) { cy = ay + dy; bx2 = ax + dx; break; }
-        if (cy == null && mk && t !== st) { tw = 17 + wN; cmpct = true; for (const [dx, dy] of [[0, -19 - mk[2] * 0.4], [0, 21 + mk[2] * 0.4], [-(tw / 2 + mk[2] * 0.5), 0], [tw / 2 + mk[2] * 0.5, 0], [0, -35 - mk[2] * 0.4], [0, 37 + mk[2] * 0.4], [-(tw / 2 + mk[2] * 0.5), -15], [tw / 2 + mk[2] * 0.5, -15], [-(tw / 2 + mk[2] * 0.5), 15], [tw / 2 + mk[2] * 0.5, 15]]) if (fits(ax + dx, ay + dy, tw, 17)) { cy = ay + dy; bx2 = ax + dx; break; } if (cy == null) { tw = 17 + wN + 5 + wS; cmpct = false; } } // crowded: the number is left off so the name may still be written
-        if (cy == null) { if (t !== st && t !== mine) continue; cy = t === mine && t !== st ? ay + 21 : ay - 19; } // your own people's name is always written
-        const pw = cmpct ? 0 : 30; ax = clamp(bx2, VR.x0 + tw / 2 + pw / 2 + 2, VR.x1 - tw / 2 - pw / 2 - 2); placed.push([ax, cy, tw + pw, 17]); t._lab = [ax, cy, tw, 19];
+        const slots = (r, w, compact) => { const hw = w / 2 + r * 0.5, q = r * 0.4; return compact ? [[0, -19 - q], [0, 21 + q], [-hw, 0], [hw, 0], [0, -35 - q], [0, 37 + q], [-hw, -15], [hw, -15], [-hw, 15], [hw, 15]] : [[0, -19 - q], [0, 21 + q], [0, -27 - q], [0, 29 + q], [0, -35 - q], [0, 37 + q], [-hw, 0], [hw, 0], [-hw, -17], [hw, -17], [-hw, 17], [hw, 17], [-hw, -27], [hw, -27], [-hw, 27], [hw, 27]]; }; // nearest first; none farther than about 40 px, so a name touches its mark
+        const oldSlots = () => [[0, -19], [0, 21], [0, -35], [0, 37], ...(t === mine ? [[0, -51], [0, 53], [tw / 2 + 12, -19], [-tw / 2 - 12, -19], [tw / 2 + 12, 21], [-tw / 2 - 12, 21]] : [])]; // 'Every camp': the old places
+        let pick = null;
+        for (const m of ms) { for (const [dx, dy] of !tidy && !tk ? oldSlots() : slots(m[2], tw, false)) if (fits(m[0] + dx, m[1] + dy, tw + 30, tidy ? 19 : 17) && !foggy(m[0] + dx, m[1] + dy, tw + 30) && !offLand(m[0] + dx, m[1] + dy, tw + 30)) { pick = [m[0] + dx, m[1] + dy]; break; } if (pick) break; }
+        if (!pick && (tidy ? t !== mine : tk && t !== st)) { tw = 17 + wN; cmpct = true; // crowded: the number is left off so the name may still be written
+          for (const m of ms) { for (const [dx, dy] of slots(m[2], tw, true)) if (fits(m[0] + dx, m[1] + dy, tw, tidy ? 19 : 17) && !foggy(m[0] + dx, m[1] + dy, tw) && !offLand(m[0] + dx, m[1] + dy, tw)) { pick = [m[0] + dx, m[1] + dy]; break; } if (pick) break; }
+          if (!pick) { tw = 17 + wN + 5 + wS; cmpct = false; } }
+        if (!pick && force && !tidy) pick = [ms[0][0], ms[0][1] + (t === mine && t !== st ? 21 : -19)]; // 'Every camp': as it was
+        if (!pick && force) { // your own people's name is always written: the cheapest place near the house's mark (or one of the next nearest marks), clear of the buttons and the sheet; overlaps, fog and sea cost distance, so it stays close
+          let bc = 1e9; ms.slice(0, 3).forEach((m, i) => { for (const d of [0, 8, 16, 24, 34, 46, 62, 80, 100]) if (d + i * 30 < bc) for (let k = 0; k < 24; k++) { const a = k / 24 * Math.PI * 2 - Math.PI / 2, x = m[0] + Math.cos(a) * (d + (tw / 2 + 10) * Math.abs(Math.cos(a))), y = m[1] + Math.sin(a) * (d + m[2] * 0.4 + 19);
+            if (!hardOk(x, y, tw + 30, tidy ? 19 : 17)) continue; let c = Math.hypot(x - m[0], y - m[1]) + i * 30; if (c >= bc) continue; c += clashN(x, y, tw + 30, tidy ? 19 : 17) * 45 + (foggy(x, y, tw + 30) ? 170 : 0) + (offLand(x, y, tw + 30) ? 60 : 0); if (c < bc) { bc = c; pick = [x, y]; } } }); }
+        if (!pick) return false;
+        const pw = cmpct ? 0 : 30, ax = clamp(pick[0], VR.x0 + tw / 2 + pw / 2 + 2, VR.x1 - tw / 2 - pw / 2 - 2), cy = pick[1]; placed.push([ax, cy, tw + pw, tidy ? 19 : 17]); t._lab = [ax, cy, tw, 19];
         const x0 = ax - tw / 2;
         if (!cmpct) { // a ribbon behind the name of each people
           const bx0 = Math.round(x0 - 8), bx1 = Math.round(x0 + tw + 8), by0 = Math.round(cy - 10), by1 = Math.round(cy + 10);
           ctx.beginPath(); ctx.moveTo(bx0 - 7, by0 + 3); ctx.lineTo(bx0, by0 + 3); ctx.lineTo(bx0, by0); ctx.lineTo(bx1, by0); ctx.lineTo(bx1, by0 + 3); ctx.lineTo(bx1 + 7, by0 + 3); ctx.lineTo(bx1 + 3, cy + 1); ctx.lineTo(bx1 + 7, by1); ctx.lineTo(bx1 - 4, by1); ctx.lineTo(bx1 - 4, by1 - 3); ctx.lineTo(bx0 + 4, by1 - 3); ctx.lineTo(bx0 + 4, by1); ctx.lineTo(bx0 - 7, by1); ctx.lineTo(bx0 - 3, cy + 1); ctx.closePath();
           ctx.fillStyle = t === st || hov ? '#f4e6b4' : '#e0c98c'; ctx.fill(); ctx.strokeStyle = '#5e4624'; ctx.lineWidth = t === st ? 2 : 1.4; ctx.stroke(); }
         ART.put(ctx, SIM.faithOf(t), x0 + 7, cy, 14);
-        ctx.textAlign = 'left'; ink(name, x0 + 17, cy - 1, fN, `hsl(${t.hue},78%,86%)`, cmpct ? 3.4 : 0.01); if (!cmpct) ink(num, x0 + 17 + wN + 5, cy - 0.5, fS, '', 0.01); ctx.textAlign = 'center';
+        ctx.textAlign = 'left'; ink(name, x0 + 17, cy - 1, fN, `hsl(${t.hue},78%,86%)`, cmpct ? 3.4 : 0.01); if (!cmpct) ink(num, x0 + 17 + wN + 5, cy - 0.5, fS, '', 0.01); ctx.textAlign = 'center'; return true;
+      };
+      // what to write, in the order of its importance: your own people, your realm, the one you chose, the realms' capitals, then the largest peoples
+      const jobs = [];
+      for (const cf of W.confeds) { if (!show.names && cf !== scf) continue; jobs.push({ cf, p: !tidy ? -1 : mine && mine.confed === cf ? 1 : cf === scf ? 2 : 3.5, n: cf.members ? cf.members.size : 0 }); }
+      for (const t of W.tribes) { if (!show.names && t !== st) continue; if (!showAll && !hot(t) && t !== mine && tsz.get(t) < 100 && !isCap(t)) continue; jobs.push({ t, p: t === mine ? 0 : hot(t) ? 2 : isCap(t) ? 3 : 4, n: tsz.get(t) }); }
+      jobs.sort((a, b) => a.p - b.p || b.n - a.n);
+      if (tidy) { for (const m of marks) placed.push(m); for (const [, x, y, ts] of camps) placed.push([x, y, ts * 1.5, ts * 0.95]); for (const [, x, y, r] of vills) placed.push([x, y, r * 2.4, r * 1.9]); } // names never sit over a mark
+      nMk = placed.length; let nT = 0, nR = 0, pushed = tidy;
+      for (const j of jobs) {
+        if (!pushed && !j.cf) { for (const m of marks) placed.push(m); pushed = true; } // 'Every camp': the old way, marks are kept clear of the banners but not of the realm names
+        if (j.cf) { if (nR >= capR && !(mine && mine.confed === j.cf)) continue; if (placeRealm(j.cf)) nR++; }
+        else { const force = j.t === mine || j.t === st; if (nT >= capT && !force) continue; if (placeTribe(j.t, force)) nT++; }
       }
+      // with the map coloured by culture, each people's name sits over its lands
+      if (show.kult) { const acc = new Map();
+        for (const t of W.tribes) { if (!t.kult) continue; for (const c of t.clans) { if (!SIM.knows(W, c.x, c.y)) continue; const [x, y] = cs(c), n = c.people.length, a = acc.get(t.kult) || [0, 0, 0]; a[0] += x * n; a[1] += y * n; a[2] += n; acc.set(t.kult, a); } }
+        for (const [K, a] of acc) { if (a[2] < 1) continue; const x = a[0] / a[2], y = a[1] / a[2] - 34, f = `italic 600 17px ${SERIF}`; ctx.font = f; const tw = ctx.measureText(K.name).width + 10;
+          if (!on(x, y, 40) || !fits(x, y, tw, 22) || foggy(x, y, tw)) continue; placed.push([x, y, tw, 22]); ink(K.name, x, y, f, `hsl(${K.hue},80%,82%)`, 4.5); } }
     }
     if (show.names) {
       for (const [S, sx, sy, R2] of vills) { const hot = sel === S || (hover && hover.e === S); if (!(zoomed > 7 || S.pop >= 150 || hot)) continue;
-        const lab = zoomed > 10 || hot ? `${S.name}  ${S.pop}` : S.name, f = `600 11.5px ${SERIF}`; ctx.font = f; const tw = ctx.measureText(lab).width + 6, y = sy + R2 * 0.8 + 10;
-        if (!fits(sx, y, tw, 13) && !hot) continue; placed.push([sx, y, tw, 13]); ink(lab, sx, y, f, '#fff2d6'); }
+        const lab = zoomed > 10 || hot ? `${S.name}  ${S.pop}` : S.name, f = `600 11.5px ${SERIF}`; ctx.font = f; const tw = ctx.measureText(lab).width + 6, ys = [sy + R2 * 0.8 + 10, sy - R2 * 0.8 - 10]; let y = ys.find(q => fits(sx, q, tw, 13) && !foggy(sx, q, tw)); // below the village, or else above it
+        if (y == null) { if (!hot) continue; y = ys[0]; } placed.push([sx, y, tw, 13]); ink(lab, sx, y, f, '#fff2d6'); }
       for (const [s, x, y, r, active] of sites) { if (!(zoomed > 9 || sel === s || active)) continue; const f = `italic 600 11px ${SERIF}`; ctx.font = f; const tw = ctx.measureText(s.name).width + 6, yy = y + r * 0.55 + 8;
         if (!fits(x, yy, tw, 12) && sel !== s) continue; placed.push([x, yy, tw, 12]); ink(s.name, x, yy, f, '#ffe6a0'); }
       for (const [c, x, y, ts] of camps) { if (!(zoomed > 16 || c === sc)) continue; const lab = `${c.name} ${c.people.length}`, f = '500 10.5px system-ui,sans-serif'; ctx.font = f; const tw = ctx.measureText(lab).width + 6, yy = y + ts * 0.62 + 9;

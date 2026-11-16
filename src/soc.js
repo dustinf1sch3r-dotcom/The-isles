@@ -779,11 +779,91 @@
   }
 
   // ---------- clan fission & merger ----------
+  // ---- daughter villages: which houses go, where they go, and how they are sent ----
+  const FOUND_MIN = 12000, FOUND_MAX = 50000, FOUND_APART = 8000, FOUND_YEARS = 8;
+  // the houses a clan can spare: those least close to its head's own, never his household nor his parents' or children's
+  function spareHouses(c, H, keep) {
+    const leave = new Set(); if (!H || !H.fam) return leave;
+    const kin = new Set([H.fam]); for (const p of [H.father, H.mother]) if (p && p.fam) kin.add(p.fam);
+    for (const k of keep || []) if (k && k.clan === c && k.fam) { kin.add(k.fam); for (const p of [k.father, k.mother]) if (p && p.fam) kin.add(p.fam); }
+    const sizeOf = () => c.people.filter(q => leave.has(q.fam) || (q.slave && q.owner && leave.has(q.owner.fam))).length;
+    for (const f of familiesOf(c).filter(f => !kin.has(f) && !c.people.some(q => q.fam === f && (q.father === H || q.mother === H || (keep || []).some(k => k && (q.father === k || q.mother === k))))).sort((x, y) => opinion(x, H.fam) - opinion(y, H.fam))) { leave.add(f); if (sizeOf() > c.people.length * 0.33) leave.delete(f); else if (sizeOf() >= c.people.length * 0.25) break; }
+    return leave;
+  }
+  const leaversOf = (c, leave) => c.people.filter(q => leave.has(q.fam) || (q.slave && q.owner && leave.has(q.owner.fam)));
+  // why a spot will not do for a daughter village of clan c (null if it will); the same words for the deed, the map and the world
+  function siteWhy(W, c, x, y) {
+    const i = cellAt(x, y), km = Math.hypot(x - c.x, y - c.y) / 1000;
+    if (km < FOUND_MIN / 1000) return `That is only ${Math.round(km)} km from the village. A daughter village must stand at least ${FOUND_MIN / 1000} km away.`;
+    if (km > FOUND_MAX / 1000) return `That is ${Math.round(km)} km away. A daughter village must stand within ${FOUND_MAX / 1000} km.`;
+    if (x < 3000 || y < 3000 || x >= WORLD - 3000 || y >= WORLD - 3000 || !W.land[i] || W.lake[i]) return 'That is water. Choose a spot on land.';
+    if (!canReach(W, c, x, y)) return 'The clan cannot walk to that land — it lies across the sea.';
+    if (c.live === 'fishing' && W.seaDist[i] > 2) return 'A fishing village must stand on the shore.';
+    for (const o of nearClans(W, x, y, FOUND_APART)) if (o.settled) return `Another village, ${o.village || 'the ' + o.name + ' clan'}, stands within ${FOUND_APART / 1000} km.`;
+    for (const o of W.clans) if (o.alive && o.toSettle && !o.settled && Math.hypot(o.tx - x, o.ty - y) <= FOUND_APART) return `A village is already being raised within ${FOUND_APART / 1000} km.`;
+    return null;
+  }
+  // the best sites for a daughter village in the ring round clan c, by the farming ground (the same scoring the world uses); no randomness
+  function foundSites(W, c, o) {
+    o = o || {}; const out = [], fish = c.live === 'fishing';
+    for (let a = 0; a < 24; a++) for (const r of [14, 20, 26, 32, 38, 44, 50]) {
+      const ang = a * Math.PI / 12 + (r % 3) * 0.05, x = c.x + Math.cos(ang) * r * 1000, y = c.y + Math.sin(ang) * r * 1000;
+      if (siteWhy(W, c, x, y)) continue;
+      if (o.known && !knows(W, x, y)) continue;
+      if (o.home && !inHome(c.tribe, x, y, 25000)) continue;
+      let crowd = 0; for (const q of nearClans(W, x, y, 15000)) if (q.settled) crowd++;
+      let rich = 0; if (fish) { const b = foodBreakdown(W, x, y, c.tool, c.tribe.boats); rich = (b.fish + b.shellfish + b.seals) / Math.max(1, needsWeek(c) * 0.4); if (rich <= 1.3) continue; } // the sea alone must feed them, by the world's own test for a fishing village
+      const sc = ((fish ? rich * 0.3 : farmSuit(W, x, y)) / (1 + crowd)) * (1 - r / 400);
+      if (sc > 0) out.push({ x, y, km: r, sc });
+    }
+    out.sort((p, q) => q.sc - p.sc); const pick = [];
+    for (const s of out) { if (pick.length >= (o.n || 1)) break; if (pick.every(p => Math.hypot(p.x - s.x, p.y - s.y) >= 12000)) pick.push(s); }
+    return pick;
+  }
+  // the player's head and heir stay home when their own clan sends a village away, whoever leads the clan or the tribe
+  const keepOf = (W, c) => { const P = W.player; return P && !P.over && P.head.alive && P.head.clan === c ? [P.head, houseHeir(W)] : []; };
+  // can clan c send a daughter village away now? null if so, else the plain reason; plan carries the houses
+  function foundWhy(W, c, plan) {
+    const H = c.head;
+    if (!c.settled) return `The ${c.name} clan does not live in a village`;
+    if (!H || !H.fam) return `The ${c.name} clan has no head to lead the rest`;
+    const fams = familiesOf(c).filter(f => f !== H.fam), n = freeCount(c), cap = splitCap(W, c);
+    if (fams.length < 3) return `The ${c.name} clan has only ${fams.length} house${fams.length === 1 ? '' : 's'} besides its head's; a daughter village needs 3 or more`;
+    if (n < cap * 0.75) return `The ${c.name} clan counts ${n}; a daughter village needs ${Math.ceil(cap * 0.75)} or more (the village holds ${cap})`;
+    if (c.foundAt != null && W.week - c.foundAt < yrs(FOUND_YEARS)) { const v = Math.ceil((yrs(FOUND_YEARS) - (W.week - c.foundAt)) / 52); return `The ${c.name} clan sent a daughter village away not long ago (${v} yr${v === 1 ? '' : 's'})`; }
+    const leave = spareHouses(c, H, keepOf(W, c)), lv = leaversOf(c, leave);
+    if (lv.length < 6) return `The houses of the ${c.name} clan are too few to spare for a village (${lv.length} would go; 6 are needed)`;
+    if (c.people.length - lv.length < 6 || lv.length > c.people.length * 0.38) return `Too many would have to go from the ${c.name} clan to leave it whole`;
+    if (plan) { plan.leave = leave; plan.leavers = lv; }
+    return null;
+  }
+  const goName = (pl, o) => { const cnt = f => pl.leavers.filter(q => q.fam === f).length, fs = [...pl.leave].sort((a, b) => cnt(b) - cnt(a)).map(f => f.name), one = fs.length === 1; return (one ? 'the house of ' : 'the houses of ') + (fs.length > 3 ? `${fs.slice(0, 2).join(', ')} and others` : nameList(fs.map(n => ({ name: n })))); };
+  // send the houses in `leave` out of clan c as a new clan of the tribe; it walks to `site` and builds a village there
+  function foundDaughter(W, c, leave, site, nm) {
+    const t = c.tribe, lv = leaversOf(c, leave); c.people = c.people.filter(q => !lv.includes(q));
+    const nc = newClan(W, t, c.x, c.y, lv, nm, c.id), share = lv.length / (lv.length + c.people.length);
+    nc.store = c.store * share; c.store -= nc.store; nc.grain = (c.grain || 0) * share; c.grain -= nc.grain; nc.cereal = c.cereal; nc.cond = c.cond;
+    for (const f of leave) f.clan = nc;
+    for (const [oid, r] of c.rel) { const o = W.ents.get(oid); if (o && o !== nc) { const r2 = rel(nc, o); r2.op = r.op; r2.grudge = r.grudge; } }
+    startFounding(W, nc, c, site); return nc;
+  }
+  function startFounding(W, nc, c, site) {
+    nc.toSettle = true; nc.founding = true; nc.tx = site[0]; nc.ty = site[1]; if (c.live === 'fishing') nc.live = 'fishing';
+    wear(W, c.x, c.y, site[0], site[1], nc.people.length / 25);
+  }
+  // a daughter clan that has walked to its site raises its village
+  function foundingMonth(W) {
+    for (const c of W.clans) if (c.founding && c.toSettle && !c.settled && c.alive && Math.hypot(c.tx - c.x, c.ty - c.y) < 1500) {
+      const fish = c.live === 'fishing'; c.toSettle = false; c.founding = false; c.settled = true; c.live = fish ? 'fishing' : 'farm'; c.settledAt = W.week; c.soil = 1; c.village = c.village || placeNameIn(W, c.tribe, fish ? 'haven' : 'vill'); c.daughterVillage = true; W.foundN = (W.foundN || 0) + 1;
+      note(W, c, `Built the village of ${c.village}.`); logEvent(W, `🏘 The ${c.name} clan (${c.tribe.name}) raise the village of ${c.village}${c.parent != null && W.ents.get(c.parent) ? `, a daughter village of ${W.ents.get(c.parent).village || 'the ' + W.ents.get(c.parent).name + ' clan'}` : ''}.`, c, 'settle');
+      const P = W.player, pc = c.parent != null ? W.ents.get(c.parent) : null; if (P && !P.over && P.head.alive && pc && P.head.clan === pc) houseNote(W, `The ${c.name} clan, sent from our village, raised ${c.village}.`);
+    }
+  }
   function clanFission(W, t) {
     for (const c of [...t.clans]) {
       const mineC = W.player && !W.player.over && W.player.head.alive && W.player.head.clan === c;
       const lf = mineC && c.letSplit && c.splitDone !== c.letSplit && W.week - c.letSplit < 52; // leave was given: a daughter clan must go within the year, whatever the count has done since
-      if (mineC && c.letSplit && c.splitDone !== c.letSplit && W.week - c.letSplit >= 52 && c.splitTold !== c.letSplit) { c.splitTold = c.letSplit; houseNote(W, `No daughter clan left the ${c.name} clan, though leave was given.`); notice(W, 'No daughter clan went', `The younger houses of the ${c.name} clan did not go. ${c.splitWhy || 'No house could go without breaking the clan.'}`); }
+      if (mineC && c.letSplit && c.splitDone !== c.letSplit && W.week - c.letSplit >= 52 && c.splitTold !== c.letSplit) { c.splitTold = c.letSplit; houseNote(W, `No daughter clan left the ${c.name} clan, though leave was given.`); notice(W, 'No daughter clan went', `The outer houses of the ${c.name} clan did not go. ${c.splitWhy || 'No house could go without breaking the clan.'}`); }
       if (!lf && c.people.length < (mineC ? 26 : 14)) continue; // too few to part, whatever the houses are
       const fams = familiesOf(c); if (fams.length < 3 || freeCount(c) < (mineC ? 26 : 14)) { if (lf) c.splitWhy = fams.length < 3 ? 'Too few houses were left to part.' : 'The clan had dwindled, and no house could be spared.'; continue; }
       // find the most hostile pair of households
@@ -795,27 +875,27 @@
       const PH = W.player && !W.player.over && W.player.head.alive && W.player.head.clan === c ? W.player.head : null;
       // a clan head of the house can make peace between the quarrelling houses before the clan breaks
       // a clan that has outgrown its camp: its head of the house chooses whether a daughter clan goes or the clan is held together
-      if (PH && bySize && c.head === PH && !(c.letSplit && W.week - c.letSplit < 156) && !(c.holdTogether && W.week - c.holdTogether < 52 * 8)) { if (!W.pending.some(e => e.type === 'toobig')) pushEvent(W, { type: 'toobig', key: c.id, title: 'The clan has outgrown its home', text: `The ${c.name} clan now counts ${freeCount(c)} people, more than ${c.settled ? 'the village' : 'one camp'} can easily hold (${splitCap(W, c)}). The younger houses talk of founding a clan of their own nearby.`, data: { c }, options: [{ label: 'Let a daughter clan go', hint: 'About a third of the clan leaves and founds a new clan of your tribe: kin, and usually friends' }, { label: 'Hold the clan together', hint: `Your word keeps them for eight years, up to ${Math.round(splitCap(W, c, true) * 1.4)} people${freeCount(c) > Math.round(splitCap(W, c, true) * 1.4) ? ` (the clan already counts ${freeCount(c)}, so even so it will not hold)` : ''}. A crowded ${c.settled ? 'village' : 'camp'} eats its range bare: watch the food` }] }); continue; }
+      if (PH && bySize && c.head === PH && !(c.letSplit && W.week - c.letSplit < 156) && !(c.holdTogether && W.week - c.holdTogether < 52 * 8)) { if (!W.pending.some(e => e.type === 'toobig')) pushEvent(W, { type: 'toobig', key: c.id, title: 'The clan has outgrown its home', text: `The ${c.name} clan now counts ${freeCount(c)} people, more than ${c.settled ? 'the village' : 'one camp'} can easily hold (${splitCap(W, c)}). The outer houses talk of founding a clan of their own nearby.`, data: { c }, options: [{ label: 'Let a daughter clan go', hint: 'About a third of the clan leaves and founds a new clan of your tribe: kin, and usually friends' }, { label: 'Hold the clan together', hint: `Your word keeps them for eight years, up to ${Math.round(splitCap(W, c, true) * 1.4)} people${freeCount(c) > Math.round(splitCap(W, c, true) * 1.4) ? ` (the clan already counts ${freeCount(c)}, so even so it will not hold)` : ''}. A crowded ${c.settled ? 'village' : 'camp'} eats its range bare: watch the food` }] }); continue; }
       if (PH && conflict && c.head === PH && !(c.letGo && W.week - c.letGo < 104)) { if (!W.pending.some(e => e.type === 'badblood')) pushEvent(W, { type: 'badblood', key: c.id, title: 'Bad blood in the clan', text: `The houses of ${A.name} and ${B.name} can no longer bear the sight of each other. If nothing is done the clan will break, and the house of ${B.name} will take its friends away with it.`, data: { c, A, B }, options: [{ label: 'Make peace between them', hint: `A feast of reconciliation and gifts to both houses: about ${Math.round(needsWeek(c) * 2 / Math.max(1, needsWeek(c) / 7))} days of the clan's food` }, { label: 'Let them go', hint: `The house of ${B.name} and those who side with it will leave and found their own clan` }] }); continue; }
       const leave = new Set([B]), lean = new Map();
       for (const f of fams) if (f !== A && f !== B) { const ob = opinion(f, B) + (W.rand() - 0.5) * 20, oa = opinion(f, A); if (ob > oa) { leave.add(f); lean.set(f, ob - oa); } }
       const sizeOf = () => c.people.filter(q => leave.has(q.fam) || (q.slave && q.owner && leave.has(q.owner.fam)));
       let leavers = sizeOf();
       if (lf && PH && (leavers.includes(PH) || leavers.length < 6 || leavers.length > c.people.length * 0.38)) { // the quarrel's choice does not fit: send the houses least close to the head's own, never the head's household
-        leave.clear(); for (const f of fams.filter(f => f !== PH.fam && !c.people.some(q => q.fam === f && (q.father === PH || q.mother === PH))).sort((x, y) => opinion(x, PH.fam) - opinion(y, PH.fam))) { leave.add(f); if (sizeOf().length > c.people.length * 0.33) leave.delete(f); else if (sizeOf().length >= c.people.length * 0.25) break; } leavers = sizeOf(); }
+        leave.clear(); for (const f of spareHouses(c, PH, keepOf(W, c))) leave.add(f); leavers = sizeOf(); }
       if (PH) { // the house's own clan: its household never leaves unasked, and the greater part of the clan stays with it
         if (leavers.includes(PH)) continue;
         const waver = [...lean.keys()].sort((x, y) => lean.get(x) - lean.get(y));
         while (leavers.length > c.people.length * 0.33 && waver.length) { leave.delete(waver.shift()); leavers = sizeOf(); }
         if (leavers.length > c.people.length * 0.38) continue;
       }
-      if (leavers.length < 6 || c.people.length - leavers.length < 6) { if (lf) c.splitWhy = leavers.length < 6 ? 'The younger houses were too small to found a clan.' : 'Too few would have been left behind.'; continue; }
+      if (leavers.length < 6 || c.people.length - leavers.length < 6) { if (lf) c.splitWhy = leavers.length < 6 ? 'The outer houses were too small to found a clan.' : 'Too few would have been left behind.'; continue; }
       c.people = c.people.filter(q => !leavers.includes(q));
-      const nc = newClan(W, t, c.x, c.y, leavers, B.name, c.id); nc.store = c.store * leavers.length / (leavers.length + c.people.length); c.store -= nc.store; nc.cond = c.cond;
+      const nc = newClan(W, t, c.x, c.y, leavers, B.name, c.id); nc.store = c.store * leavers.length / (leavers.length + c.people.length); c.store -= nc.store; nc.cond = c.cond; { const sh = leavers.length / (leavers.length + c.people.length); nc.grain = (c.grain || 0) * sh; c.grain -= nc.grain; nc.cereal = c.cereal; if (!conflict) c.foundAt = W.week; }
       for (const f of leave) f.clan = nc;
       for (const [oid, r] of c.rel) { const o = W.ents.get(oid); if (o && o !== nc) { const r2 = rel(nc, o); r2.op = r.op; r2.grudge = r.grudge; } }
       affect(W, nc, c, conflict ? wv * 0.6 : 20, conflict ? `Split in anger: the houses of ${A.name} and ${B.name}` : `The ${nc.name} branched off as the clan grew`, conflict ? 10 : 0);
-      relocate(W, nc, 15000, 40000);
+      { const vs = !conflict && c.settled ? foundSites(W, c, { home: true })[0] : null; if (vs) startFounding(W, nc, c, [vs.x, vs.y]); else relocate(W, nc, 15000, 40000); } // a village that grows too big founds a daughter village on good ground; a quarrel scatters
       const why = conflict ? `after bad blood between the houses of ${A.name} and ${B.name}` : 'as the clan grew too large';
       note(W, c, `The house of ${B.name} and its allies left to form the ${nc.name} clan, ${why}.`); note(W, nc, `Founded when the house of ${B.name} broke away from the ${c.name} clan, ${why}.`);
       logEvent(W, `The ${c.name} clan of the ${t.name} splits — ${leavers.length} people form the ${nc.name} clan ${why}.`, nc, conflict ? 'conflict' : 'info');
@@ -952,7 +1032,7 @@
     logEvent(W, `A new tribe: the ${nt.name} (${tribeSize(nt)} people) break away from the ${t.name} ${why}.`, nt, 'big');
     { const P = W.player; if (P && !P.over && P.head.clan && P.head.clan.tribe === t) houseNote(W, `The ${leave.map(c => c.name).join(', ')} ${leave.length === 1 ? 'clan' : 'clans'} left the ${t.name} to become the ${nt.name}.`); }
     nt.home = tribeCenter(nt); t.home = tribeCenter(t); nt.dom = t.dom; nt.stage = t.stage; nt.boats = t.boats; nt.metal = t.metal; nt.bronzeAge = t.bronzeAge; nt.flintW = t.flintW; nt.copperArms = t.copperArms; nt.culture = Object.assign({}, t.culture);
-    if (nt.stage === 3) for (const c of nt.clans) if (c.live !== 'fishing') { c.settled = false; c.toSettle = false; }
+    if (nt.stage === 3) for (const c of nt.clans) if (c.live !== 'fishing') { c.settled = false; c.toSettle = false; c.founding = false; }
     // with land to spare, the newcomers move off to lands of their own instead of crowding their old kin
     if (!migrateTribe(W, nt, nt.stage === 3 ? 40000 : 80000, nt.stage === 3 ? 150000 : 250000, conflict ? 'to put distance between them and their old foes' : 'seeking lands of their own')) relocateTribeNear(W, nt);
   }
@@ -1457,7 +1537,7 @@
         if (W.player && W.player.head && W.player.head.clan && W.player.head.clan.tribe === t && t.stage >= 2) pushGrainEvent(W, t);
       }
       if (t.stage === 3) for (const c of t.clans) {
-        if (c.live === 'fishing') continue;
+        if (c.live === 'fishing' || c.founding) continue; // a daughter clan raises its village in foundingMonth
         if (!c.settled && !c.toSettle) settleClan(W, c);
         if (c.toSettle && Math.hypot(c.tx - c.x, c.ty - c.y) < 1000) {
           c.toSettle = false; c.settled = true; c.live = 'farm'; c.settledAt = c.settledAt || W.week; c.soil = 1; c.village = c.village || placeNameIn(W, c.tribe, 'vill');
@@ -2994,7 +3074,7 @@
       }
       case 'toobig': {
         const cl = ev.data.c; if (!cl.alive) return;
-        if (k === 0) { cl.letSplit = W.week; houseNote(W, `${h.name} gave the younger houses leave to found a clan of their own.`); W.lastResult = { title: 'Leave is given', text: `The younger houses will pack and go within the year, and found a clan of your tribe nearby.` }; }
+        if (k === 0) { cl.letSplit = W.week; houseNote(W, `${h.name} gave the outer houses leave to found a clan of their own.`); W.lastResult = { title: 'Leave is given', text: `The outer houses will pack and go within the year, and found a clan of your tribe nearby.` }; }
         else { cl.holdTogether = W.week; houseNote(W, `${h.name} held the ${cl.name} clan together.`); W.lastResult = { title: 'The clan stays together', text: `For eight years your word holds the ${cl.name} as one clan, up to ${splitCap(W, cl)} people${freeCount(cl) > splitCap(W, cl) ? ` (it counts ${freeCount(cl)} now, so a daughter clan will go all the same)` : ''}. Beyond that even you cannot keep them. Keep an eye on the food: one ${cl.settled ? 'village' : 'camp'} must now feed them all.` }; }
         return;
       }
@@ -3191,6 +3271,16 @@
       why: c.head === h ? 'The clan has only just pitched camp (1 yr)' : `You asked not long ago (${yl('movecamp', 2)})`, targets: [{ pick: { maxKm: 80 }, label: 'Choose the place on the map…', hint: 'Any land you know of within 80 km that your people can reach' }] });
     // move the village to a site of our choosing (fresh fields, a better shore)
     if (c.settled && c.head === h) A.push({ id: 'movevillage', icon: '🏚', label: `Move ${c.village || 'the village'}`, hint: 'Rebuild on fresh ground within 40 km — new fields, full soil', ok: ready('movevillage', 8), why: `The village was only just built (${yl('movevillage', 8)})`, targets: [{ pick: { maxKm: 40 }, label: 'Choose the new site on the map…', hint: 'Anywhere on land within 40 km' }] });
+    // found a daughter village: the head of a village, or the leader of the tribe, sends its younger houses to new ground
+    { const lead = t.headman === h, mine = c.head === h, grown = h.age >= 16;
+      const cl = [...(mine || lead ? [c] : []), ...(lead ? t.clans.filter(o => o !== c && o.alive) : [])].filter(o => o.settled || o === c), good = [], bad = [];
+      for (const o of cl) { const plan = {}, why = foundWhy(W, o, plan), sites = !why ? foundSites(W, o, { known: true, n: o === c ? 3 : 1 }) : []; if (!why && !sites.length) bad.push({ o, why: `No good ground is known within ${FOUND_MAX / 1000} km of ${o.village || 'the village'} that is free of other villages` }); else if (why) bad.push({ o, why }); else good.push({ o, plan, sites }); }
+      const targets = []; for (const g of good) { const o = g.o, rest = o.people.length - g.plan.leavers.length;
+        for (const st of g.sites) targets.push({ clan: o, ref: { x: st.x, y: st.y }, label: `${o === c ? '' : `The ${o.name} clan: `}${Math.round(st.km)} km ${compass(st.x - o.x, st.y - o.y)}`, hint: `${describePlace(W, st.x, st.y, o)} · about ${g.plan.leavers.length} of ${o.people.length} would go, ${goName(g.plan, o)}; ${rest} stay` });
+        if (o === c) targets.push({ clan: o, pick: { maxKm: FOUND_MAX / 1000 }, label: 'Choose the site on the map…', hint: `Known land ${FOUND_MIN / 1000} to ${FOUND_MAX / 1000} km away, ${c.live === 'fishing' ? 'on the shore, ' : ''}at least ${FOUND_APART / 1000} km from any other village` }); }
+      const nm = bad.find(b => b.o === c) || bad[0];
+      A.push({ id: 'foundvillage', icon: '🏘', label: 'Found a daughter village', hint: `Send a quarter to a third of a crowded village — the houses least close to the head's own, never the head's own household or the heir's — to raise a village of their own ${FOUND_MIN / 1000} to ${FOUND_MAX / 1000} km away. They take their share of the food and grain, and stay kin to you. Once in ${FOUND_YEARS} years for each village`, ok: grown && good.length > 0 && (mine || lead), targets,
+        why: good.length > 0 && (mine || lead) && grown ? '' : !(mine || lead) ? 'Only a clan head or the leader of the tribe can send a clan\'s houses away' : !grown ? 'Your head is still a child' : !c.settled && !lead ? 'Your clan does not live in a village' : nm ? nm.why : 'No clan of the tribe lives in a village' }); }
     // clear new fields: push the cleared ground out from the village
     if (t.stage >= 2 || c.settled) { const why = fieldWhy(W, c, h), lv = fieldLv(c), wearNow = Math.round(100 / (1 + FIELD_WEAR * lv)), wearNext = Math.round(100 / (1 + FIELD_WEAR * (lv + 1)));
       A.push({ id: 'fields', icon: '🌾', label: 'Clear new fields', hint: `Break new ground beyond the village: ${fieldStep(lv + 1)}. It eats three weeks of the clan's food and can be done once in four years. The land can lie fallow in turn, so the soil wears at ${wearNext}% of the old rate (now ${wearNow}%), and the crop is ${Math.round(FIELD_CROP * 100)}% bigger for each step. The game leaves the cleared ground, and a great beast whose ground lies near it is driven off`, ok: !why, why }); }
@@ -3312,6 +3402,7 @@
     if (x < 0 || y < 0 || x >= WORLD || y >= WORLD || !W.land[i] || W.lake[i]) return 'That is water. Choose a spot on land.';
     if (!knows(W, x, y)) return 'Your people know nothing of that land. Explore it first.';
     if (!canReach(W, c, x, y)) return 'Your people cannot reach that land — it lies across the sea.';
+    if (id === 'foundvillage') return siteWhy(W, c, x, y);
     if (id === 'movecamp') { if (km > 80) return `That is ${Math.round(km)} km away. A camp can move 80 km at a time.`; if (km < 2) return 'The camp is already there.'; }
     if (id === 'migrate') { if (km > 300) return `That is ${Math.round(km)} km away — too far (300 km at most).`; if (km < 15) return 'That is hardly a move at all. Choose somewhere further away.'; }
     if (id === 'settle' || id === 'movevillage') {
@@ -3462,6 +3553,20 @@
     if (id === 'explore') { const r = A.targets[k] && A.targets[k].ref; if (!r) return null; return doExplore(W, c, h, r); }
     if (id === 'expedition') { const e = A.targets[k] && A.targets[k].ref; if (!e) return null; return doExpedition(W, c, h, e); }
     if (place) { const err = checkPlace(W, id, place.x, place.y); if (err) { delete cd[id]; return { title: 'Not there', text: err }; } }
+    if (id === 'foundvillage') {
+      const tg = A.targets[k]; if (!tg) return null; const o = tg.clan, site = place ? [place.x, place.y] : tg.ref ? [tg.ref.x, tg.ref.y] : null, plan = {}; if (!site) return null;
+      if (!o.alive || foundWhy(W, o, plan)) { delete cd[id]; return { title: 'Not possible', text: 'The clan can no longer send a daughter village away.' }; }
+      const err = siteWhy(W, o, site[0], site[1]); if (err) { delete cd[id]; return { title: 'Not there', text: err }; }
+      const lv = plan.leavers, big = new Map(); for (const q of lv) if (q.fam) big.set(q.fam, (big.get(q.fam) || 0) + 1);
+      const B = [...plan.leave].sort((a, b) => (big.get(b) || 0) - (big.get(a) || 0))[0], H = o.head, bl = lv.filter(q => q.dyn && !q.slave), sl = lv.filter(q => q.slave && q.owner && q.owner.dyn);
+      const nc = foundDaughter(W, o, plan.leave, site, B.name), km = Math.round(Math.hypot(site[0] - o.x, site[1] - o.y) / 1000), dir = compass(site[0] - o.x, site[1] - o.y), fish = o.live === 'fishing';
+      affect(W, nc, o, 20, `Founded with the blessing of the ${o.name} clan`, 0); o.foundAt = o.letSplit = o.splitDone = W.week;
+      const from = o.village || `the ${o.name} clan`, rest = o.people.length, who = o === c ? 'our' : `the ${o.name} clan's`;
+      note(W, o, `${h.name} sent ${lv.length} people of ${goName(plan, o)} to raise a daughter village ${km} km ${dir}: the ${nc.name} clan.`); note(W, nc, `Sent out from ${from} with the blessing of the ${o.name} clan, to raise a village ${km} km ${dir}.`);
+      logEvent(W, `The ${o.name} clan of ${from} sends ${lv.length} people to found a daughter village: the ${nc.name} clan, ${km} km ${dir}.`, nc, 'info');
+      houseNote(W, `${h.name} sent ${lv.length} people of ${who} village to raise the ${nc.name} clan's ${fish ? 'fishing ' : ''}village ${km} km ${dir}. ${rest} stay${o === c ? ' with us' : ''}.${bl.length ? ` Of our blood, ${bl.length > 3 ? bl.length + ' went, among them ' + nameList(bl) : nameList(bl) + ' went'}.` : ''}`);
+      return { title: 'A daughter village', text: `${lv.length} people of ${from}, ${goName(plan, o)}, take their share of the stores and set out as the ${nc.name} clan, kin and friends of the ${o.name}. They will walk ${km} km ${dir} and raise a ${fish ? 'fishing ' : ''}village on the ground you chose; it will stand a few weeks after they arrive. ${rest} remain in ${from}${H ? `, under ${H.name}` : ''}.${bl.length ? `<br><br>Of your blood, ${bl.length > 3 ? bl.length + ' go, among them ' + nameList(bl) : nameList(bl) + (bl.length > 1 ? ' go' : ' goes') + ' with them'}.` : ''}${sl.length ? ` ${sl.length === 1 ? sl[0].name + ', a slave of the house, goes' : sl.length + ' slaves of the house go'} too.` : ''}` };
+    }
     if (id === 'migrate') {
       const d = place ? { x: place.x, y: place.y, km: Math.round(Math.hypot(place.x - c.x, place.y - c.y) / 1000), dir: compass(place.x - c.x, place.y - c.y), label: 'Chosen' } : A.targets[k] && A.targets[k].ref; if (!d || d.pick) return null;
       if (c.head === h) return leadClanAway(W, c, d);
@@ -3538,7 +3643,7 @@
     }
     t.home = [d.x, d.y]; t.migrating = W.week;
     { const L = Math.hypot(d.x - c.x, d.y - c.y); for (let s2 = 0; s2 <= L; s2 += 12000) reveal(W, c.x + (d.x - c.x) * s2 / Math.max(1, L), c.y + (d.y - c.y) * s2 / Math.max(1, L), 14000); reveal(W, d.x, d.y, 30000); }
-    for (const o of t.clans) { const a = W.rand() * 6.283, r = o === c ? 0 : 8000 + W.rand() * 12000; o.tx = clamp(d.x + Math.cos(a) * r, 3000, WORLD - 3000); o.ty = clamp(d.y + Math.sin(a) * r, 3000, WORLD - 3000); if (!W.land[cellAt(o.tx, o.ty)]) { o.tx = d.x; o.ty = d.y; } o.settled = false; o.toSettle = false; o.atGathering = false; wear(W, o.x, o.y, o.tx, o.ty, o.people.length / 15); }
+    for (const o of t.clans) { const a = W.rand() * 6.283, r = o === c ? 0 : 8000 + W.rand() * 12000; o.tx = clamp(d.x + Math.cos(a) * r, 3000, WORLD - 3000); o.ty = clamp(d.y + Math.sin(a) * r, 3000, WORLD - 3000); if (!W.land[cellAt(o.tx, o.ty)]) { o.tx = d.x; o.ty = d.y; } o.settled = false; o.founding = false; o.toSettle = false; o.atGathering = false; wear(W, o.x, o.y, o.tx, o.ty, o.people.length / 15); }
     if (t.stage === 3) for (const o of t.clans) o.live = o.live === 'fishing' ? null : o.live;
     P.renown += t !== old ? 6 : 2;
     const across = W.comp[cellAt(d.x, d.y)] !== W.comp[cellAt(c.x, c.y)];
@@ -4867,7 +4972,7 @@
   const freshFeat = (t, rand) => { const used = (t.myths || []).map(m => m.text).join(' '); const free = FEATS.filter(f => !used.includes(f)); return pick(free.length ? free : FEATS, rand); };
   const BYNAMES = ['the Tall', 'Long-arm', 'the Grey', 'Twice-born', 'Deer-foot', 'the Singer', 'Far-seer', 'the Unsleeping'];
   const OMENS = ['A white stag was seen standing at the edge of the camp at dawn, and it did not run.', 'The moon rose red as ochre, three nights running.', 'A whale came ashore below the camp and died there, though the sea was calm.', 'A child was born with a caul over its face.', 'The sun went dark at midday, and the birds fell silent.', 'An owl called by day from the roof-pole of your own house.', 'A star with a tail hung over the hills for nine nights.', 'The spring ran cloudy, and frogs were found dead around it.', 'The tide went out further than anyone living had seen, and stayed out half a day.', 'Lightning split the old tree in the middle of the camp out of a clear sky.', 'Bees swarmed on the door-post of the oldest house and would not be smoked off.', 'All the dogs howled through one night, facing the same way.', 'A fawn with two heads was found in the reeds, alive.'];
-  const QUIET = ['raid', 'explore', 'expedition', 'voyage', 'migrate', 'trader', 'claim', 'movecamp', 'movevillage'];
+  const QUIET = ['raid', 'explore', 'expedition', 'voyage', 'migrate', 'trader', 'claim', 'movecamp', 'movevillage', 'foundvillage'];
   const READING = { mother: 'The elders say the Mother is asking for something back.', spirits: 'The shaman says the spirits are uneasy and want quiet.', totem: 'The elders say the clan-beast is warning its children.', ancestors: 'The elders say the dead are hungry and have been forgotten.', sky: 'The seers say the sky hunter has marked your people.' };
   function addMyth(W, t, m) {
     t.myths = t.myths || []; m.y = Math.floor(W.week / 52); t.myths.push(m);
@@ -5321,6 +5426,7 @@
     if (W.week % 4 === 0) {
       for (const c of W.clans) { acquireGoods(W, c); procure(W, c); }
       farmingMonth(W);
+      foundingMonth(W);
       seaMonth(W);
       playerEvents(W);
       fogMonth(W);
