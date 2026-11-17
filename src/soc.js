@@ -5466,8 +5466,8 @@
   }
   // the cells the village took come back to O at once
   function landGiveBack(W, O, r) {
-    let n = 0; for (const i of r.cells || []) if (W.claim[i] === r.t) { W.claim[i] = O.id; W.claimS[i] = 120; n++; }
-    if (n) { W.claimVer = (W.claimVer || 0) + 1; W.nLandCells = (W.nLandCells || 0) + n; O.landC = (O.landC || 0) + n; const T = W.ents.get(r.t); if (T && T.kind === 'tribe') T.landC = Math.max(0, (T.landC || 0) - n); } // the tribe's land figures are counted at year end: keep them true meanwhile
+    let n = 0, nh = 0; for (const i of r.cells || []) if (W.claim[i] === r.t) { W.claim[i] = O.id; W.claimS[i] = 120; n++; if (W._held && W._held[i]) { nh++; W._held[i] = 0; } }
+    if (n) { W.claimVer = (W.claimVer || 0) + 1; W.nLandCells = (W.nLandCells || 0) + n; O.landC = (O.landC || 0) + n; const T = W.ents.get(r.t); if (T && T.kind === 'tribe') { T.landC = Math.max(0, (T.landC || 0) - n); T.landH = Math.min(Math.max(0, (T.landH || 0) - nh), T.landC); } } // the tribe's land figures are counted at year end: keep them true meanwhile
     return n;
   }
   // the men who fall: in a won fight 10-20% of the village's men of fighting age and 3-7% of the owner's; in a lost one 8-15% of the owner's and 3-6% of theirs
