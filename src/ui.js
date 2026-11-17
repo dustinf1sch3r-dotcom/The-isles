@@ -442,7 +442,7 @@
     // roads, paths, tracks and sea lanes, worn in by use
     if (show.roads) { const lv = [new Path2D(), new Path2D(), new Path2D(), new Path2D()], lane = new Path2D(), zs = clamp(zoomed / 8, 0.7, 1.8);
       for (const [k, v] of W.roads) {
-        const L = SIM.roadLevel(v); if (!L) continue;
+        const L = SIM.roadLevel(v); if (!L || (L < 2 && zoomed < LOD_FAR)) continue; // from far out only paths and roads
         const a = Math.floor(k / 40000), b = k % 40000, [x1, y1] = cellS(a), [x2, y2] = cellS(b);
         if ((x1 < -20 && x2 < -20) || (y1 < -20 && y2 < -20) || (x1 > w + 20 && x2 > w + 20) || (y1 > h + 20 && y2 > h + 20)) continue;
         const p = W.land[a] && W.land[b] ? lv[L] : lane; p.moveTo(x1, y1); p.lineTo(x2, y2);
@@ -1102,7 +1102,7 @@
         const b = SIM.kingshipBid(W, t);
         html += `<div class="k sec">People</div><div class="tiles">
           ${tile('People', `${size}<span class="muted"> / ${SIM.tribeMax(t)}</span>`, demoStats(people) + (SIM.slaveCount(t) ? ` · +${SIM.slaveCount(t)} slaves` : ''), bar(size / SIM.tribeMax(t), `hsl(${t.hue},70%,55%)`))}
-          ${tile('Camps and land', t.clans.length, `${Math.round(territoryKm2(t)).toLocaleString()} km² claimed${t.landC ? `, ${Math.round(100 * (t.landH || 0) / t.landC)}% of it still held` : ''}`)}
+          ${tile('Camps and land', t.clans.length, `${Math.round(territoryKm2(t)).toLocaleString()} km² claimed${t.landC ? `, ${Math.round(100 * (t.landH || 0) / t.landC)}% of it still held` : ''}${(n => n ? `<br>${n} village${n === 1 ? ' of another people stands' : 's of other peoples stand'} on ${W.player && W.player.head && W.player.head.clan && W.player.head.clan.tribe === t ? 'our' : 'their'} land` : '')(SIM.landLive(W, t).length)}`)}
           ${tile('Settlements', (W.settlements || []).filter(s => s.tribe === t).length, 'village' + ((W.settlements || []).filter(s => s.tribe === t).length === 1 ? '' : 's'))}
           ${tile('Height', (() => { let m = 0, n = 0; for (const c of t.clans) { m += SIM.statureCm(c)[0] * c.people.length; n += c.people.length; } return Math.round(m / Math.max(1, n)) + ' cm'; })(), 'average man')}
         </div>
@@ -1662,7 +1662,7 @@
             if (j >= a.targets.length) { modalEv = null; return showActions(); }
             if (a.targets[j].pick) return startPlacePick(a, j);
             if (a.forces && a.forces.length > 1) {
-              return showCard(null, 'Whom will you call to arms?', `Against ${esc(a.targets[j].label)} — ${esc(a.targets[j].hint)}`, [...a.forces.map(f => ({ label: `${f.label} — ${f.n} warriors`, hint: f.hint })), { icon: '←', label: 'Back' }], f => {
+              return showCard(null, a.id === 'landask' ? 'Whose warriors will stand behind your envoy?' : 'Whom will you call to arms?', `Against ${esc(a.targets[j].label)} — ${esc(a.targets[j].hint)}`, [...a.forces.map(f => ({ label: `${f.label} — ${f.n} warriors`, hint: f.hint })), { icon: '←', label: 'Back' }], f => {
                 if (f >= a.forces.length) { modalEv = null; return showActions(); }
                 showResult(SIM.doAction(W, a.id, j, f));
               });

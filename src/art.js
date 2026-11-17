@@ -267,7 +267,7 @@ const ART = (() => {
     const key = kind + ':' + (sub || ''); if (scenes[key]) return scenes[key];
     const W = 640, H = 230, c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); g.lineJoin = 'round'; g.lineCap = 'round';
     let sd = 7 + key.length * 131; for (const ch of key) sd = (sd * 31 + ch.charCodeAt(0)) >>> 0; const rnd = () => (sd = (sd * 1664525 + 1013904223) >>> 0) / 4294967296;
-    const mood = /omen|foundling/.test(kind) ? 'night' : /raided|war|vengeance|blood|quarrel|slight|challenge|rivalry|badblood|exilesback|oathback/.test(kind) ? 'red' : /sickness|famine/.test(kind) ? 'grey' : /gathering|marriage|friendneed|succession|path|exiles|oath|foundback/.test(kind) ? 'dusk' : 'day';
+    const mood = /omen|foundling/.test(kind) ? 'night' : /raided|landattack|landtaken|war|vengeance|blood|quarrel|slight|challenge|rivalry|badblood|exilesback|oathback/.test(kind) ? 'red' : /sickness|famine/.test(kind) ? 'grey' : /gathering|marriage|friendneed|succession|path|exiles|oath|foundback/.test(kind) ? 'dusk' : 'day';
     const SKY = { night: ['#2c3850', '#5a6480', '#9a94a0'], red: ['#c9a084', '#e2c4a0', '#f0dfc0'], grey: ['#aab0ac', '#c8c8bc', '#e2dcc8'], dusk: ['#8a90a8', '#d8b08c', '#f0d8a8'], day: ['#a8c4cc', '#cfdcd0', '#efe6c8'] }[mood];
     const sky = g.createLinearGradient(0, 0, 0, H * 0.7); sky.addColorStop(0, SKY[0]); sky.addColorStop(0.6, SKY[1]); sky.addColorStop(1, SKY[2]); g.fillStyle = sky; g.fillRect(0, 0, W, H);
     for (let k = 0; k < 9; k++) { g.fillStyle = `rgba(255,250,235,${0.05 + rnd() * 0.08})`; g.beginPath(); g.ellipse(rnd() * W, rnd() * H * 0.45, 60 + rnd() * 120, 8 + rnd() * 16, 0, 0, TAU); g.fill(); } // thin cloud washes
