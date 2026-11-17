@@ -24,6 +24,8 @@ The player leads one house (a dynasty) inside a clan inside a tribe, generation 
 | `tools/save_roundtrip.js` | Save, load and play on. |
 | `tools/head_swap.js` | Ten games: counts head changes while the old head lives, heads moving clan, and heads changing household (a child head fostered after the household breaks up is expected). |
 | `tools/discovery.js`, `raids.js`, `wars.js`, `stops.js` | Feature measures: how soon a house meets another people (passive and exploring), raids and paybacks in raid-every-chance play, realm wars and their outcomes, cards that stop play by type. Each takes `ISLES_SIM=<path to a sim.js>` to measure another build (for example the one before a change). `balance.js`, `fuzz.js` and `head_swap.js` always use `../build/sim.js`. |
+| `tools/roads.js`, `tools/same_but_roads.js` | Roads: `node tools/roads.js 2,7,21,33 200` prints km of track, path and road and the cells they touch every 50 years. `SIM_A=<old sim.js> node tools/same_but_roads.js 5,11,14` proves a road change alters nothing but the roads. |
+| `tools/land.js` | Land taken by a village: `node tools/land.js` (seeds 2,7,21,33,5,14, 200 years) counts villages raised on another people's claim, the land that passes, demands and drives by the world and their outcomes, villages sent off (and how often they had to go as wanderers). |
 | `tools/same.js` | `SIM_A=<sim.js> SIM_B=<sim.js> node tools/same.js 5,11,14` proves two builds give bit-identical worlds (for speed work that must not change results). |
 | `play/server.js`, `play/isles` | A text front-end for play-testing from a shell: `node play/server.js &` then `./play/isles 1 "new 5; adv 5; state; deeds"`. `docs/TESTER.md` documents its commands. It also has `testsetup` commands that jump to the late game for testing. |
 | `docs/` | Briefs used for agent engineers and testers, and the last test reports. |
@@ -68,7 +70,8 @@ Lines are very long, often a whole function on one line. Do not print whole file
 | Raids, feuds, blood-price | `raid`, `raidCore` |
 | Confederacies and kingdoms | the section "CONFEDERATIONS & KINGS"; `realm*` functions; `succession`; `confedYear` |
 | Subjects sharing their map | `sight*` |
-| Roads and trade-pact roads | `roadsYear`, `pactRoads` |
+| Roads and trade-pact roads | `roadsYear`, `pactRoads`, `routeCells` (A* that prefers ways already trodden) |
+| Land taken by a village | the section "LAND TAKEN BY A VILLAGE": `landScan`, `landYear`, `landAsk`, `landFight`, `landExpel`, `landGiveBack`, the deeds `landask` and `landdrive` |
 | Farming and clearing fields | `fieldsYear` |
 | Crafts | `craftsYear` |
 | Great beasts | `beast*` |
@@ -97,9 +100,24 @@ Lines are very long, often a whole function on one line. Do not print whole file
 - **Marriage:** marrying must never switch the player's family.
 - **Late game:** confederacies move from a following, to the tribes choosing, to the seat passing by blood, and then to kingdoms. Clans and tribes have the same three steps.
 - **Roads and farming:** trade pacts make roads. Clearing fields shows on the map and drives beasts off, and wildlife thins as the land fills.
+- **Roads (#12):** fewer ways; people use the ones that exist.
+- **Land (#13):** a people whose land is taken by another's village can bid it leave or drive it out by war; the world's tribes do the same.
 - **Way of working:** Dustin likes the strongest model to plan and check, with cheaper agents building and play-testing, and every claim checked before it is reported.
 
-## Where things stand (15 November 2026)
+## Where things stand (17 November 2026)
+Latest round (issues #12 and #13, built by agent engineers from briefs, each checked by skeptics, then play-tested on the combined build):
+- **Roads (#12).** Routes are found by A* that prefers road over path over track (`routeSearch`), so traffic follows the ways that exist; faint tracks fade faster; the whole-isles view draws only paths and roads. Over four seeds at year 200: about 20,000 km of ways against 37,000 before, on 3,400 cells against 5,900. Speed unchanged.
+- **Land taken by a village (#13).** When another people's village stands on a tribe's claim, a record is kept for 25 years (`O.seized`). The player gets a card ("Our land is taken": demand they leave, drive them out, let them be) and two deeds under Act (`landask` once in 2 years, `landdrive` once in 3), with the chances rolled shown. The card counts the strongest force the head can call (a tribe's leader calls up the tribe); under Act the player picks the force. The world's tribes demand and drive too (`landYear`), and the player's own village on held ground can be bidden to leave. A village that goes always goes: to free ground beyond the land, or as wanderers if none is free; the land comes back before it leaves; it leaves its wall and works; it keeps off that people's land for 10 years (`c.landFrom`). The settle deed's "Let the elders choose" keeps off other peoples' land. Every goodwill figure in the land texts comes from `LAND_AFF`, so the text and the charge cannot drift.
+- Checks on the combined build: fuzz 0 errors; saves and a save from before this round load; head_swap 0; balance on eight seeds: no house ended, world population within 1% of before; the chance shown was the chance rolled in every case checked, and over about 33 tries in play the outcomes matched the chances.
+
+Still open from this round:
+- The world's demands rarely succeed (about 1 in 14): the chance is honest but low, so most land is won back by war.
+- Late in long games the same peoples keep seizing and losing ground (on seed 2 about 470 land lines in 260 years, down from 500).
+- Moving the player's village onto held ground warns only after the spot is picked.
+- Village names can repeat after a village is abandoned (base behaviour).
+
+## Earlier round (15 November 2026)
+
 This round (GitHub issues #1 to #3, built by agent engineers from briefs, each checked by two skeptics, then play-tested on the combined build):
 - **Signs of other peoples (#1).** Signs reach 340 km; hunters find them yearly and traders bring tales; the explore deed follows a sign straight to a people (camps within 150 km, or peoples the house has a sign of). First contact when exploring: 5.5 years on average over eight seeds (was 25).
 - **War with risk (#2).** A raided clan may strike back within six years (`c.wrong`, `paybackMonth`); the raiders' card, the raid deed (including the head's own risk) and the realm war deed show the chances they roll; a peace binds both sides; a ruler can call off a war; a house whose tribe is attacked while it does not lead gets a card (send the men or keep them home). Subjects are no longer called allies.

@@ -792,10 +792,10 @@
   }
   const leaversOf = (c, leave) => c.people.filter(q => leave.has(q.fam) || (q.slave && q.owner && leave.has(q.owner.fam)));
   // why a spot will not do for a daughter village of clan c (null if it will); the same words for the deed, the map and the world
-  function siteWhy(W, c, x, y) {
-    const i = cellAt(x, y), km = Math.hypot(x - c.x, y - c.y) / 1000;
-    if (km < FOUND_MIN / 1000) return `That is only ${Math.round(km)} km from the village. A daughter village must stand at least ${FOUND_MIN / 1000} km away.`;
-    if (km > FOUND_MAX / 1000) return `That is ${Math.round(km)} km away. A daughter village must stand within ${FOUND_MAX / 1000} km.`;
+  function siteWhy(W, c, x, y, shown) { // shown: a spot the player picked is judged on the km the game shows (rounded), so the text never contradicts itself
+    const i = cellAt(x, y), km0 = Math.hypot(x - c.x, y - c.y) / 1000, km = shown ? Math.round(km0) : km0;
+    if (km < FOUND_MIN / 1000) return `That is only ${Math.round(km0)} km from the village. A daughter village must stand at least ${FOUND_MIN / 1000} km away.`;
+    if (km > FOUND_MAX / 1000) return `That is ${Math.round(km0)} km away. A daughter village must stand within ${FOUND_MAX / 1000} km.`;
     if (x < 3000 || y < 3000 || x >= WORLD - 3000 || y >= WORLD - 3000 || !W.land[i] || W.lake[i]) return 'That is water. Choose a spot on land.';
     if (!canReach(W, c, x, y)) return 'The clan cannot walk to that land — it lies across the sea.';
     if (c.live === 'fishing' && W.seaDist[i] > 2) return 'A fishing village must stand on the shore.';
@@ -3465,7 +3465,7 @@
     if (x < 0 || y < 0 || x >= WORLD || y >= WORLD || !W.land[i] || W.lake[i]) return 'That is water. Choose a spot on land.';
     if (!knows(W, x, y)) return 'Your people know nothing of that land. Explore it first.';
     if (!canReach(W, c, x, y)) return 'Your people cannot reach that land — it lies across the sea.';
-    if (id === 'foundvillage') return siteWhy(W, c, x, y);
+    if (id === 'foundvillage') return siteWhy(W, c, x, y, true);
     if (id === 'movecamp') { if (Math.round(km) > 80) return `That is ${Math.round(km)} km away. A camp can move 80 km at a time.`; if (km < 2) return 'The camp is already there.'; }
     if (id === 'migrate') { if (Math.round(km) > 300) return `That is ${Math.round(km)} km away — too far (300 km at most).`; if (km < 15) return 'That is hardly a move at all. Choose somewhere further away.'; }
     if (id === 'settle' || id === 'movevillage') {
@@ -3624,7 +3624,7 @@
     if (id === 'foundvillage') {
       const tg = A.targets[k]; if (!tg) return null; const o = tg.clan, site = place ? [place.x, place.y] : tg.ref ? [tg.ref.x, tg.ref.y] : null, plan = {}; if (!site) return null;
       if (!o.alive || foundWhy(W, o, plan)) { delete cd[id]; return { title: 'Not possible', text: 'The clan can no longer send a daughter village away.' }; }
-      const err = siteWhy(W, o, site[0], site[1]); if (err) { delete cd[id]; return { title: 'Not there', text: err }; }
+      const err = siteWhy(W, o, site[0], site[1], true); if (err) { delete cd[id]; return { title: 'Not there', text: err }; }
       const lv = plan.leavers, big = new Map(); for (const q of lv) if (q.fam) big.set(q.fam, (big.get(q.fam) || 0) + 1);
       const B = [...plan.leave].sort((a, b) => (big.get(b) || 0) - (big.get(a) || 0))[0], H = o.head, bl = lv.filter(q => q.dyn && !q.slave), sl = lv.filter(q => q.slave && q.owner && q.owner.dyn);
       const nc = foundDaughter(W, o, plan.leave, site, B.name), km = Math.round(Math.hypot(site[0] - o.x, site[1] - o.y) / 1000), dir = compass(site[0] - o.x, site[1] - o.y), fish = o.live === 'fishing';
@@ -4973,7 +4973,7 @@
   // =====================================================================
   //  DEALINGS BETWEEN PEOPLES — alliance, trade pact, tribute, peace
   // =====================================================================
-  const likely = p => p > 0.7 ? 'likely to agree' : p > 0.45 ? 'may agree' : p > 0.25 ? 'unlikely to agree' : p > 0.1 ? 'will most likely refuse' : 'will almost surely refuse';
+  const likely = p => { const n = Math.round(p * 100); return n > 70 ? 'likely to agree' : n > 45 ? 'may agree' : n > 25 ? 'unlikely to agree' : n > 10 ? 'will most likely refuse' : 'will almost surely refuse'; }; // judged on the figure shown, so one shown figure always gets one word
   function envoyOdds(W, kind, t, o, h) {
     const op = opinion(o, t), u = und(t, o), r = t.rel.get(o.id), kin = r ? Math.min(6, r.kin) : 0, sv = hasTrait(h, 'silver') ? 0.15 : 0, wr = warriors(t) / Math.max(1, warriors(o));
     if (kind === 'ally') return clamp(0.05 + op / 70 + u * 0.2 + kin * 0.04 + sv, 0.03, 0.95);
@@ -5528,7 +5528,7 @@
     return { dest, back };
   }
   // ---- the player's side ----
-  const landForce0 = (W, c, h) => { const F = raidForces(W, c, h); return F.length ? F[0] : { id: 'clan', n: myWarriors(c), short: 'warriors of the clan', label: `The ${c.name} clan's warriors`, mix: `${myWarriors(c)} of the clan`, hint: '' }; };
+  const landForce0 = (W, c, h, id) => { const F = raidForces(W, c, h); return F.length ? (F.find(f => f.id === id) || F.reduce((a, b) => b.n > a.n ? b : a)) : { id: 'clan', n: myWarriors(c), short: 'warriors of the clan', label: `The ${c.name} clan's warriors`, mix: `${myWarriors(c)} of the clan`, hint: '' }; };
   const landTargets = (W, t) => landLive(W, t).map(r => ({ r, c: W.ents.get(r.c) })).filter(x => x.c);
   const landWarn = (W, t, x, y) => { const O = foreignHeld(W, t, cellAt(x, y)); return O ? `This is land of the ${O.name}. They may demand that you leave.` : ''; };
   // why the head may not send the demand / lead the drive now ('' if he may); the card, the deed and the answer all ask this
@@ -5543,11 +5543,11 @@
   function landTakenCard(W, O, r, c) {
     const P = W.player, h = P.head, pc = h.clan, H = c.tribe, wh = landWhere(W, O, c.x, c.y), reach = FORAGE_R * 2.2 * clamp(Math.sqrt(c.people.length / 30), 0.7, 2); let at = 0;
     { const k = Math.ceil(reach / CELL), gx = Math.floor(c.x / CELL), gy = Math.floor(c.y / CELL); for (let dy = -k; dy <= k; dy++) for (let dx = -k; dx <= k; dx++) { const xx = gx + dx, yy = gy + dy; if (xx < 0 || yy < 0 || xx >= N || yy >= N || Math.hypot(dx, dy) * CELL > reach) continue; if (W.claim[yy * N + xx] === O.id) at++; } }
-    const Fa = landForce0(W, pc, h), Fd = Fa, pa = leaveOdds(W, O, c, Fa, h), ratio = driveRatio(W, pc, Fd, c), pd = landOdds(ratio), theirs = warMuster(W, H, c, pc), wa = landAskWhy(W, pc, h), wd = landDriveWhy(W, pc, h), wk = !!(c.works && Object.keys(c.works).length);
-    pushEvent(W, { type: 'landtaken', key: String(c.id), title: 'Our land is taken', data: { cid: c.id, oid: O.id, pa, ratio, n: Fa.n },
+    const Fa = landForce0(W, pc, h), Fd = Fa, who = Fa.id === 'tribe' ? ' (the tribe called up)' : Fa.id === 'realm' ? ' (the realm called up)' : '', pa = leaveOdds(W, O, c, Fa, h), ratio = driveRatio(W, pc, Fd, c), pd = landOdds(ratio), wa = landAskWhy(W, pc, h), wd = landDriveWhy(W, pc, h), wk = !!(c.works && Object.keys(c.works).length);
+    pushEvent(W, { type: 'landtaken', key: String(c.id), title: 'Our land is taken', data: { cid: c.id, oid: O.id, pa, ratio, n: Fa.n, fid: Fa.id },
       text: `The ${c.name} clan of the ${H.name} have raised a village, ${landV(c)}, ${wh.km} km ${wh.dir} of ${wh.from}, on ground we hold. ${at ? `Up to about ${at * 25} km² of our land lies near it; part of it will pass to them, most of it after seven or eight years, if they stay.` : 'Little of our land lies within its reach.'} What will ${h.name} do?`,
-      options: [{ label: 'Demand that they leave', hint: `Chance that they go: about ${Math.round(pa * 100)}% (${likely(pa)}), with ${Fa.n} of ours behind your envoy. If they go, renown +2 and goodwill ${landGw('askYes')}; if they will not, goodwill ${landGw('askNo')}${wa ? '. ' + wa : ''}`, off: !!wa },
-        { label: 'Drive them out', hint: `About ${Math.round(pd * 100)}% to win with ${Fd.n} of ours against their ${theirs} fighting men, kin near counted${walls(c) > 1 ? ' behind a wall' : ''}. You may fall: about ${riskPct(raidHeadRisk(true, Fd.n))}% if you win, ${riskPct(raidHeadRisk(false, Fd.n))}% if you lose. A win costs us 3 to 7 of every 100 of our men, them 10 to 20; we take half their food, ${wk ? 'their wall and works burn, ' : ''}the land is ours again (renown +4, goodwill ${landGw('won')}). A loss costs us 8 to 15 of every 100 (renown −2, goodwill ${landGw('lost')})${wd ? '. ' + wd : ''}`, off: !!wd },
+      options: [{ label: 'Demand that they leave', hint: `Chance that they go: about ${Math.round(pa * 100)}% (${likely(pa)}), with ${Fa.n} of ours${who} behind your envoy. If they go, renown +2 and goodwill ${landGw('askYes')}; if they will not, goodwill ${landGw('askNo')}${wa ? '. ' + wa : ''}`, off: !!wa },
+        { label: 'Drive them out', hint: `About ${Math.round(pd * 100)}% to win with ${Fd.n} of ours${who} against their ${landMen(W, c)}${walls(c) > 1 ? ' behind a wall' : ''}. You may fall: about ${riskPct(raidHeadRisk(true, Fd.n))}% if you win, ${riskPct(raidHeadRisk(false, Fd.n))}% if you lose. A win costs us 3 to 7 of every 100 of our men, them 10 to 20; we take half their food, ${wk ? 'their wall and works burn, ' : ''}the land is ours again (renown +4, goodwill ${landGw('won')}). A loss costs us 8 to 15 of every 100 (renown −2, goodwill ${landGw('lost')})${wd ? '. ' + wd : ''}`, off: !!wd },
         { label: 'Let them be', hint: 'Part of the land may pass to them. For 25 years you may still bid them go or drive them out, under Act' }] });
   }
   // the deed or the card: our clan bids the village leave
@@ -5605,7 +5605,7 @@
       if (!r) { W.lastResult = { title: 'They are gone', text: `The ${cl.name} clan have already left ${landV(cl)}.` }; return; }
       const cd = P.cool || (P.cool = {}), why = k === 0 ? landAskWhy(W, c, h) : landDriveWhy(W, c, h); // asked again: the head may have changed since the card
       if (why) { W.lastResult = { title: 'Not possible now', text: why + '.' }; return; }
-      const F0 = landForce0(W, c, h), F = { ...F0, n: ev.data.n != null ? ev.data.n : F0.n }; // the force and the chance are those the card showed
+      const F0 = landForce0(W, c, h, ev.data.fid), F = { ...F0, n: ev.data.n != null ? ev.data.n : F0.n }; // the force and the chance are those the card showed
       if (k === 0) { cd.landask = W.week; W.lastResult = landDoAsk(W, r, cl, F, ev.data.pa); }
       else { cd.landdrive = W.week; W.lastResult = landDoDrive(W, r, cl, F, ev.data.ratio); }
       return;
