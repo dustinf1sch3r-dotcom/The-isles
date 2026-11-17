@@ -4,11 +4,14 @@
 const S = require(process.env.SIM || require('path').join(__dirname, '..', 'build', 'sim.js'));
 const seeds = (process.argv[2] || '2,7,14,21,33').split(',').map(Number), YEARS = +(process.argv[3] || 200);
 let bad = 0;
+// moves: a settled clan that sets out to fresh fields and settles again, with its village name kept or changed
+
 for (const seed of seeds) {
   const W = S.createWorld(seed); S.seedFirstPop(W); const cs = S.houseCandidates(W); S.choosePlayer(W, cs[seed % Math.min(5, cs.length)].head); const P = W.player;
-  console.log('seed', seed);
+  console.log('seed', seed); const mv = new Map(); let kept = 0, lost = 0;
   for (let y = 1; y <= YEARS && !P.over; y++) {
-    for (let w = 0; w < 52; w++) { S.step(W); while (W.pending.length) S.resolve(W, W.pending[0], 0); if (W.notices) W.notices.length = 0; }
+    for (let w = 0; w < 52; w++) { const was = new Map(); for (const c of W.clans) if (c.settled && c.village) was.set(c, c.village); S.step(W);
+      for (const c of W.clans) { const n = was.get(c); if (n && !c.settled && c.toSettle) mv.set(c, n); else if (c.settled && mv.has(c)) { if (c.village === mv.get(c)) kept++; else lost++; mv.delete(c); } } while (W.pending.length) S.resolve(W, W.pending[0], 0); if (W.notices) W.notices.length = 0; }
     if (y % 25) continue;
     const L = W.settlements || [], cnt = new Map(); for (const r of L) cnt.set(r, (cnt.get(r) || 0) + 1);
     const twice = [...cnt.values()].filter(n => n > 1).length;
@@ -17,7 +20,7 @@ for (const seed of seeds) {
     const live = [...new Set(L)].filter(r => r.clans && r.clans.length), nm = new Map(); for (const r of live) nm.set(r.name, (nm.get(r.name) || 0) + 1);
     const dup = [...nm.values()].filter(n => n > 1).length;
     bad += twice + orphan;
-    console.log(`  y${y}: places ${L.length}, listed twice ${twice}, orphan clans ${orphan}, shared names ${dup}, renames ${W.placeRenames || 0}`);
+    console.log(`  y${y}: places ${L.length}, listed twice ${twice}, orphan clans ${orphan}, shared names ${dup}, renames ${W.placeRenames || 0}, records ${W.places.size}, moves kept name ${kept}, moves renamed ${lost}`);
   }
 }
 console.log('bad (twice+orphan)', bad);

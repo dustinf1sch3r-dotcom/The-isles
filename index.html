@@ -5376,9 +5376,9 @@ const SIM = (() => {
   }
   const nameInUse = (W, n) => W.places.has(n) || W.clans.some(c => c.alive !== false && c.village === n);
   const freshName = (W, t, kind) => { let n; for (let i = 0; i < 10; i++) { n = placeNameIn(W, t, kind); if (!nameInUse(W, n)) break; } return n; };
-  // a clan keeps a name it carries only where that village stands (within the grouping distance); anywhere else it is called afresh
+  // a clan that carries a village name keeps it when no other settled clan holds that name (the village has moved as a whole) or one of them lies within the grouping distance (it is joining that village); otherwise the name is held by a village elsewhere and this is a new place
   const villageAt = (W, c, t, kind) => {
-    const n = c.village; if (n) { for (const o of W.clans) if (o !== c && o.settled && o.village === n && Math.hypot(o.x - c.x, o.y - c.y) < 9000) return n; const r = W.places.get(n); if (r && r.alive && !r.abandoned && r.clans && r.clans.length && Math.hypot(r.x - c.x, r.y - c.y) < 9000) return n; }
+    const n = c.village; if (n) { let held = false; for (const o of W.clans) if (o !== c && o.alive !== false && o.settled && o.village === n) { if (Math.hypot(o.x - c.x, o.y - c.y) < 9000) return n; held = true; } if (!held) return n; }
     return freshName(W, t, kind);
   };
   const placeNameIn = (W, t, kind) => { const K = t && t.kult, e = K && pick(K.ends[kind], W.rand); return K ? nameIn(K, W.rand, e.length >= 4 && W.rand() < 0.6 ? 1 : 2) + e : makeName(W.rand, 2) + pick(kind === 'haven' ? HAVEN_END : VILLAGE_END, W.rand); };
