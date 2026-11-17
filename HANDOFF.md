@@ -81,7 +81,7 @@ Lines are very long, often a whole function on one line. Do not print whole file
 | Treasures | `addTreasure` |
 | Walking a story | `walk` |
 | Fog of war | `reveal`, `fogMonth` |
-| Villages, camps and fires on the map | ui.js `draw()`: `vplace` and `vlayout` (houses, ring, gate, kept per village in `VC`, a WeakMap, so no drawing cache is ever saved), `palRuns`, `palGate`, `palLintel`, `palEnd` (palisade), `drawDitch` and `ditchFlush` (ditch and bank), `landRing` and `seaDir` (sea tests); art.js sprites `vhouse`, `vlong`, `vhall`, `vhut`, `vcanoe`, `vtent`, `vhearth`, and `vpal`, `vditch` for the legend |
+| Villages, camps and fires on the map | ui.js `draw()`: `vplace` and `vlayout` (houses, ring, gate, kept per village in `VC`, a WeakMap, so no drawing cache is ever saved), `palRuns`, `palGate`, `palLintel`, `palEnd` (palisade), `drawDitch` and `ditchFlush` (ditch and bank), `shoreProf` and `shoreAt` (how far dry land runs from a village along 48 rays, measured once in world units through the map's warp and kept in `VC`; the ground, ditch and wall are pulled in to it at every zoom), `seaDir` (which way the sea lies), `roadIndex` and the gate's way out (kept in `VC` per roads version); art.js sprites `vhouse`, `vlong`, `vhall`, `vhut`, `vcanoe`, `vtent`, `vhearth`, and `vpal`, `vditch` for the legend |
 
 ## Rules the game keeps (do not break)
 
@@ -108,17 +108,28 @@ Lines are very long, often a whole function on one line. Do not print whole file
 - **Way of working:** Dustin likes the strongest model to plan and check, with cheaper agents building and play-testing, and every claim checked before it is reported.
 
 ## Where things stand (17 November 2026)
-Latest round (issue #15, the look of villages, camps and gathering fires; three drafts built by agent engineers and shown to Dustin side by side, the chosen one finished, each round checked by a visual critic and a code skeptic):
+Latest round (issue #17, the open items of #15; built by agent engineers from briefs, each round checked in enlarged crops against the live build and timed with `map_speed.js`):
+- **The wall fits the houses** (the ring is sized on the house footprints, so a fishing village crowded on the shore has no bare ring of ground).
+- **The gate faces the way out:** toward the strongest road that leaves through the ring, else the land side, else the front. A trodden track runs out through it unless a road already does. A gate on the back half is a gap in the back wall; its posts take the wall's own ink and stand only a little over it, and far out it is only the gap. A front gate's posts ease from 1.9 to 1.35 times the wall's height as you zoom in.
+- **The shore:** each village's shore is measured once (48 rays, world units, through the warp) and reused at every zoom; the wall, ditch, trodden ground and the village's edge are pulled in to it, so nothing stands in the sea and a wall closes against the shore with an end post. Each ring's 24 sector shares are solved directly against the profile (a quadratic, refined once; the old bisection only as a guard) and kept in `VC(S).shc` while the ring's world shape holds (size to 5%, centre to half a cell). Below zoom 5.3 there is no shore fit (a plain ellipse, as before).
+- **Speed:** `map_speed.js` on the year-301 save, three runs against the live build: zooming 0 to 9% slower (at most about 0.5 ms a frame), panning no slower. Villages are laid out again every few frames while zooming (`vplace` key), in the live build too; that is where the remaining cost is.
+- **Villages sharing a name** (`src/soc.js`): new names are fresh (`freshName`); a clan carrying a name keeps it when the village moves as a whole or rejoins it, and takes a fresh name only when that name is still held by a village elsewhere (`villageAt`); `updateSettlements` renames the later of two groups that still meet on one name (the player's village is never renamed) with a short note in its chronicle, and never lists a record twice. Old saves with a twice-listed record are put right on the next update. `tools/places.js` (seeds, years; `SIM=` another build) counts places, twice-listed records, orphaned clans, shared names and renames every 25 years; `tools/places_moves.js` checks that moving villages keep their names.
+
+Still open:
+- At the default zoom (0.0016) a village is about 40 px across and its gate is a gap of two or three px: the wall reads, the gate only from about 0.003 inward.
+- The gate's way out is kept (`VC(S).gc`) while the roads and the ring's size (to about 90%) hold, so a village with two roads can show its gate on one road when you open the map close in and on the other when you pinch in from far out. Both are on a road.
+- The direct sector solve differs from the old bisection by more than 0.03 in about 5% of sectors, mostly rounding; a handful flip at the share thresholds (a sector of ditch kept or dropped). No visible fault was found in the shots.
+- Luwick at 0.009: a lone end post at the far left of a faint stretch of wall (the live build has a similar stub).
+
+## Earlier round (17 November 2026, villages, camps and fires)
+Issue #15, the look of villages, camps and gathering fires; three drafts built by agent engineers and shown to Dustin side by side, the chosen one finished, each round checked by a visual critic and a code skeptic):
 - **Villages** are huddles of little thatched houses, longhouses and a great hall in the map's ink and wash, in a ring or along a lane; fishing huts face the shore with a canoe at the water's edge. The trodden ground and the ditch and bank lie under the land tint; houses and the palisade stand over it. The ring, ditch and name are centred on the houses, not on the bare village point.
 - **Palisade** (`works.pal`): a band of pointed oak posts on the ground ellipse, back half drawn lighter before the houses, front half after them, a gate with taller posts and a lintel; where the sea cuts the ring a taller post ends each run. **Ditch and bank** (`works.ditch`): a band of darker earth with an inked bank and hachures, a causeway at the gate, never on the sea.
 - **Camps** are hide tents (no flags, no tribe colour), **gathering places** a ring of stones with a small flame; the hungry ring is red-ochre. The whole-isles view keeps one mark per people (three houses, or one to three tents). Names: villages and camps without head counts; a group of camps reads "N camps". Legend: new pictures, plus Palisade and Ditch and bank.
 - Speed: the map draw is cached per village and batched; the nearest-village search runs along a sorted row. Two clean runs of `map_speed.js` on a 150-village save: see the PR for #15.
 - Checks on the final build: fuzz 0 errors and no BAD TEXT; save_roundtrip passes; taps on a village, a gathering place and a camp give the same results as before; a save made with the new build reloads and draws; screenshots at 390 px at every zoom.
 
-Still open from this round:
-- The gate shows only from zoom 0.004 or closer; farther out the palisade is a ring of posts with no visible gap.
-- A fishing village whose huts all crowd the shore still has some bare ground inside its ring.
-- Two separate groups of clans that share a village name share one place record (`updateSettlements` keys places by name): the record keeps only the last group's clans, so the other village is not drawn, and the record is listed twice in `W.settlements` (seen in a year-301 save: Neewunsuk). The map now draws such a record once; the record itself is a simulation bug (the "village names can repeat" item below).
+Its open items (the gate far out, bare ground in shore villages, villages sharing a name) were taken up in #17, above.
 
 ## Earlier round (17 November 2026, roads and land)
 Issues #12 and #13, built by agent engineers from briefs, each checked by skeptics, then play-tested on the combined build:
@@ -130,7 +141,6 @@ Still open from this round:
 - The world's demands rarely succeed (about 1 in 14): the chance is honest but low, so most land is won back by war.
 - Late in long games the same peoples keep seizing and losing ground (on seed 2 about 470 land lines in 260 years, down from 500).
 - Moving the player's village onto held ground warns only after the spot is picked.
-- Village names can repeat after a village is abandoned (base behaviour).
 
 ## Earlier round (15 November 2026)
 

@@ -854,7 +854,7 @@
   // a daughter clan that has walked to its site raises its village
   function foundingMonth(W) {
     for (const c of W.clans) if (c.founding && c.toSettle && !c.settled && c.alive && Math.hypot(c.tx - c.x, c.ty - c.y) < 1500) {
-      const fish = c.live === 'fishing'; c.toSettle = false; c.founding = false; c.settled = true; c.live = fish ? 'fishing' : 'farm'; c.settledAt = W.week; c.soil = 1; c.village = c.village || placeNameIn(W, c.tribe, fish ? 'haven' : 'vill'); c.daughterVillage = true; W.foundN = (W.foundN || 0) + 1;
+      const fish = c.live === 'fishing'; c.toSettle = false; c.founding = false; c.settled = true; c.live = fish ? 'fishing' : 'farm'; c.settledAt = W.week; c.soil = 1; c.village = villageAt(W, c, c.tribe, fish ? 'haven' : 'vill'); c.daughterVillage = true; W.foundN = (W.foundN || 0) + 1;
       note(W, c, `Built the village of ${c.village}.`); logEvent(W, `🏘 The ${c.name} clan (${c.tribe.name}) raise the village of ${c.village}${c.parent != null && W.ents.get(c.parent) ? `, a daughter village of ${W.ents.get(c.parent).village || 'the ' + W.ents.get(c.parent).name + ' clan'}` : ''}.`, c, 'settle');
       const P = W.player, pc = c.parent != null ? W.ents.get(c.parent) : null; if (P && !P.over && P.head.alive && pc && P.head.clan === pc) houseNote(W, `The ${c.name} clan, sent from our village, raised ${c.village}.`);
     }
@@ -1542,7 +1542,7 @@
         if (c.live === 'fishing' || c.founding) continue; // a daughter clan raises its village in foundingMonth
         if (!c.settled && !c.toSettle) settleClan(W, c);
         if (c.toSettle && Math.hypot(c.tx - c.x, c.ty - c.y) < 1000) {
-          c.toSettle = false; c.settled = true; c.live = 'farm'; c.settledAt = c.settledAt || W.week; c.soil = 1; c.village = c.village || placeNameIn(W, c.tribe, 'vill');
+          c.toSettle = false; c.settled = true; c.live = 'farm'; c.settledAt = c.settledAt || W.week; c.soil = 1; c.village = villageAt(W, c, c.tribe, 'vill');
           note(W, c, `Built the village of ${c.village}.`);
         }
       }
@@ -1758,7 +1758,7 @@
         const b = foodBreakdown(W, c.x, c.y, c.tool, t.boats), aq = (b.fish + b.shellfish + b.seals) / Math.max(1, needsWeek(c));
         c.fishYears = aq > 1.3 ? c.fishYears + 0.25 : Math.max(0, c.fishYears - 0.125);
         if (c.fishYears >= 8 && !landBlocked(W, t, cellAt(c.x, c.y), null) && !landKeepOff(W, c, cellAt(c.x, c.y))) {
-          c.settled = true; c.live = 'fishing'; c.settledAt = W.week; c.village = placeNameIn(W, c.tribe, 'haven'); c.tx = c.x; c.ty = c.y;
+          c.settled = true; c.live = 'fishing'; c.settledAt = W.week; c.village = freshName(W, c.tribe, 'haven'); c.tx = c.x; c.ty = c.y;
           note(W, c, `Settled for good at ${c.village}, living from the sea.`);
           logEvent(W, `🏘 The ${c.name} clan (${t.name}) build a permanent fishing village: ${c.village}.`, c, 'settle');
         }
@@ -1809,7 +1809,7 @@
   // --- settlements: clusters of permanent villages, each a named place with its own memory ---
   function updateSettlements(W) {
     const vs = W.clans.filter(c => c.settled);
-    const seen = new Set(), out = [];
+    const seen = new Set(), out = [], groups = [];
     const GR = 9000, gk = (x, y) => Math.floor(x / GR) * 100003 + Math.floor(y / GR), grid = new Map(), vi = new Map(); // a grid of the villages, so that each is compared only with those beside it
     vs.forEach((o, i) => { vi.set(o, i); const k = gk(o.x, o.y), L = grid.get(k); if (L) L.push(o); else grid.set(k, [o]); });
     for (const c of vs) {
@@ -1822,16 +1822,33 @@
         for (const o of cand) if (!seen.has(o) && Math.hypot(o.x - g.x, o.y - g.y) < 9000) { seen.add(o); grp.push(o); }
       }
       grp.sort((a, b) => (a.settledAt || 0) - (b.settledAt || 0));
+      groups.push(grp);
+    }
+    // two groups that carry one name: one keeps the place's record, the other is called by a fresh name (the player's village is never the one)
+    const byName = new Map(), pc = W.player && W.player.head && W.player.head.clan;
+    for (const grp of groups) { const n = grp[0].village || grp[0].name, L = byName.get(n); if (L) L.push(grp); else byName.set(n, [grp]); }
+    for (const [n, L] of byName) {
+      if (L.length < 2) continue;
+      const prev = W.places.get(n), pset = new Set(prev && prev.clans || []);
+      const score = g => [g.includes(pc) ? 1 : 0, g.filter(o => pset.has(o)).length, -(g[0].settledAt || 0)];
+      let keep = L[0], ks = score(keep);
+      for (const g of L) { if (g === keep) continue; const gs = score(g); for (let i = 0; i < 3; i++) { if (gs[i] !== ks[i]) { if (gs[i] > ks[i]) { keep = g; ks = gs; } break; } } }
+      for (const g of L) if (g !== keep) {
+        const nn = freshName(W, g[0].tribe, g.some(o => o.live === 'farm') ? 'vill' : 'haven'); for (const o of g) o.village = nn;
+        g.renamedFrom = n; W.placeRenames = (W.placeRenames || 0) + 1;
+      }
+    }
+    for (const grp of groups) {
       const name = grp[0].village || grp[0].name;
       let rec = W.places.get(name);
-      if (!rec) { rec = ent(W, 'place', { name, kinds: new Set(), peak: 0 }); W.places.set(name, rec); note(W, rec, `${name} founded by the ${grp[0].name} clan of the ${grp[0].tribe.name}.`); }
+      if (!rec) { rec = ent(W, 'place', { name, kinds: new Set(), peak: 0 }); W.places.set(name, rec); if (grp.renamedFrom) note(W, rec, `Called ${name} now, to tell it from ${grp.renamedFrom}.`); else note(W, rec, `${name} founded by the ${grp[0].name} clan of the ${grp[0].tribe.name}.`); }
       const pop = grp.reduce((s, o) => s + o.people.length, 0);
       rec.clans = grp; rec.pop = pop; rec.x = grp.reduce((s, o) => s + o.x, 0) / grp.length; rec.y = grp.reduce((s, o) => s + o.y, 0) / grp.length;
       rec.tribe = grp[0].tribe; rec.type = grp.some(o => o.live === 'farm') ? (grp.some(o => o.live === 'fishing') ? 'mixed' : 'farm') : 'fishing';
       rec.metal = metalStage(rec.tribe) && grp.some(o => o.goods.copper + o.goods.metal + o.goods.bronze > 0) ? metalStage(rec.tribe) : 0;
       if (pop > rec.peak) { if (rec.peak < 100 && pop >= 100) note(W, rec, `${name} grew past a hundred souls.`); rec.peak = pop; }
       if (rec.metal && !rec.kinds.has('metal' + rec.metal)) { rec.kinds.add('metal' + rec.metal); note(W, rec, rec.metal === 2 ? 'Bronze-smiths began working here.' : 'Copper was first smelted here.'); }
-      rec.alive = true; rec.lastSeen = W.week; out.push(rec);
+      rec.alive = true; rec.lastSeen = W.week; if (!out.includes(rec)) out.push(rec);
     }
     const outSet = new Set(out);
     for (const [name, rec] of W.places) if (!outSet.has(rec) && rec.lastSeen !== W.week && rec.clans) {
@@ -2855,7 +2872,7 @@
     }
     const h = P.head, c = h.clan, t = c.tribe;
     ambitionCheck(W);
-    if (c.toSettle && !c.settled && Math.hypot(c.tx - c.x, c.ty - c.y) < 1500) { c.toSettle = false; c.settled = true; c.live = c.live || 'farm'; c.settledAt = c.settledAt || W.week; c.soil = 1; c.village = c.village || placeNameIn(W, t, 'vill'); credit(P.head, 'village', c.village);
+    if (c.toSettle && !c.settled && Math.hypot(c.tx - c.x, c.ty - c.y) < 1500) { c.toSettle = false; c.settled = true; c.live = c.live || 'farm'; c.settledAt = c.settledAt || W.week; c.soil = 1; c.village = villageAt(W, c, t, 'vill'); credit(P.head, 'village', c.village);
       note(W, c, `Built the village of ${c.village}.`); logEvent(W, `🏘 The ${c.name} clan (${t.name}) build the village of ${c.village}.`, c, 'settle'); houseNote(W, `The village of ${c.village} was built.`); notice(W, `The village of ${c.village} stands`, `The ${c.name} clan have reached the spot and raised their houses. ${c.village} is your home now: stores, fields, and room to grow.`); }
     if (W.week % 52 === 20 && !c.settled && !c.toSettle && !P.toldSettle) { const a = playerActions(W).find(x => x.id === 'settle'); if (a && a.ok) { P.toldSettle = true; houseNote(W, 'We could found a village now.'); notice(W, 'You could found a village', `${t.stage >= 2 ? 'Your people sow grain now' : 'These waters are rich enough to live from'}. A village stays in one place, stores food, has more children and can grow far larger than a camp. Open Act and choose "${a.label}" when you are ready.`); } }
     const close = q => q === h || q.father === h || q.mother === h || (q.father && (q.father.father === h || q.father.mother === h)) || (q.mother && (q.mother.father === h || q.mother.mother === h)) || (h.father && q.father === h.father) || (h.mother && q.mother === h.mother);
@@ -3685,7 +3702,7 @@
       if (t.stage >= 2) { c.live = 'farm'; if (place) settleClan(W, c, true); else if (!settleClan(W, c, false, true)) settleClan(W, c, true); if (place) { c.tx = place.x; c.ty = place.y; } c.holdUntil = 0; t.dom = Math.min(0.6, t.dom + 0.05);
         const km = Math.round(Math.hypot(c.tx - c.x, c.ty - c.y) / 1000); P.renown += 2; houseNote(W, `${h.name} led the ${c.name} clan to build a permanent village.`);
         return { title: km > 2 ? 'The clan sets out' : 'A village is founded', text: km > 2 ? `The ${c.name} clan pack up and walk ${km} km to the chosen ground. The village will stand as soon as they arrive, in a few weeks. After that they wander no more: stores that last the winter, many more children, and a place raiders know where to find.${landWarn(W, t, c.tx, c.ty) ? '<br><br>' + landWarn(W, t, c.tx, c.ty) : ''}` : `The ${c.name} clan begin to build where they stand. They will wander no more: stores that last the winter, many more children, and a place raiders know where to find.${landWarn(W, t, c.tx, c.ty) ? '<br><br>' + landWarn(W, t, c.tx, c.ty) : ''}` }; }
-      else { c.settled = true; c.live = 'fishing'; c.settledAt = W.week; c.village = placeNameIn(W, c.tribe, 'haven'); c.tx = place ? place.x : c.x; c.ty = place ? place.y : c.y; logEvent(W, `🏘 The ${c.name} clan (${t.name}) build a permanent fishing village: ${c.village}.`, c, 'settle'); }
+      else { c.settled = true; c.live = 'fishing'; c.settledAt = W.week; c.village = freshName(W, c.tribe, 'haven'); c.tx = place ? place.x : c.x; c.ty = place ? place.y : c.y; logEvent(W, `🏘 The ${c.name} clan (${t.name}) build a permanent fishing village: ${c.village}.`, c, 'settle'); }
       P.renown += 2; houseNote(W, `${h.name} led the ${c.name} clan to build a permanent village.`);
       return { title: 'A village is founded', text: `The ${c.name} clan will wander no more. Expect stores that last the winter, many more children — and a place raiders know where to find.${landWarn(W, t, c.tx, c.ty) ? '<br><br>' + landWarn(W, t, c.tx, c.ty) : ''}` };
     }
@@ -4491,6 +4508,13 @@
     for (let k = 0; k < 8; k++) { const nm = nameIn(K, W.rand, 2) + pick(K.ends.tribe, W.rand); if (!W.tribes.some(t => t.name === nm)) return nm; }
     return nameIn(K, W.rand, 3) + pick(K.ends.tribe, W.rand);
   }
+  const nameInUse = (W, n) => W.places.has(n) || W.clans.some(c => c.alive !== false && c.village === n);
+  const freshName = (W, t, kind) => { let n; for (let i = 0; i < 10; i++) { n = placeNameIn(W, t, kind); if (!nameInUse(W, n)) break; } return n; };
+  // a clan that carries a village name keeps it when no other settled clan holds that name (the village has moved as a whole) or one of them lies within the grouping distance (it is joining that village); otherwise the name is held by a village elsewhere and this is a new place
+  const villageAt = (W, c, t, kind) => {
+    const n = c.village; if (n) { let held = false; for (const o of W.clans) if (o !== c && o.alive !== false && o.settled && o.village === n) { if (Math.hypot(o.x - c.x, o.y - c.y) < 9000) return n; held = true; } if (!held) return n; }
+    return freshName(W, t, kind);
+  };
   const placeNameIn = (W, t, kind) => { const K = t && t.kult, e = K && pick(K.ends[kind], W.rand); return K ? nameIn(K, W.rand, e.length >= 4 && W.rand() < 0.6 ? 1 : 2) + e : makeName(W.rand, 2) + pick(kind === 'haven' ? HAVEN_END : VILLAGE_END, W.rand); };
   // how well two tribes understand each other, 0..1: shared tongue, kindred tongues, and what long contact has taught them
   function und(a, b) {
