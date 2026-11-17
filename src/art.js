@@ -182,6 +182,39 @@ const ART = (() => {
   mk('pine', 10, 11, g => { line(g, [5, 8.6, 5, 10.8], '#6a4a2a', 0.9); for (const [y, w] of [[6.6, 4.4], [4.2, 3.4], [1.9, 2.3]]) { fs(g, P(`M5 ${y - 3.4} L${5 + w} ${y + 2} L${5 - w} ${y + 2} Z`), '#74834a', INK, 0.6); fs(g, P(`M5 ${y - 3.4} L${5 + w} ${y + 2} L5.4 ${y + 2} Z`), 'rgba(58,70,34,0.45)'); } });
   mk('tree', 11, 11, g => { line(g, [5.5, 7.4, 5.5, 10.8], '#6a4a2a', 1); line(g, [5.5, 9, 4.2, 10.8], '#6a4a2a', 0.5);
     const cr = new Path2D(); cr.ellipse(5.5, 4.6, 4.9, 4.2, 0, 0, TAU); fs(g, cr, '#869556', INK, 0.7); ell(g, 6.9, 5.5, 3, 2.9, 0, 'rgba(62,76,36,0.4)'); ell(g, 4.2, 3.2, 1.8, 1.3, 0, 'rgba(236,232,180,0.4)'); });
+  // villages and camps in the map's own hand: small houses seen from the side, same ink and wash as the trees
+  const WALL = '#e6d8b4', THATCH = '#c4a46a', SHADE = 'rgba(120,88,50,0.45)', DOOR = '#3a2a18';
+  mk('vhouse', 12, 10, g => { fs(g, P('M2 5.2 L10 5.2 L9.8 9.2 L2.2 9.2 Z'), WALL, INK, 0.7); fs(g, P('M6.2 5.2 L10 5.2 L9.8 9.2 L6.2 9.2 Z'), SHADE);
+    fs(g, P('M5.2 6.8 L6.8 6.8 L6.8 9.2 L5.2 9.2 Z'), DOOR);
+    fs(g, P('M0.7 5.6 Q2.2 3.2 6 0.5 Q9.8 3.2 11.3 5.6 Z'), THATCH, INK, 0.7); fs(g, P('M6 0.5 Q9.8 3.2 11.3 5.6 L6.6 5.6 Z'), SHADE); for (const x of [3, 4.6, 7.4, 9]) line(g, [x, 5.2, 6 + (x - 6) * 0.35, 1.8], 'rgba(110,80,40,0.55)', 0.3); });
+  mk('vlong', 16, 9, g => { fs(g, P('M1.6 5.2 L14.4 5.2 L14.2 8.6 L1.8 8.6 Z'), WALL, INK, 0.7); fs(g, P('M8.6 5.2 L14.4 5.2 L14.2 8.6 L8.6 8.6 Z'), SHADE);
+    fs(g, P('M6.6 6.4 L8.2 6.4 L8.2 8.6 L6.6 8.6 Z'), DOOR);
+    fs(g, P('M0.4 5.6 L3.4 1.2 L12.6 1.2 L15.6 5.6 Z'), THATCH, INK, 0.7); fs(g, P('M8 3.4 L15.6 5.6 L12.6 1.2 L8 1.2 Z'), SHADE); for (const x of [3, 5.6, 8.2, 10.8, 13]) line(g, [x, 5.4, 3.4 + (x - 0.4) * 0.8, 1.6], 'rgba(110,80,40,0.5)', 0.3); });
+  mk('vhall', 20, 12, g => { fs(g, P('M2 6.8 L18 6.8 L17.8 11 L2.2 11 Z'), WALL, INK, 0.7); fs(g, P('M10.4 6.8 L18 6.8 L17.8 11 L10.4 11 Z'), SHADE);
+    for (const x of [5.2, 11.8]) fs(g, P(`M${x} 8 L${x + 1.8} 8 L${x + 1.8} 11 L${x} 11 Z`), DOOR);
+    fs(g, P('M0.5 7.2 L4.4 2 L15.6 2 L19.5 7.2 Z'), THATCH, INK, 0.7); fs(g, P('M10 7.2 L19.5 7.2 L15.6 2 L10 2 Z'), SHADE); for (const x of [3, 6, 9, 12, 15, 17.6]) line(g, [x, 6.9, 4.4 + (x - 0.5) * 0.58, 2.4], 'rgba(110,80,40,0.5)', 0.3);
+    line(g, [4.4, 2, 15.6, 2], INK, 0.7); for (const x of [4.4, 15.6]) { line(g, [x - 0.9, 0.2, x + 0.7, 2.2], INK, 0.5); line(g, [x + 0.9, 0.2, x - 0.7, 2.2], INK, 0.5); } });
+  mk('vhut', 17, 10, g => { fs(g, P('M1.4 5.4 L8.4 5.4 L8.2 9.2 L1.6 9.2 Z'), WALL, INK, 0.7); fs(g, P('M5 5.4 L8.4 5.4 L8.2 9.2 L5 9.2 Z'), SHADE); fs(g, P('M3.3 6.8 L4.7 6.8 L4.7 9.2 L3.3 9.2 Z'), DOOR);
+    fs(g, P('M0.4 5.8 Q1.6 3.4 4.9 0.8 Q8.2 3.4 9.4 5.8 Z'), THATCH, INK, 0.7); fs(g, P('M4.9 0.8 Q8.2 3.4 9.4 5.8 L5.5 5.8 Z'), SHADE);
+    // a drying rack: two posts, a crossbar, fish hung from it
+    line(g, [11, 3.2, 11, 9.4], '#5a3e22', 0.6); line(g, [16, 3.2, 16, 9.4], '#5a3e22', 0.6); line(g, [10.4, 3.8, 16.6, 3.8], '#5a3e22', 0.6);
+    for (const x of [12.2, 13.5, 14.8]) { line(g, [x, 3.8, x, 4.6], 'rgba(29,21,14,0.6)', 0.25); g.beginPath(); g.ellipse(x, 5.6, 0.45, 1.05, 0, 0, TAU); g.fillStyle = '#a9a595'; g.fill(); g.strokeStyle = 'rgba(29,21,14,0.55)'; g.lineWidth = 0.25; g.stroke(); } });
+  mk('vcanoe', 11, 4, g => { fs(g, P('M0.4 1.4 Q1.2 3.4 3 3.5 L8 3.5 Q9.8 3.4 10.6 1.4 Q8 2 5.5 2 Q3 2 0.4 1.4 Z'), '#a98458', INK, 0.6); line(g, [1.4, 1.5, 9.6, 1.5], 'rgba(58,40,24,0.55)', 0.3); });
+  for (const nm of ['vhut', 'vcanoe']) { const s = sprites[nm], c = document.createElement('canvas'); c.width = s.width; c.height = s.height; c._lw = s._lw; c._lh = s._lh; const g = c.getContext('2d'); g.translate(c.width, 0); g.scale(-1, 1); g.drawImage(s, 0, 0); sprites[nm + '_l'] = c; }
+  // the palisade (a band of sharpened posts, with a gate) and the ditch and bank (hatched like the hills), small, for the key
+  mk('vpal', 18, 10, g => { const pts = [], n = 8; fs(g, P('M0.6 9.4 L0.6 4.6 ' + Array.from({ length: n }, (_, i) => `L${0.6 + (i + 0.5) * 16.8 / n} 3.2 L${0.6 + (i + 1) * 16.8 / n} 4.6`).join(' ') + ' L17.4 9.4 Z'), '#b39060', INK, 0.8);
+    for (let i = 1; i < n; i++) line(g, [0.6 + i * 16.8 / n, 4.6, 0.6 + i * 16.8 / n, 9.2], 'rgba(29,21,14,0.35)', 0.3);
+    for (const x of [7, 11]) fs(g, P(`M${x - 0.9} 9.4 L${x - 0.9} 2.6 L${x} 1 L${x + 0.9} 2.6 L${x + 0.9} 9.4 Z`), '#c0a070', INK, 0.8); line(g, [7, 3, 11, 3], INK, 0.5); });
+  mk('vditch', 16, 8, g => { g.lineCap = 'butt'; const cx = 8, cy = 9.2, rx = 7.2, ry = 5.4, A0 = Math.PI * 1.14, A1 = Math.PI * 1.86;
+    g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, A0, A1); g.strokeStyle = 'rgba(96,72,44,0.55)'; g.lineWidth = 0.7; g.stroke();
+    g.beginPath(); g.ellipse(cx, cy, rx - 0.5, ry - 0.4, 0, A0, A1); g.strokeStyle = 'rgba(58,40,24,0.5)'; g.lineWidth = 0.3; g.stroke();
+    g.beginPath(); for (let i = 0; i < 5; i++) { const a = A0 + 0.1 + i * (A1 - A0 - 0.2) / 4, c = Math.cos(a), sn = Math.sin(a); g.moveTo(cx + c * (rx - 0.5), cy + sn * (ry - 0.4)); g.lineTo(cx + c * (rx + 1.2), cy + sn * (ry + 1.1)); } g.strokeStyle = 'rgba(92,66,36,0.75)'; g.lineWidth = 0.3; g.stroke(); });
+  mk('vtent', 13, 8, g => { fs(g, P('M0.8 7.4 Q0.9 2.4 6.5 1.3 Q12.1 2.4 12.2 7.4 Z'), '#cdb27a', INK, 0.7); fs(g, P('M6.5 1.3 Q12.1 2.4 12.2 7.4 L6.5 7.4 Z'), SHADE);
+    fs(g, P('M5.2 7.4 Q5.3 4.6 6.5 4.4 Q7.7 4.6 7.8 7.4 Z'), DOOR); line(g, [2.6, 6.2, 3.4, 3.2], 'rgba(110,80,40,0.5)', 0.3); line(g, [10, 5.8, 9.2, 3.2], 'rgba(110,80,40,0.4)', 0.3); line(g, [5.9, 0.1, 7.1, 1.5], INK, 0.5); line(g, [7.1, 0.1, 5.9, 1.5], INK, 0.5); });
+  mk('vhearth', 10, 8, g => { for (let k = 0; k < 8; k++) { const a = k / 8 * TAU, y = 5.6 + Math.sin(a) * 1.8; if (Math.sin(a) < 0) ell(g, 5 + Math.cos(a) * 3.6, y, 0.9, 0.7, 0, '#cfcbbd', INK, 0.45); }
+    fs(g, P('M5 3.2 Q6.6 4.8 6 6 Q5 6.6 4 6 Q3.4 4.8 5 3.2 Z'), '#c98a4a', INK, 0.35);
+    for (let k = 0; k < 8; k++) { const a = k / 8 * TAU, y = 5.6 + Math.sin(a) * 1.8; if (Math.sin(a) >= 0) ell(g, 5 + Math.cos(a) * 3.6, y, 0.9, 0.7, 0, '#cfcbbd', INK, 0.45); }
+    g.beginPath(); g.moveTo(5, 2.8); g.bezierCurveTo(4.2, 2, 5.8, 1.2, 5, 0.3); g.strokeStyle = 'rgba(29,21,14,0.5)'; g.lineWidth = 0.3; g.stroke(); });
   mk('bush', 8, 5, g => { const b = new Path2D(); b.ellipse(4, 3, 3.6, 2, 0, 0, TAU); fs(g, b, '#8d9a60', INK, 0.5); ell(g, 5, 3.5, 2, 1.2, 0, 'rgba(62,76,36,0.4)'); });
   const hatch = (g, pts) => { for (const [x, y, len] of pts) line(g, [x, y, x + len * 0.42, y + len], 'rgba(92,66,36,0.75)', 0.3); };
   mk('peak', 16, 8, g => { fs(g, P('M0.5 7.7 L5.6 1.5 L7.3 3 L9.5 0.5 L15.5 7.7 Z'), '#efe5c6'); fs(g, P('M9.5 0.5 L15.5 7.7 L10.6 7.7 L8.6 4.2 Z'), 'rgba(170,138,88,0.55)'); fs(g, P('M5.6 1.5 L7.3 3 L8 7.7 L6.2 7.7 Z'), 'rgba(170,138,88,0.4)');

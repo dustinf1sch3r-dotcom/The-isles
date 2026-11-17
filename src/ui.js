@@ -622,6 +622,7 @@
     }
     foodCache = { key, list }; return list;
   }
+  const VCACHE = new WeakMap(), VC = S => { let o = VCACHE.get(S); if (!o) VCACHE.set(S, o = {}); return o; }; // drawing caches kept beside each village, never in the village itself, so a save never carries them
   function draw() {
     const w = cv.clientWidth, h = cv.clientHeight, zoomed = cam.s * FORAGE_R;
     const key = `${cam.s},${cam.ox},${cam.oy},${baseVer},${detailVer},${layer},${w},${h},${W.roadsVer},${show.roads},${W.farmVer | 0}`;
@@ -654,6 +655,79 @@
       }
     }
     // the peoples' lands
+    // villages: where they lie and how big; the trodden ground, ditch and palisade go under the land tint, the houses over it
+    const seaDir = S => { // which way the nearest sea lies from a village (a unit vector) and how far, found once and kept
+      let wx = 0, wy = 0; for (const c of S.clans) { wx += c.x; wy += c.y; } wx /= S.clans.length; wy /= S.clans.length;
+      if (VC(S).sea && Math.hypot(VC(S).sea.x - wx, VC(S).sea.y - wy) < CELL) return VC(S).sea.d;
+      let best = 99, vx = 0, vy = 0; const found = [];
+      for (let q = 0; q < 16; q++) { const a = q / 16 * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a); for (let d = 0.5; d <= 8; d += 0.5) { const i = SIM.cellAt(wx + ca * d * CELL, wy + sa * d * CELL); if (i == null || !W.land[i]) { found.push([ca, sa, d]); if (d < best) best = d; break; } } }
+      for (const [ca, sa, d] of found) if (d <= best + 1) { vx += ca; vy += sa; }
+      const m = Math.hypot(vx, vy); VC(S).sea = { x: wx, y: wy, d: m > 0.01 ? [vx / m, vy / m] : null, near: best }; return VC(S).sea.d; };
+    const landRing = (S, dx, dy, rr, slot) => { // 24 land tests round a ring centred dx,dy px from the village point: true where the ground is dry. Kept while the ring's WORLD size (to about 5%) and place hold, so zooming does not redo it
+      const c0 = S.clans[0], wb = Math.round(Math.log(rr / cam.s) * 20), q = CELL * 1.5, ox = Math.round(dx / cam.s / q), oy = Math.round(dy / cam.s / q), key = wb + ':' + ox + ':' + oy + ':' + Math.round(c0.x / 1000) + ':' + Math.round(c0.y / 1000) + ':' + S.clans.length, sl = '_lr' + slot; if (VC(S)[sl] && VC(S)[sl].key === key) return VC(S)[sl].v;
+      let wx = 0, wy = 0; for (const c of S.clans) { wx += c.x; wy += c.y; } wx = wx / S.clans.length + ox * q; wy = wy / S.clans.length + oy * q;
+      const rw = Math.exp(wb / 20), v = []; for (let k = 0; k < 24; k++) { const a = (k + 0.5) / 24 * Math.PI * 2, i = SIM.cellAt(wx + Math.cos(a) * rw, wy + Math.sin(a) * rw * 0.7); v.push(i != null && !!W.land[i]); }
+      VC(S)[sl] = { key, v }; return v; };
+    const vl = [], vpoly = (sx, sy, R2, hsh, t) => { if (!t) { t = ctx; ctx.beginPath(); } for (let k = 0; k < 9; k++) { const a = k / 9 * Math.PI * 2, rr = R2 * (0.82 + 0.3 * (((hsh >> (k * 3)) & 7) / 7)); k ? t.lineTo(sx + Math.cos(a) * rr, sy + Math.sin(a) * rr * 0.8) : t.moveTo(sx + Math.cos(a) * rr, sy + Math.sin(a) * rr * 0.8); } t.closePath(); };
+    // where the houses of a village stand (one layout rule, small hash jitter), and the size of the ring of posts and the ditch outside them
+    const vlayout = (S, sx, sy, R2, hsh, hall, pal, ditch, zoomed) => {
+      const sp = ART.sprites, fishing = S.type === 'fishing', mixed = S.type === 'mixed', TAU = Math.PI * 2;
+      const jit = i => (((Math.imul(hsh ^ (i * 40503), 2654435761) >>> 9) & 255) / 255) - 0.5;
+      const kz = zoomed < 16 ? 0.55 + 0.45 * zoomed / 16 : 1 + (zoomed - 16) / 62, k = clamp(Math.min(kz, Math.max(0.7, R2 / 10)) * (R2 < 14 ? Math.max(0.75, R2 / 14) : 1), 0.7, 1.6);
+      const sea = fishing || mixed ? seaDir(S) : null, sa = sea ? Math.atan2(sea[1], sea[0]) : 0, flip = sea && sea[0] < 0 ? '_l' : '';
+      const houseK = i => jit(i + 20) > -0.12 ? 'vhouse' : 'vlong';
+      const cap = R2 < 10 ? 3 : zoomed < 20 ? 4 : zoomed < 28 ? 5 : 7, nh = Math.min(clamp(Math.round(S.pop / 18), 3, 7), cap), hp = [], lane = (hsh & 1) && !hall && !sea, hallW = hall ? sp.vhall._lw * k * 1.25 : 0, wk = 12 * k;
+      const nf = fishing ? nh : mixed ? Math.ceil(nh / 2) : 0; // huts on the shore side; the rest are houses
+      if (lane) { const ang = ((hsh >> 4) & 7) / 7 * 0.5 - 0.25, per = Math.ceil(nh / 2), step = Math.max(wk * 1.05, Math.min(R2 * 1.5 / per, wk * 1.6)), gapy = Math.max(wk * 0.5, R2 * 0.3);
+        for (let i = 0; i < nh; i++) { const row = i % 2 ? 1 : -1, j = (i >> 1) - (per - 1) / 2, u = j * step + jit(i) * 2 * k, v = row * gapy + jit(i + 9) * 2 * k; hp.push([sx + u * Math.cos(ang) - v * Math.sin(ang), sy + (u * Math.sin(ang) + v * Math.cos(ang)) * 0.85, houseK(i)]); } }
+      else { const rr = Math.max(R2 * 0.62, wk * 0.5, hallW * 0.5 + wk * 0.45), a0 = (hsh & 15) * 0.4;
+        for (let i = 0; i < nh; i++) {
+          let a = a0 + i / nh * TAU + jit(i) * 0.25, nm = houseK(i);
+          if (sea && i < nf) { const spread = Math.min(2.4, 0.55 * nf + 0.5); a = sa + (nf > 1 ? (i / (nf - 1) - 0.5) * spread : 0) + jit(i) * 0.15; nm = 'vhut' + flip; }
+          else if (sea) { const m = nh - nf; a = sa + Math.PI + (m > 1 ? ((i - nf) / (m - 1) - 0.5) * 1.8 : 0) + jit(i) * 0.15; }
+          const arc = sea && i < nf ? Math.min(Math.max(rr, nf * wk * 0.85 / Math.min(2.4, 0.55 * nf + 0.5)), R2 * 0.85) : rr, r = Math.min(arc * (1 + jit(i + 9) * 0.22), sea && i < nf ? R2 * 0.85 : R2 * 1.1); hp.push([sx + Math.cos(a) * r, sy + Math.sin(a) * r * 0.7, nm]); } }
+      if (hall) hp.push([sx, sy - wk * 0.1, 'vhall']);
+      let cx = 0, cy = 0, x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; for (const [hx, hy] of hp) { cx += hx; cy += hy; x0 = Math.min(x0, hx); x1 = Math.max(x1, hx); y0 = Math.min(y0, hy); y1 = Math.max(y1, hy); } cx = (cx / hp.length * 0.75 + (x0 + x1) / 2 * 0.25); cy = (cy / hp.length * 0.75 + (y0 + y1) / 2 * 0.25); { const sh = Math.hypot(cx - sx, cy - sy), mx = R2 * 0.35; if (sh > mx) { cx = sx + (cx - sx) * mx / sh; cy = sy + (cy - sy) * mx / sh; } } // the drawing centre: mostly the mean of the houses, a little the middle of their spread (so a lopsided huddle is not given a ring that is empty on one side), a little off the village point at most
+      let ext = 0, bot = cy + R2 * 0.8 * 0.7; for (const [hx, hy, nm] of hp) { const s = sp[nm], kk = nm === 'vhall' ? k * 1.25 : k, w = s._lw * kk, h = s._lh * kk, fy = hy + h * 0.42; ext = Math.max(ext, Math.hypot(hx - cx, (fy - cy) / 0.7) + w * 0.3); bot = Math.max(bot, hy + h * 0.5); }
+      // the shore: a canoe drawn only where the water is at hand (never a canoe left on dry land)
+      if (sea && VC(S).sea && VC(S).sea.near * CELL * cam.s < R2 * 1.7 + 6) { const r = (VC(S).sea.near - 0.35) * CELL * cam.s; if (r > R2 * 0.3) { const cy = sy + sea[1] * r; hp.push([sx + sea[0] * r, cy, 'vcanoe' + flip]); bot = Math.max(bot, cy + 3); } }
+      const V = { k, hp, jit, sea, bot, cx, cy, ph: 0, rp: Math.min(Math.max(R2 * 0.75, ext * 1.12 + 1.5), R2 * 1.4) };
+      if (pal) { // the ring of posts: tips every 2.3 k px, a gate on the front (or on the shore side when the shore lies in front)
+        const rp = V.rp, n = clamp(Math.round(TAU * rp * 0.88 / (2.6 * k)), 18, 150), da = TAU / n;
+        V.ph = clamp(5 * k, 2.8, 9); V.n = n; V.da = da; V.ga = sea && sea[1] > 0.3 ? clamp(sa < 0 ? sa + TAU : sa, Math.PI * 0.25, Math.PI * 0.75) : Math.PI / 2; V.gp = Math.max(2, Math.round(9 * k / (rp * da))); { V.gp = Math.min(V.gp, Math.max(1, Math.floor(Math.PI * 0.3 / da) - 2)); const ex = (V.gp + 1.4) * da; V.ga = clamp(V.ga, ex + 0.05, Math.PI - ex - 0.05); }
+        bot = Math.max(bot, cy + rp * 0.7 + 0.5); }
+      if (ditch) { const dw = clamp(2.2 + 0.9 * k, 2.5, 3.5); V.dw = dw; V.rd = V.rp + (3.4 + dw / 2 + 1.2 * k) / 0.7; if (!V.ga) V.ga = Math.PI / 2; bot = Math.max(bot, cy + V.rd * 0.7 + dw / 2); }
+      V.bot = bot; if (V.rd) V.m0 = landRing(S, cx - sx, cy - sy, V.rd, 0); if (V.n) V.m1 = landRing(S, cx - sx, cy - sy, V.rp * 0.72, 1); return V; };
+    // the layout is worked out once for a village at the origin and kept while its size (to half a px, and a quarter of a zoom step) holds; a pan only moves it
+    const vplace = (S, sx, sy, R2, hsh, hall, pal, ditch) => {
+      const rq = Math.round(R2 * 2) / 2, zq = Math.round(zoomed * 4) / 4, c0 = S.clans[0], f = (hall ? 1 : 0) + (pal ? 2 : 0) + (ditch ? 4 : 0) + (S.metal || 0) * 8, cb = Math.round(Math.log(cam.s) * 16), px = Math.round(c0.x / 500), py = Math.round(c0.y / 500);
+      let L = VC(S).vl; if (!L || L.rq !== rq || L.zq !== zq || L.cb !== cb || L.hsh !== hsh || L.pop !== S.pop || L.f !== f || L.type !== S.type || L.nc !== S.clans.length || L.px !== px || L.py !== py) { L = vlayout(S, 0, 0, rq, hsh, hall, pal, ditch, zq); L.rq = rq; L.zq = zq; L.cb = cb; L.hsh = hsh; L.pop = S.pop; L.f = f; L.type = S.type; L.nc = S.clans.length; L.px = px; L.py = py; VC(S).vl = L; }
+      const V = Object.assign({}, L); V.cx = sx + L.cx; V.cy = sy + L.cy; V.bot = sy + L.bot; V.hp = L.hp.map(h => [sx + h[0], sy + h[1], h[2]]); return V; };
+    // the ditch and its bank: ground, so drawn in plan, in the hatching the map gives its hills, a causeway left before the gate
+    const drawDitch = (S, sx, sy, V, M) => { // adds this village's ditch, bank and hatching to the paths of its width (all the villages are stroked together)
+      const { rd, dw, ga } = V, TAU = Math.PI * 2, rb = rd - dw / 2, mask = V.m0, cw = (V.gp ? (V.gp + 2) * V.da : 0.35), c0 = ga - cw, c1 = ga + cw, st = TAU / 24, ivs = [], key = Math.round(dw * 4); let D = M.get(key); if (!D) M.set(key, D = { dw: key / 4, band: new Path2D(), bank: new Path2D(), hatch: new Path2D() });
+      for (let q = 0; q < 24; q++) { if (!mask[q]) continue; const a0 = q * st, a1 = a0 + st; if (a1 <= c0 || a0 >= c1) ivs.push([a0, a1]); else { if (a0 < c0) ivs.push([a0, c0]); if (a1 > c1) ivs.push([c1, a1]); } }
+      for (const [a, b] of ivs) { D.band.moveTo(sx + Math.cos(a) * rd, sy + Math.sin(a) * rd * 0.7); D.band.ellipse(sx, sy, rd, rd * 0.7, 0, a, b); }
+      for (const [a, b] of ivs) { D.bank.moveTo(sx + Math.cos(a) * rb, sy + Math.sin(a) * (rd * 0.7 - dw / 2)); D.bank.ellipse(sx, sy, rb, rd * 0.7 - dw / 2, 0, a, b); }
+      const rx = rb, ry = rd * 0.7 - dw / 2, m = clamp(Math.round(5.34 * rd / 3.2), 12, 160);
+      for (let j = 0; j < m; j++) { const a = (j + 0.5) / m * TAU; if (!mask[Math.floor(a / st) % 24] || (a > c0 && a < c1)) continue; const ca = Math.cos(a), sa = Math.sin(a), bx = sx + ca * rx, by = sy + sa * ry, nx = ca / rx, ny = sa / ry, nl = Math.hypot(nx, ny), L = clamp(dw * 1.0, 2.4, 3.4) * (j & 1 ? 0.8 : 1); D.hatch.moveTo(bx, by); D.hatch.lineTo(bx + nx / nl * L, by + ny / nl * L); } };
+    const ditchFlush = M => { ctx.lineCap = 'butt'; for (const D of M.values()) { ctx.strokeStyle = 'rgba(96,72,44,0.58)'; ctx.lineWidth = D.dw; ctx.stroke(D.band); ctx.strokeStyle = 'rgba(58,40,24,0.75)'; ctx.lineWidth = 0.7; ctx.stroke(D.bank); ctx.strokeStyle = 'rgba(92,66,36,0.75)'; ctx.lineWidth = 0.5; ctx.stroke(D.hatch); } ctx.lineCap = 'round'; };
+    { const vpos = [], vseen = new Set(); for (const S of W.settlements || []) { if (!S.clans || !S.clans.length || vseen.has(S)) continue; vseen.add(S); let sx = 0, sy = 0; for (const c of S.clans) { const p = cs(c); sx += p[0]; sy += p[1]; } vpos.push([S, sx / S.clans.length, sy / S.clans.length]); }
+      for (const [S] of vpos) S._sx = null;
+      const vsorted = vpos.slice().sort((a, b) => a[1] - b[1]); vsorted.forEach((e, q) => { e.si = q; }); const tint = new Path2D(), edgeP = new Path2D(), edgeO = new Path2D(), dM = new Map();
+      for (let vi = 0; vi < vpos.length; vi++) { const [S, sx, sy] = vpos[vi];
+        if (!on(sx, sy, 60) || (!show.people && sel !== S)) continue;
+        if (far && sel !== S && hovE !== S && !(pc && S.clans.includes(pc)) && !(st && S.tribe === st)) continue; // far out, a village is part of its people's one mark
+        let gap = 1e9; if (!far) { const i = vpos[vi].si; for (let j = i - 1; j >= 0 && sx - vsorted[j][1] < gap; j--) { const d = Math.hypot(vsorted[j][1] - sx, vsorted[j][2] - sy); if (d < gap) gap = d; } for (let j = i + 1; j < vsorted.length && vsorted[j][1] - sx < gap; j++) { const d = Math.hypot(vsorted[j][1] - sx, vsorted[j][2] - sy); if (d < gap) gap = d; } } // the nearest other village, looked for along the sorted row
+        const R2 = Math.max(6, Math.min(clamp(Math.sqrt(S.pop) * clamp(zoomed / 6, 0.9, 3.2), 11, 42), gap / 2 / 1.25 - 1)); S._sx = sx; S._sy = sy; S._r = R2;
+        let hsh = VC(S).hsh; if (hsh === undefined || VC(S).hsn !== S.name) { hsh = 0; for (const ch of S.name) hsh = (hsh * 31 + ch.charCodeAt(0)) | 0; VC(S).hsh = hsh; VC(S).hsn = S.name; }
+        let wpal = false, wditch = false, whall = false; for (const c of S.clans) { const w = c.works; if (w) { if (w.pal) wpal = true; if (w.ditch) wditch = true; if (w.hall) whall = true; } } S._hall = whall;
+        const V = vplace(S, sx, sy, R2, hsh, S._hall, wpal, wditch); vl.push([S, sx, sy, R2, hsh, V]);
+        vpoly(V.cx, V.cy, R2, hsh, tint); // trodden earth
+        const ep = pc && S.clans.includes(pc) ? edgeP : edgeO; ep.moveTo(V.cx + R2 * 1.05, V.cy); ep.ellipse(V.cx, V.cy, R2 * 1.05, R2 * 1.05 * 0.8, 0, 0, Math.PI * 2); // the edge of the village
+        if (V.rd) drawDitch(S, V.cx, V.cy, V, dM);
+      }
+      ctx.fillStyle = zoomed < 28 ? 'rgba(150,118,66,0.38)' : 'rgba(150,118,66,0.3)'; ctx.fill(tint); ctx.lineWidth = 0.6; ctx.strokeStyle = 'rgba(29,21,14,0.2)'; ctx.stroke(edgeO); ctx.strokeStyle = 'rgba(29,21,14,0.4)'; ctx.stroke(edgeP); ditchFlush(dM); }
     if (show.people) drawTerritories(st, scf);
     if (st) { // how the selected tribe stands with the others
       const [cx, cy] = anchor(st);
@@ -675,36 +749,59 @@
       for (let k = 1; k < big.length; k++) { const a = big[k]; for (let it = 0; it < 4; it++) { let moved = false; for (let j = 0; j < k; j++) { const o = big[j], dx = a.px - o.px, dy = a.py - o.py, d = Math.hypot(dx, dy) || 0.01, want = (a.M + o.M) * 0.62; if (d < want) { a.px += dx / d * (want - d); a.py += dy / d * (want - d) * 0.8; moved = true; } } if (!moved) break; } }
       for (const a of list) { const x = a.px, y = a.py; if (!on(x, y, 30)) continue; const t = a.t, M = a.M, hov = hovE === t, col = `hsla(${show.kult && t.kult ? t.kult.hue : t.hue},40%,52%,1)`;
         if (hov) { ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.beginPath(); ctx.arc(x, y, M * 0.9 + 4, 0, Math.PI * 2); ctx.fill(); }
-        if (a.v * 2 > a.n) { ctx.beginPath(); ctx.ellipse(x, y + M * 0.08, M * 0.6, M * 0.5, 0, 0, Math.PI * 2); ctx.fillStyle = 'rgba(150,118,66,0.28)'; ctx.fill(); ctx.strokeStyle = hov ? '#fff' : `hsla(${t.hue},50%,34%,0.9)`; ctx.lineWidth = hov ? 2.4 : 1; ctx.stroke();
-          const hs = M * 0.4; ART.hut(ctx, x - hs * 0.9, y + hs * 0.28, hs, ''); ART.hut(ctx, x + hs * 0.9, y + hs * 0.3, hs, ''); ART.hut(ctx, x, y - hs * 0.22, hs * 1.1, ''); }
-        else { const n = a.n > 120 ? 3 : a.n > 45 ? 2 : 1; if (n > 1) ART.tent(ctx, x - M * 0.6, y + M * 0.14, M * 0.76, col); if (n > 2) ART.tent(ctx, x + M * 0.6, y + M * 0.18, M * 0.7, col); ART.tent(ctx, x, y, M, col); }
+        ctx.strokeStyle = 'rgba(120,80,40,0.55)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.ellipse(x, y + M * 0.1, M * 0.78, M * 0.5, 0, 0, Math.PI * 2); ctx.stroke();
+        if (a.v * 2 > a.n) { ctx.beginPath(); ctx.ellipse(x, y + M * 0.1, M * 0.78, M * 0.5, 0, 0, Math.PI * 2); ctx.fillStyle = 'rgba(150,118,66,0.3)'; ctx.fill();
+          const hv = ART.sprites.vhouse, hk = M / 18, hw = hv._lw * hk + 2.4; ART.stamp(ctx, hv, x, y - M * 0.12, hk * 0.95); ART.stamp(ctx, hv, x - hw * 0.5, y + M * 0.14, hk); ART.stamp(ctx, hv, x + hw * 0.5, y + M * 0.14, hk); }
+        else { const n = a.n > 120 ? 3 : a.n > 45 ? 2 : 1, tk = M / 17, tc = ART.sprites.vtent, tw = tc._lw * tk + 2.4; if (n > 1) ART.stamp(ctx, tc, x - tw * 0.55, y + M * 0.05, tk * 0.86); if (n > 2) ART.stamp(ctx, tc, x + tw * 0.55, y + M * 0.05, tk * 0.8); ART.stamp(ctx, tc, x, y - (n > 1 ? M * 0.1 : -M * 0.08), tk); }
         a.mk = [x, y, M]; tmk.set(t, a); marks.push([x, y, M * 0.8, M * 0.6]); seenAdd(t, x, y, M * 0.8); } }
-    // villages: permanent places
-    const vpos = []; for (const S of W.settlements || []) { if (!S.clans || !S.clans.length) continue; let sx = 0, sy = 0; for (const c of S.clans) { const p = cs(c); sx += p[0]; sy += p[1]; } vpos.push([S, sx / S.clans.length, sy / S.clans.length]); }
-    for (const [S, sx, sy] of vpos) S._sx = null;
-    for (const [S, sx, sy] of vpos) {
-      if (!on(sx, sy, 60) || (!show.people && sel !== S)) continue;
-      if (far && sel !== S && hovE !== S && !(pc && S.clans.includes(pc)) && !(st && S.tribe === st)) continue; // far out, a village is part of its people's one mark
-      let gap = 1e9; if (!far) for (const [O, ox, oy] of vpos) if (O !== S) { const d = Math.hypot(ox - sx, oy - sy); if (d < gap) gap = d; }
-      const R2 = Math.max(6, Math.min(clamp(Math.sqrt(S.pop) * clamp(zoomed / 6, 0.9, 3.2), 11, 42), gap / 2 / 1.25 - 1)); S._sx = sx; S._sy = sy; S._r = R2;
-      let hsh = 0; for (const ch of S.name) hsh = (hsh * 31 + ch.charCodeAt(0)) | 0;
-      const fishing = S.type === 'fishing', hov = hover && hover.e === S;
-      ctx.beginPath(); for (let k = 0; k < 9; k++) { const a = k / 9 * Math.PI * 2, rr = R2 * (0.82 + 0.3 * (((hsh >> (k * 3)) & 7) / 7)); k ? ctx.lineTo(sx + Math.cos(a) * rr, sy + Math.sin(a) * rr * 0.8) : ctx.moveTo(sx + Math.cos(a) * rr, sy + Math.sin(a) * rr * 0.8); } ctx.closePath();
-      ctx.fillStyle = 'rgba(150,118,66,0.28)'; ctx.fill(); // trodden earth
-      { const keen = sel === S || hov || !!(pc && S.clans.includes(pc)) || show.every; // far out the rings of many villages tangle: none there, and half as thick in the middle view; the house's village and the chosen one keep theirs
-        if (keen || zoomed >= LOD_FAR) { ctx.lineWidth = sel === S || hov ? 2.6 : keen || zoomed >= LOD_MID ? 1.5 : 0.75; ctx.strokeStyle = sel === S || hov ? '#fff' : `hsla(${show.kult && S.tribe.kult ? S.tribe.kult.hue : S.tribe.hue},50%,34%,0.9)`; ctx.stroke(); } }
-      { const wk = k => S.clans.some(c => c.works && c.works[k]);
-        if (wk('ditch')) { ctx.beginPath(); ctx.ellipse(sx, sy, R2 * 1.42, R2 * 1.42 * 0.8, 0, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(20,14,8,0.7)'; ctx.lineWidth = 3.4; ctx.stroke(); ctx.strokeStyle = 'rgba(150,128,86,0.85)'; ctx.lineWidth = 1.1; ctx.stroke(); }
-        if (wk('pal')) { const rp = R2 * 1.2, ns = Math.max(14, Math.round(rp * 1.5)), ph = clamp(R2 * 0.24, 3.2, 7);
-          ctx.lineCap = 'butt'; for (let k = 0; k < ns; k++) { const a = k / ns * Math.PI * 2; if (Math.abs(a - Math.PI * 0.5) < 0.2) continue; const px = sx + Math.cos(a) * rp, py = sy + Math.sin(a) * rp * 0.8;
-            ctx.beginPath(); ctx.moveTo(px, py + ph * 0.4); ctx.lineTo(px, py - ph); ctx.strokeStyle = 'rgba(29,21,14,0.8)'; ctx.lineWidth = 2.4; ctx.stroke(); ctx.strokeStyle = k % 2 ? '#a58556' : '#927548'; ctx.lineWidth = 1.4; ctx.stroke(); } }
-        S._hall = wk('hall'); }
-      const nh = R2 < 9 ? 1 : clamp(Math.round(S.pop / 14), 1, 8), hs = clamp(R2 / 2.1, 5, 15), hp = [];
-      for (let k = 0; k < nh; k++) { const a = k / nh * Math.PI * 2 + (hsh & 15), rr = nh === 1 ? 0 : R2 * 0.5; hp.push([sx + Math.cos(a) * rr, sy + Math.sin(a) * rr * 0.75]); }
-      hp.sort((a, b) => a[1] - b[1]); for (const [hx, hy] of hp) ART.hut(ctx, hx, hy, hs, fishing ? 'fish' : ''); if (S._hall) ART.hut(ctx, sx, sy + hs * 0.1, hs * 1.3, 'hall');
-      if (S.metal) ART.put(ctx, S.metal === 2 ? 'bronze' : 'metal', sx + R2 * 0.95, sy - R2 * 0.75, 14);
-      if (SIM.knows(W, S.clans[0].x, S.clans[0].y)) { vills.push([S, sx, sy, R2]); seenAdd(S.tribe, sx, sy, R2 * 1.5); }
-    }
+    // villages: permanent places, a huddle of little houses in the map's own ink and wash; the posts stand round them
+    const palAcc = () => new Map(), palBk = (M, k, back) => { const key = Math.round(k * 20); let P = M.get(key); if (!P) { const kk = key / 20, sa = clamp((kk - 1) / 0.4, 0, 1) * (back ? 0.2 : 0.35); M.set(key, P = { k: kk, fill: new Path2D(), tips: new Path2D(), foot: new Path2D(), seam: sa > 0.02 ? new Path2D() : null, sa, gate: new Path2D(), lint: new Path2D() }); } return P; }; // the posts of every village are gathered by house size and drawn together, one fill and a few strokes for all of them
+    const palBand = (sx, sy, V, A, B, back, P) => { // a run of posts between angles A and B (A < B), added to the paths P: bottom edge on the ground ellipse, top edge raised, a pointed tip for each post
+      const { rp, ph, k, da, ga } = V, ry = rp * 0.7, d = Math.min(ph * 0.4, 1.7 * k), ev = [[A, 0]]; // 0 = end or valley, 1 = tip
+      for (let j = Math.ceil((A - ga) / da - 1e-6); ga + j * da < B - 1e-6; j++) { const v = ga + j * da, t = v + da / 2; if (v > A + 1e-6) ev.push([v, 0]); if (t > A + 1e-6 && t < B - 1e-6) ev.push([t, 1]); }
+      ev.push([B, 0]); if (ev.length < 3) return;
+      const f = P.fill, t = P.tips, n = ev.length, X = new Array(n), Y = new Array(n), YT = new Array(n);
+      for (let i = 0; i < n; i++) { X[i] = sx + Math.cos(ev[i][0]) * rp; Y[i] = sy + Math.sin(ev[i][0]) * ry; YT[i] = Y[i] - ph + (ev[i][1] ? 0 : d); }
+      f.moveTo(X[0], Y[0]); for (let i = 1; i < n; i++) f.lineTo(X[i], Y[i]); for (let i = n - 1; i >= 0; i--) f.lineTo(X[i], YT[i]); // (a fill closes its own paths)
+      t.moveTo(X[0], Y[0]); for (let i = 0; i < n; i++) t.lineTo(X[i], YT[i]); t.lineTo(X[n - 1], Y[n - 1]); // the tips and the ends, in full ink
+      if (!back) { P.foot.moveTo(X[0], Y[0]); P.foot.ellipse(sx, sy, rp, ry, 0, A, B); } // the foot, lighter far out so the ring does not close into a black hoop
+      if (P.seam) for (let i = 0; i < n; i++) if (ev[i][1]) { P.seam.moveTo(X[i], Y[i]); P.seam.lineTo(X[i], YT[i]); } };
+    const palFlush = (M, back) => {
+      for (const P of M.values()) { const k = P.k, lw = clamp(0.62 * Math.max(0.9, k), 0.6, 0.7);
+        ctx.fillStyle = back ? 'rgba(150,118,80,0.45)' : '#b39060'; ctx.fill(P.fill); ctx.lineJoin = 'miter'; ctx.miterLimit = 3; ctx.strokeStyle = back ? 'rgba(29,21,14,0.5)' : '#1d150e'; ctx.lineWidth = back ? 0.5 : lw; ctx.stroke(P.tips);
+        if (!back) { const ba = 0.3 + 0.6 * clamp((k - 0.7) / 0.5, 0, 1); ctx.strokeStyle = `rgba(29,21,14,${ba})`; ctx.lineWidth = lw * 0.8; ctx.stroke(P.foot); }
+        if (P.seam) { ctx.strokeStyle = `rgba(29,21,14,${P.sa})`; ctx.lineWidth = 0.4; ctx.stroke(P.seam); }
+        if (back) { const la = clamp((k - 0.75) / 0.25, 0, 1); if (la > 0.02) { ctx.strokeStyle = `rgba(29,21,14,${0.95 * la})`; ctx.lineWidth = 1.1; ctx.lineCap = 'butt'; ctx.stroke(P.lint); ctx.lineCap = 'round'; } }
+        else { ctx.fillStyle = '#c0a070'; ctx.fill(P.gate); ctx.strokeStyle = '#1d150e'; ctx.lineWidth = Math.min(1.2, 0.65 * Math.max(1, k)); ctx.stroke(P.gate); }
+        ctx.lineJoin = 'round'; } };
+    const palGate = (sx, sy, V, P) => { // two posts either side of the gap, a third taller
+      const { rp, ph, k, da, ga, gp } = V, ry = rp * 0.7, hh = ph * 1.5, w = Math.max(1.5, 2 * k), g = P.gate;
+      for (const sg of [-1, 1]) for (const o of [0.35, 1.35]) { const a = ga + sg * (gp + o) * da, x = sx + Math.cos(a) * rp, y = sy + Math.sin(a) * ry; g.moveTo(x - w / 2, y); g.lineTo(x - w / 2, y - hh + w * 0.8); g.lineTo(x, y - hh); g.lineTo(x + w / 2, y - hh + w * 0.8); g.lineTo(x + w / 2, y); g.closePath(); } };
+    const palLintel = (sx, sy, V, P) => { // the beam across the gate: drawn before the houses, so their roofs stand over it
+      const { rp, ph, da, ga, gp } = V, ry = rp * 0.7, hh = ph * 1.5, pts = [];
+      for (const sg of [-1, 1]) { const a = ga + sg * (gp + 0.35) * da; pts.push([sx + Math.cos(a) * rp, sy + Math.sin(a) * ry - hh * 0.86]); }
+      P.lint.moveTo(pts[0][0], pts[0][1]); P.lint.lineTo(pts[1][0], pts[1][1]); };
+    const palEnd = (sx, sy, V, a, back) => { // a taller post at each end of a stretch left open to the sea, so the opening reads as a gate
+      const { rp, ph, k } = V, ry = rp * 0.7, hh = ph * 1.4, w = Math.max(1.5, 1.8 * k), x = sx + Math.cos(a) * rp, y = sy + Math.sin(a) * ry;
+      ctx.beginPath(); ctx.moveTo(x - w / 2, y); ctx.lineTo(x - w / 2, y - hh + w * 0.8); ctx.lineTo(x, y - hh); ctx.lineTo(x + w / 2, y - hh + w * 0.8); ctx.lineTo(x + w / 2, y); ctx.closePath(); ctx.fillStyle = back ? 'rgba(160,128,90,0.55)' : '#c0a070'; ctx.fill(); ctx.strokeStyle = back ? 'rgba(29,21,14,0.5)' : '#1d150e'; ctx.lineWidth = back ? 0.5 : 0.65; ctx.lineJoin = 'miter'; ctx.stroke(); ctx.lineJoin = 'round'; };
+    const palRuns = (S, sx, sy, V, A, B, back, P, ends) => { // the posts between A and B, but not where the ring stands in the sea
+      const mask = V.m1, st = Math.PI * 2 / 24; let run = null, afterSea = false;
+      for (let q = Math.floor(A / st); q * st < B; q++) { const a0 = Math.max(A, q * st), a1 = Math.min(B, (q + 1) * st), ok = mask[((q % 24) + 24) % 24];
+        if (ok) { if (run) run[1] = a1; else { run = [a0, a1]; if (afterSea) ends.push([sx, sy, V, a0, back]); } afterSea = false; } else { if (run) { palBand(sx, sy, V, run[0], run[1], back, P); if (a0 > run[1] - 1e-9) ends.push([sx, sy, V, run[1], back]); run = null; } afterSea = true; } }
+      if (run) palBand(sx, sy, V, run[0], run[1], back, P); };
+    { const TAU = Math.PI * 2, sp = ART.sprites, back = palAcc(), front = palAcc(), ends = []; // three passes: the backs of all the rings, then the houses, then the fronts
+      for (const [S, sx, sy, R2, hsh, V] of vl) {
+        if (sel === S || (hover && hover.e === S)) { vpoly(V.cx, V.cy, R2, hsh); ctx.strokeStyle = 'rgba(29,21,14,0.35)'; ctx.lineWidth = 3.4; ctx.stroke(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.2; ctx.stroke(); }
+        if (V.n) { const P = palBk(back, V.k, true); palRuns(S, V.cx, V.cy, V, Math.PI, TAU, true, P, ends); if (V.m1[Math.floor(V.ga / (TAU / 24))]) palLintel(V.cx, V.cy, V, P); } }
+      palFlush(back, true); for (const e of ends) palEnd(e[0], e[1], e[2], e[3], e[4]); ends.length = 0;
+      for (const [S, sx, sy, R2, hsh, V] of vl) {
+        const k = V.k, hp = V.hp; hp.sort((p, q) => p[1] - q[1]); for (const [hx, hy, nm] of hp) ART.stamp(ctx, sp[nm], hx, hy, nm === 'vhall' ? k * 1.25 : k); }
+      for (const [S, sx, sy, R2, hsh, V] of vl) {
+        if (V.n) { const P = palBk(front, V.k, false), g0 = V.ga - V.gp * V.da, g1 = V.ga + V.gp * V.da; palRuns(S, V.cx, V.cy, V, g1, Math.PI, false, P, ends); palRuns(S, V.cx, V.cy, V, TAU, TAU + g0, false, P, ends); if (V.m1[Math.floor(V.ga / (TAU / 24))]) palGate(V.cx, V.cy, V, P); } } // the front, over the houses' feet
+      palFlush(front, false); for (const e of ends) palEnd(e[0], e[1], e[2], e[3], e[4]);
+      for (const [S, sx, sy, R2, hsh, V] of vl) {
+        if (S.metal) ART.put(ctx, S.metal === 2 ? 'bronze' : 'metal', sx + R2 * 0.95, sy - R2 * 0.75, 14);
+        if (SIM.knows(W, S.clans[0].x, S.clans[0].y)) { vills.push([S, sx, sy, R2, V.bot, V]); seenAdd(S.tribe, sx, sy, R2 * 1.5); } } }
     // wandering camps (tents); canoes on the water
     let gl = null, gskip = null;
     if (mid) { gskip = new Set(); const cell = new Map(); // camps of one people within about 28 px of each other (one square of a grid) are drawn as one mark
@@ -727,10 +824,12 @@
       if (hover && hover.e === c) { ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.beginPath(); ctx.arc(x, y, ts * 0.9 + 5, 0, Math.PI * 2); ctx.fill(); }
       if (c === sc || (zoomed > 14 && st && c.tribe === st)) { ctx.strokeStyle = clanCol(c, 0.8); ctx.lineWidth = 1.2; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(x, y, FORAGE_R * cam.s, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
       if (c === sc && Math.hypot(c.tx - c.x, c.ty - c.y) > 1) { const [tx, ty] = toScreen(c.tx, c.ty); ctx.strokeStyle = clanCol(c); ctx.lineWidth = 1.5; ctx.setLineDash([2, 4]); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(tx, ty); ctx.stroke(); ctx.setLineDash([]); }
-      const n = size > 34 ? 3 : size > 16 ? 2 : 1, ring = c === sc ? '#ffffff' : (grp ? grp.cl.some(q => q.cond < 0.7) : c.cond < 0.7) ? '#ff5a4a' : null, col = clanCol(c);
-      if (n > 1) ART.tent(ctx, x - ts * 0.6, y + ts * 0.14, ts * 0.76, col); if (n > 2) ART.tent(ctx, x + ts * 0.6, y + ts * 0.18, ts * 0.7, col);
-      ART.tent(ctx, x, y, ts, col, ring);
-      if (SIM.knows(W, c.x, c.y)) { camps.push([grp ? { name: grp.cl.length + ' camps,', people: { length: grp.n } } : c, x, y, ts]); seenAdd(c.tribe, x, y, ts * 0.75); }
+      const n = size > 34 ? 3 : size > 16 ? 2 : 1, ring = c === sc ? '#ffffff' : (grp ? grp.cl.some(q => q.cond < 0.7) : c.cond < 0.7) ? 'rgba(176,58,40,0.85)' : null, tk = ts / 14, tc = ART.sprites.vtent;
+      if (ring) { const rx = tc._lw * tk * 0.78 * (n > 1 ? 1.45 : 1), ry = rx * 0.4, ey = y + tc._lh * tk * 0.4; ctx.beginPath(); ctx.ellipse(x, ey, rx, ry, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = ring === '#ffffff' ? 'rgba(29,21,14,0.45)' : 'rgba(255,240,205,0.6)'; ctx.lineWidth = 4.2; ctx.stroke(); ctx.strokeStyle = ring; ctx.lineWidth = ring === '#ffffff' ? 2.4 : 2.1; ctx.stroke(); }
+      if (n > 1) ART.stamp(ctx, tc, x - ts * 0.55, y - ts * 0.04, tk * 0.84); if (n > 2) ART.stamp(ctx, tc, x + ts * 0.55, y - ts * 0.02, tk * 0.78);
+      ART.stamp(ctx, tc, x, y + (n > 1 ? ts * 0.1 : 0), tk);
+      if (SIM.knows(W, c.x, c.y)) { camps.push([grp ? { name: grp.cl.length + ' camps', people: { length: grp.n } } : c, x, y, ts]); seenAdd(c.tribe, x, y, ts * 0.75); }
     }
     // traders on the road
     for (const r of W.traders || []) { const [x, y] = toScreen(r.x, r.y); r._sx = null; if (!on(x, y) || !SIM.knows(W, r.x, r.y) || (far && !(pc && r.home === pc))) continue; ART.put(ctx, pc && r.home === pc ? 'trader_me' : 'trader', x, y - 4, 19); r._sx = x; r._sy = y - 4; }
@@ -738,8 +837,8 @@
     for (const s of W.sites) {
       const [x, y] = toScreen(s.x, s.y); s._sx = null; if (!on(x, y) || (far && sel !== s)) continue; s._sx = x; const active = W.gathering && W.clans.some(c => c.atGathering && c.tribe.site === s), r = clamp(15 + zoomed * 0.6, 18, 26);
       if (active) { const gl = ctx.createRadialGradient(x, y, 2, x, y, r * 1.4); gl.addColorStop(0, 'rgba(255,200,90,0.5)'); gl.addColorStop(1, 'rgba(255,200,90,0)'); ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(x, y, r * 1.4, 0, Math.PI * 2); ctx.fill(); }
-      if (sel === s) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r * 0.62, 0, Math.PI * 2); ctx.stroke(); }
-      ART.put(ctx, 'fire', x, y, r); if (SIM.knows(W, s.x, s.y)) sites.push([s, x, y, r, active]);
+      if (sel === s) { ctx.beginPath(); ctx.arc(x, y, r * 0.55, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(29,21,14,0.4)'; ctx.lineWidth = 4; ctx.stroke(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.4; ctx.stroke(); }
+      ART.stamp(ctx, ART.sprites.vhearth, x, y, r / 17); if (SIM.knows(W, s.x, s.y)) sites.push([s, x, y, r, active]);
     }
     // wild foods (closer in, or always on the Food view) and the resources: always on top of the people
     if (show.res && (layer === 'food' || zoomed > 15)) { const fz = layer === 'food' ? 19 : 17; for (const f of wildFoods()) { const [x, y] = cellS(f.i); if (!on(x, y)) continue; ART.put(ctx, f.ic, x, y, fz); icons.push([x, y, fz, fz]); } }
@@ -781,6 +880,7 @@
       const landAt = (x, y) => { if (x < cam.ox || y < cam.oy || x > cam.ox + WORLD * cam.s || y > cam.oy + WORLD * cam.s) return false; const [wx, wy] = toWorld(x, y); return !!W.land[SIM.cellAt(wx, wy)]; }; // a realm's name is written on its land, not on the sea
       const offLand = (x, y, tw) => { if (!tidy) return false; let sea = 0; for (const dy of [-6, 0, 6]) for (const dx of [-0.45, -0.2, 0, 0.2, 0.45]) if (!landAt(x + dx * tw, y + dy) && ++sea > 8) return true; return false; }; // nor mostly on the sea
       const hardOk = (x, y, tw, th) => x - tw / 2 >= VR.x0 + 2 && x + tw / 2 <= VR.x1 - 2 && y - th / 2 >= VR.y0 + 2 && y + th / 2 <= VR.y1 - 2 && ![...ZB, [bx + L * km / 2, by - 7, L * km + 12, 24], [bx + 24, by - 52, 60, 60]].some(z => Math.abs(z[0] - x) < (z[2] + tw) / 2 && Math.abs(z[1] - y) < (z[3] + th) / 2); // the buttons, the scale bar and the compass are never written over
+      const vbx = []; // the boxes of the villages, drawn walls and all
       let nMk = 0; // placed[] holds marks and icons first, then names: a name over a name costs more than a name over a mark
       const clashN = (x, y, tw, th) => { let n = 0; placed.forEach((p, i) => { if (Math.abs(p[0] - x) < (p[2] + tw) / 2 + 2 && Math.abs(p[1] - y) < (p[3] + th) / 2 + 1) n += i < nMk ? 0.35 : 1.4; }); return n; };
       const seenOf = t => (tseen.get(t) || []).filter(m => okPt(m[0], m[1])); // the marks of a people that are drawn, known and in the open part of the screen
@@ -828,7 +928,7 @@
         if (!pick && force && !tidy) pick = [ms[0][0], ms[0][1] + (t === mine && t !== st ? 21 : -19)]; // 'Every camp': as it was
         if (!pick && force) { // your own people's name is always written: the cheapest place near the house's mark (or one of the next nearest marks), clear of the buttons and the sheet; overlaps, fog and sea cost distance, so it stays close
           let bc = 1e9; ms.slice(0, 3).forEach((m, i) => { for (const d of [0, 8, 16, 24, 34, 46, 62, 80, 100]) if (d + i * 30 < bc) for (let k = 0; k < 24; k++) { const a = k / 24 * Math.PI * 2 - Math.PI / 2, x = m[0] + Math.cos(a) * (d + (tw / 2 + 10) * Math.abs(Math.cos(a))), y = m[1] + Math.sin(a) * (d + m[2] * 0.4 + 19);
-            if (!hardOk(x, y, tw + 30, tidy ? 19 : 17)) continue; let c = Math.hypot(x - m[0], y - m[1]) + i * 30; if (c >= bc) continue; c += clashN(x, y, tw + 30, tidy ? 19 : 17) * 45 + (foggy(x, y, tw + 30) ? 170 : 0) + (offLand(x, y, tw + 30) ? 60 : 0); if (c < bc) { bc = c; pick = [x, y]; } } }); }
+            if (!hardOk(x, y, tw + 30, tidy ? 19 : 17)) continue; let c = Math.hypot(x - m[0], y - m[1]) + i * 30; if (c >= bc) continue; c += clashN(x, y, tw + 30, tidy ? 19 : 17) * 45 + (vbx.some(p => Math.abs(p[0] - x) < (p[2] + tw + 30) / 2 && Math.abs(p[1] - y) < (p[3] + 19) / 2) ? 260 : 0); if (c >= bc) continue; if (foggy(x, y, tw + 30)) c += 170; if (c >= bc) continue; if (offLand(x, y, tw + 30)) c += 60; if (c < bc) { bc = c; pick = [x, y]; } } }); }
         if (!pick) return false;
         const pw = cmpct ? 0 : 30, ax = clamp(pick[0], VR.x0 + tw / 2 + pw / 2 + 2, VR.x1 - tw / 2 - pw / 2 - 2), cy = pick[1]; placed.push([ax, cy, tw + pw, tidy ? 19 : 17]); t._lab = [ax, cy, tw, 19];
         const x0 = ax - tw / 2;
@@ -844,7 +944,7 @@
       for (const cf of W.confeds) { if (!show.names && cf !== scf) continue; jobs.push({ cf, p: !tidy ? -1 : mine && mine.confed === cf ? 1 : cf === scf ? 2 : 3.5, n: cf.members ? cf.members.size : 0 }); }
       for (const t of W.tribes) { if (!show.names && t !== st) continue; if (!showAll && !hot(t) && t !== mine && tsz.get(t) < 100 && !isCap(t)) continue; jobs.push({ t, p: t === mine ? 0 : hot(t) ? 2 : isCap(t) ? 3 : 4, n: tsz.get(t) }); }
       jobs.sort((a, b) => a.p - b.p || b.n - a.n);
-      if (tidy) { for (const m of marks) placed.push(m); for (const [, x, y, ts] of camps) placed.push([x, y, ts * 1.5, ts * 0.95]); for (const [, x, y, r] of vills) placed.push([x, y, r * 2.4, r * 1.9]); } // names never sit over a mark
+      if (tidy) { for (const m of marks) placed.push(m); for (const [, x, y, ts] of camps) placed.push([x, y, ts * 1.5, ts * 0.95]); for (const [, x, y, r, bot, V] of vills) { const w = Math.max(r * 2.4, 2 * V.rp + 4), top = V.cy - Math.max(r * 0.95, V.rp * 0.7 + V.ph + 1), h = Math.max(r * 1.9, (bot || y) - top), bx = [V.cx, top + h / 2, w, h]; V.box = bx; vbx.push(bx); placed.push(bx); } } // names never sit over a mark
       nMk = placed.length; let nT = 0, nR = 0, pushed = tidy;
       for (const j of jobs) {
         if (!pushed && !j.cf) { for (const m of marks) placed.push(m); pushed = true; } // 'Every camp': the old way, marks are kept clear of the banners but not of the realm names
@@ -858,12 +958,14 @@
           if (!on(x, y, 40) || !fits(x, y, tw, 22) || foggy(x, y, tw)) continue; placed.push([x, y, tw, 22]); ink(K.name, x, y, f, `hsl(${K.hue},80%,82%)`, 4.5); } }
     }
     if (show.names) {
-      for (const [S, sx, sy, R2] of vills) { const hot = sel === S || (hover && hover.e === S); if (!(zoomed > 7 || S.pop >= 150 || hot)) continue;
-        const lab = zoomed > 10 || hot ? `${S.name}  ${S.pop}` : S.name, f = `600 11.5px ${SERIF}`; ctx.font = f; const tw = ctx.measureText(lab).width + 6, ys = [sy + R2 * 0.8 + 10, sy - R2 * 0.8 - 10]; let y = ys.find(q => fits(sx, q, tw, 13) && !foggy(sx, q, tw)); // below the village, or else above it
-        if (y == null) { if (!hot) continue; y = ys[0]; } placed.push([sx, y, tw, 13]); ink(lab, sx, y, f, '#fff2d6'); }
+      for (const [S, sx, sy, R2, bot, V] of vills) { const hot = sel === S || (hover && hover.e === S); if (!(zoomed > 7 || S.pop >= 150 || hot)) continue;
+        const lab = S.name, f = `600 11.5px ${SERIF}`; ctx.font = f; const lx = V.cx, tw = ctx.measureText(lab).width + 6, bb = V.box, ys = [(bot || sy + R2 * 0.56) + 9, bb ? bb[1] - bb[3] / 2 - 8 : sy - R2 * 0.8 - 10];
+        const bi = bb ? placed.indexOf(bb) : -1; if (bi >= 0) placed.splice(bi, 1); // a village's own box never blocks its own name
+        let y = ys.find(q => fits(lx, q, tw, 13) && !foggy(lx, q, tw)); // below the village, or else above it
+        if (y == null) { if (!hot) { if (bi >= 0) placed.push(bb); continue; } y = ys[0]; } if (bi >= 0) placed.push(bb); placed.push([lx, y, tw, 13]); ink(lab, lx, y, f, '#fff2d6'); }
       for (const [s, x, y, r, active] of sites) { if (!(zoomed > 9 || sel === s || active)) continue; const f = `italic 600 11px ${SERIF}`; ctx.font = f; const tw = ctx.measureText(s.name).width + 6, yy = y + r * 0.55 + 8;
         if (!fits(x, yy, tw, 12) && sel !== s) continue; placed.push([x, yy, tw, 12]); ink(s.name, x, yy, f, '#ffe6a0'); }
-      for (const [c, x, y, ts] of camps) { if (!(zoomed > 16 || c === sc)) continue; const lab = `${c.name} ${c.people.length}`, f = '500 10.5px system-ui,sans-serif'; ctx.font = f; const tw = ctx.measureText(lab).width + 6, yy = y + ts * 0.62 + 9;
+      for (const [c, x, y, ts] of camps) { if (!(zoomed > 16 || c === sc)) continue; const lab = c.name.replace(/,$/, ''), f = '500 10.5px system-ui,sans-serif'; ctx.font = f; const tw = ctx.measureText(lab).width + 6, yy = y + ts * 0.62 + 9;
         if (!fits(x, yy, tw, 12) && c !== sc) continue; placed.push([x, yy, tw, 12]); ink(lab, x, yy, f, '#f0ece2', 3); }
       for (const [m, x, y, ms] of mons) { if (!(zoomed > 11 || (hover && hover.e === m))) continue; const f = `italic 600 10px ${SERIF}`; ctx.font = f; const tw = ctx.measureText(m.name).width + 6, yy = y + ms * 0.5 + 7;
         if (!fits(x, yy, tw, 11)) continue; placed.push([x, yy, tw, 11]); ink(m.name, x, yy, f, '#efe6cf', 3); }
@@ -1350,8 +1452,8 @@
             return `<div class="row2"><span class="dot" style="background:hsl(${K.hue},70%,55%)"></span><b>${esc(K.name)}</b> <span class="muted">${ts.filter(t => t.kult === K).length} tribe${ts.filter(t => t.kult === K).length === 1 ? '' : 's'} you know${K.parentName ? `, grew out of ${esc(K.parentName)}` : ''} · ${esc(K.style.motif)}</span> <span style="margin-left:auto;font-size:12px">${mine ? '<span class="badge">your tongue</span>' : u != null ? `<span class="muted">${SIM.speechWord(u)}</span>` : ''}</span></div>`; }).join('') +
             `<div style="margin:8px 0 2px"><button class="lnk" data-kult>${show.kult ? 'Colour the map by tribe again' : 'Colour the map by culture'}</button></div>`; })() +
         `<div class="k sec">Tribes (${ts.length})</div>` + ts.map(t => `<div class="row2"><span class="dot" style="background:hsl(${t.hue},70%,55%)"></span>${link(t, 'the ' + t.name)} <span class="muted">${SIM.tribeSize(t)} people, ${t.clans.length} clan${t.clans.length === 1 ? '' : 's'}${t.kult ? ', ' + esc(t.kult.name) : ''}</span> <span style="margin-left:auto;font-size:12px">${faithIc(t, 15)}${stand(t)}</span></div>`).join('') +
-        (vs.length ? `<div class="k sec">Villages (${vs.length})</div>` + vs.slice(0, 25).map(S => `<div class="row2">${ART.img('hut', 15)}${link(S, S.name)} <span class="muted">${S.pop} people, ${S.type === 'fishing' ? 'fishing' : S.type === 'mixed' ? 'farming and fishing' : 'farming'}, the ${esc(S.tribe.name)}${S.metal ? (S.metal === 2 ? ', bronze' : ', copper') : ''}</span></div>`).join('') : '') +
-        (gs.length ? `<div class="k sec">Gathering places (${gs.length})</div>` + gs.map(s => `<div class="row2">${ART.img('fire', 15)}${link(s, s.name)} <span class="muted">${s.gatherings} gatherings, ${s.users.size} tribe${s.users.size === 1 ? '' : 's'}</span></div>`).join('') : '');
+        (vs.length ? `<div class="k sec">Villages (${vs.length})</div>` + vs.slice(0, 25).map(S => `<div class="row2">${ART.img('vhouse', 15)}${link(S, S.name)} <span class="muted">${S.pop} people, ${S.type === 'fishing' ? 'fishing' : S.type === 'mixed' ? 'farming and fishing' : 'farming'}, the ${esc(S.tribe.name)}${S.metal ? (S.metal === 2 ? ', bronze' : ', copper') : ''}</span></div>`).join('') : '') +
+        (gs.length ? `<div class="k sec">Gathering places (${gs.length})</div>` + gs.map(s => `<div class="row2">${ART.img('vhearth', 15)}${link(s, s.name)} <span class="muted">${s.gatherings} gatherings, ${s.users.size} tribe${s.users.size === 1 ? '' : 's'}</span></div>`).join('') : '');
     } else {
       const ev = W.events.slice(-40).reverse();
       let tot = 0; for (const c of W.clans) tot += c.people.length;
@@ -1445,7 +1547,7 @@
   const pickLabel = p => p.kind === 'clan' ? `<b>${esc(p.e.name)} clan</b> <span class="muted">· the ${esc(p.e.tribe.name)} · ${p.e.people.length} people</span>`
     : p.kind === 'tribe' ? `<b>The ${esc(p.e.name)}</b> <span class="muted">· ${p.grp ? p.grp.cl.length + ' camps, ' + p.grp.n + ' people · tribe of' : 'tribe ·'} ${SIM.tribeSize(p.e)} people${p.area ? ' (territory)' : ''}</span>`
     : p.kind === 'confed' ? `<b>${ART.img('crown', 15)}${esc(p.e.name)}</b> <span class="muted">· ${rulerWord(p.e, p.e.king)} ${esc(p.e.king.name)}</span>`
-    : p.kind === 'site' ? `<b>${ART.img('fire', 16)}${esc(p.e.name)}</b> <span class="muted">gathering place</span>`
+    : p.kind === 'site' ? `<b>${ART.img('vhearth', 16)}${esc(p.e.name)}</b> <span class="muted">gathering place</span>`
     : p.kind === 'place' ? `<b>${esc(p.e.name)}</b> <span class="muted">· ${p.e.type === 'fishing' ? 'fishing village' : p.e.type === 'mixed' ? 'farming & fishing village' : 'farming village'} · ${p.e.pop} people</span>`
     : p.kind === 'trader' ? `<b>${ART.img('trader', 16)}Trader ${esc(p.e.name)}</b> <span class="muted">· from ${esc(p.e.home.village || p.e.home.name)} (${esc(p.e.home.tribe.name)}) ${p.e.leg ? 'heading home from' : 'bound for'} ${esc(p.e.to.village || p.e.to.name)} · carrying ${Object.entries(p.e.pack).map(([g, n]) => n + ' ' + esc(GOOD_NAMES[g].toLowerCase())).join(', ') || (p.e.food ? 'grain' : 'nothing')}</span>`
     : p.kind === 'beast' ? `<b>${esc(capNm(p.e))}</b> <span class="muted">· ${esc(SIM.BEASTS[p.e.kind].a)}${p.e.kills ? ' · has killed ' + p.e.kills : ''}</span>`
@@ -1549,8 +1651,8 @@
     if (layer === 'terrain' || layer === 'food' || layer === 'game') {
       h += ['flint', 'amber', 'axe', 'ochre', 'salt', 'copper', 'tin', 'grain'].map(k => ic(k, DEPOSITS[k].name)).join('') + ic('a_whale', 'Whale grounds');
       h += ic('hazel', 'Hazel woods') + ic('apple', 'Crab apples') + ic('cherry', 'Cherry and sloe') + ic('berry', 'Berries') + ic('shell', 'Shellfish beds');
-      h += ic('clay', 'Potter\'s clay') + ic('tent', 'Camp') + ic('hut', 'Village') + ic('rockart', 'Carved rocks') + ic('fire', 'Gathering place') + ic('stones', 'Stone circle') + ic('barrow', 'Long barrow') + ic('trader', 'Trader') + ic('star', 'Your house');
-      h += note('Camps and village rims take their tribe\'s colour. A gold ring marks a source your house works.');
+      h += ic('clay', 'Potter\'s clay') + ic('vtent', 'Camp') + ic('vhouse', 'Village') + ic('vpal', 'Palisade') + ic('vditch', 'Ditch and bank') + ic('rockart', 'Carved rocks') + ic('vhearth', 'Gathering place') + ic('stones', 'Stone circle') + ic('barrow', 'Long barrow') + ic('trader', 'Trader') + ic('star', 'Your house');
+      h += note('Borders take their tribe\'s colour. A gold ring marks a source your house works.');
       h += note('Deer, boar, aurochs, horses, reindeer, seals and fish show where game is plentiful. They thin out where it is hunted hard.');
       if (layer === 'food') h += sw('#d7af3c', 'Hazel') + sw('#eb6e5a', 'Apple') + sw('#c83c78', 'Cherry, sloe') + sw('#786ee6', 'Berries') + sw('#ff8cc8', 'Shellfish') + sw('#3cc8d2', 'Fishing banks') + sw('#fadc5a', 'Wild grain');
       if (layer === 'game') h += note('Colour shows the weight of game on the land: dark is hunted out, pale is rich.');
