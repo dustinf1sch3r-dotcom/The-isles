@@ -205,10 +205,10 @@ const ART = (() => {
   mk('vpal', 18, 10, g => { const pts = [], n = 8; fs(g, P('M0.6 9.4 L0.6 4.6 ' + Array.from({ length: n }, (_, i) => `L${0.6 + (i + 0.5) * 16.8 / n} 3.2 L${0.6 + (i + 1) * 16.8 / n} 4.6`).join(' ') + ' L17.4 9.4 Z'), '#b39060', INK, 0.8);
     for (let i = 1; i < n; i++) line(g, [0.6 + i * 16.8 / n, 4.6, 0.6 + i * 16.8 / n, 9.2], 'rgba(29,21,14,0.35)', 0.3);
     for (const x of [7, 11]) fs(g, P(`M${x - 0.9} 9.4 L${x - 0.9} 2.6 L${x} 1 L${x + 0.9} 2.6 L${x + 0.9} 9.4 Z`), '#c0a070', INK, 0.8); line(g, [7, 3, 11, 3], INK, 0.5); });
-  mk('vditch', 16, 8, g => { g.lineCap = 'butt'; const cx = 8, cy = 9.4, rx = 7.3, ry = 5.6, A0 = Math.PI * 1.12, A1 = Math.PI * 1.88;
-    g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, A0, A1); g.strokeStyle = 'rgba(120,92,56,0.5)'; g.lineWidth = 1.5; g.stroke();
-    g.beginPath(); g.ellipse(cx, cy, rx - 0.75, ry - 0.6, 0, A0, A1); g.strokeStyle = 'rgba(58,40,24,0.85)'; g.lineWidth = 0.45; g.stroke();
-    g.beginPath(); for (let i = 0; i < 5; i++) { const a = A0 + 0.12 + i * (A1 - A0 - 0.24) / 4, c = Math.cos(a), sn = Math.sin(a); g.moveTo(cx + c * (rx - 0.75), cy + sn * (ry - 0.6)); g.lineTo(cx + c * (rx + 1.1), cy + sn * (ry + 0.9)); } g.strokeStyle = 'rgba(92,66,36,0.85)'; g.lineWidth = 0.45; g.stroke(); });
+  mk('vditch', 16, 8, g => { g.lineCap = 'butt'; const cx = 8, cy = 9.2, rx = 7.2, ry = 5.4, A0 = Math.PI * 1.14, A1 = Math.PI * 1.86;
+    g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, A0, A1); g.strokeStyle = 'rgba(96,72,44,0.6)'; g.lineWidth = 0.8; g.stroke();
+    g.beginPath(); g.ellipse(cx, cy, rx - 0.5, ry - 0.4, 0, A0, A1); g.strokeStyle = 'rgba(58,40,24,0.7)'; g.lineWidth = 0.3; g.stroke();
+    g.beginPath(); for (let i = 0; i < 5; i++) { const a = A0 + 0.1 + i * (A1 - A0 - 0.2) / 4, c = Math.cos(a), sn = Math.sin(a); g.moveTo(cx + c * (rx - 0.5), cy + sn * (ry - 0.4)); g.lineTo(cx + c * (rx + 0.6), cy + sn * (ry + 0.5)); } g.strokeStyle = 'rgba(92,66,36,0.75)'; g.lineWidth = 0.3; g.stroke(); });
   mk('vtent', 13, 8, g => { fs(g, P('M0.8 7.4 Q0.9 2.4 6.5 1.3 Q12.1 2.4 12.2 7.4 Z'), '#cdb27a', INK, 0.7); fs(g, P('M6.5 1.3 Q12.1 2.4 12.2 7.4 L6.5 7.4 Z'), SHADE);
     fs(g, P('M5.2 7.4 Q5.3 4.6 6.5 4.4 Q7.7 4.6 7.8 7.4 Z'), DOOR); line(g, [2.6, 6.2, 3.4, 3.2], 'rgba(110,80,40,0.5)', 0.3); line(g, [10, 5.8, 9.2, 3.2], 'rgba(110,80,40,0.4)', 0.3); line(g, [5.9, 0.1, 7.1, 1.5], INK, 0.5); line(g, [7.1, 0.1, 5.9, 1.5], INK, 0.5); });
   mk('vhearth', 10, 8, g => { for (let k = 0; k < 8; k++) { const a = k / 8 * TAU, y = 5.6 + Math.sin(a) * 1.8; if (Math.sin(a) < 0) ell(g, 5 + Math.cos(a) * 3.6, y, 0.9, 0.7, 0, '#cfcbbd', INK, 0.45); }
