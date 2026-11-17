@@ -197,8 +197,12 @@ const ART = (() => {
   mk('vfish', 18, 10, g => { fs(g, P('M1.4 5.4 L8.4 5.4 L8.2 9.2 L1.6 9.2 Z'), WALL, INK, 0.7); fs(g, P('M5 5.4 L8.4 5.4 L8.2 9.2 L5 9.2 Z'), SHADE); fs(g, P('M3.3 6.8 L4.7 6.8 L4.7 9.2 L3.3 9.2 Z'), DOOR);
     fs(g, P('M0.4 5.8 Q1.6 3.4 4.9 0.8 Q8.2 3.4 9.4 5.8 Z'), THATCH, INK, 0.7); fs(g, P('M4.9 0.8 Q8.2 3.4 9.4 5.8 L5.5 5.8 Z'), SHADE);
     fs(g, P('M10 7.2 Q11 9.6 13 9.6 L16 9.6 Q17.4 9.4 17.8 7 Q14 8 10 7.2 Z'), '#a98458', INK, 0.6); line(g, [11, 8.2, 16.6, 8.2], 'rgba(60,40,20,0.5)', 0.3); });
-  mk('vtent', 12, 10, g => { fs(g, P('M0.6 9.2 Q1 5.2 5.2 1.6 L6.8 1.6 Q11 5.2 11.4 9.2 Z'), '#dcc590', INK, 0.7); fs(g, P('M6.8 1.6 Q11 5.2 11.4 9.2 L6.8 9.2 Z'), SHADE);
-    fs(g, P('M5 9.2 Q5.2 6.4 6 5.8 Q6.8 6.4 7 9.2 Z'), DOOR); line(g, [5, 0.2, 7, 2.2], INK, 0.5); line(g, [7, 0.2, 5, 2.2], INK, 0.5); line(g, [2.4, 7.4, 3.6, 4.2], 'rgba(110,80,40,0.5)', 0.3); line(g, [9, 6.4, 8.2, 4], 'rgba(110,80,40,0.4)', 0.3); });
+  mk('vhut', 16, 10, g => { fs(g, P('M1.4 5.4 L8.4 5.4 L8.2 9.2 L1.6 9.2 Z'), WALL, INK, 0.7); fs(g, P('M5 5.4 L8.4 5.4 L8.2 9.2 L5 9.2 Z'), SHADE); fs(g, P('M3.3 6.8 L4.7 6.8 L4.7 9.2 L3.3 9.2 Z'), DOOR);
+    fs(g, P('M0.4 5.8 Q1.6 3.4 4.9 0.8 Q8.2 3.4 9.4 5.8 Z'), THATCH, INK, 0.7); fs(g, P('M4.9 0.8 Q8.2 3.4 9.4 5.8 L5.5 5.8 Z'), SHADE);
+    line(g, [11, 3.4, 11, 9.4], INK, 0.6); line(g, [15, 3.4, 15, 9.4], INK, 0.6); line(g, [10.4, 4, 15.6, 4], INK, 0.6); for (const x of [11.8, 13, 14.2]) line(g, [x, 4, x, 6.4], '#8a7a62', 0.7); });
+  mk('vtent', 13, 8, g => { fs(g, P('M0.8 7.4 Q0.9 2.4 6.5 1.3 Q12.1 2.4 12.2 7.4 Z'), '#cdb27a', INK, 0.7); fs(g, P('M6.5 1.3 Q12.1 2.4 12.2 7.4 L6.5 7.4 Z'), SHADE);
+    fs(g, P('M5.2 7.4 Q5.3 4.6 6.5 4.4 Q7.7 4.6 7.8 7.4 Z'), DOOR); line(g, [2.6, 6.2, 3.4, 3.2], 'rgba(110,80,40,0.5)', 0.3); line(g, [10, 5.8, 9.2, 3.2], 'rgba(110,80,40,0.4)', 0.3); line(g, [5.9, 0.1, 7.1, 1.5], INK, 0.5); line(g, [7.1, 0.1, 5.9, 1.5], INK, 0.5); });
+  for (const nm of ['vfish', 'vhut']) { const s = sprites[nm], c = document.createElement('canvas'); c.width = s.width; c.height = s.height; c._lw = s._lw; c._lh = s._lh; const g = c.getContext('2d'); g.translate(c.width, 0); g.scale(-1, 1); g.drawImage(s, 0, 0); sprites[nm + '_l'] = c; }
   mk('vhearth', 12, 11, g => { for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; ell(g, 6 + Math.cos(a) * 4.2, 7.6 + Math.sin(a) * 2.3, 1.1, 0.85, 0, '#c4c0b2', INK, 0.55); }
     fs(g, P('M6 3.6 Q8.4 6 7.4 8 Q6 8.8 4.6 8 Q3.6 6 6 3.6 Z'), '#c8742e', INK, 0.4); ell(g, 6, 7.4, 0.9, 1.1, 0, '#e8b050');
     g.beginPath(); g.moveTo(6, 3); g.bezierCurveTo(4.6, 2, 7.4, 1, 6, 0.1); g.strokeStyle = 'rgba(29,21,14,0.55)'; g.lineWidth = 0.35; g.stroke(); });

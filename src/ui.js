@@ -655,6 +655,13 @@
     }
     // the peoples' lands
     // villages: where they lie and how big; the trodden ground, ditch and palisade go under the land tint, the houses over it
+    const seaDir = S => { // which way the nearest sea lies from a village (a unit vector), found once and kept
+      let wx = 0, wy = 0; for (const c of S.clans) { wx += c.x; wy += c.y; } wx /= S.clans.length; wy /= S.clans.length;
+      if (S._sea && Math.hypot(S._sea.x - wx, S._sea.y - wy) < CELL) return S._sea.d;
+      let best = 99, vx = 0, vy = 0; const found = [];
+      for (let q = 0; q < 16; q++) { const a = q / 16 * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a); for (let d = 0.5; d <= 8; d += 0.5) { const i = SIM.cellAt(wx + ca * d * CELL, wy + sa * d * CELL); if (i == null || !W.land[i]) { found.push([ca, sa, d]); if (d < best) best = d; break; } } }
+      for (const [ca, sa, d] of found) if (d <= best + 1) { vx += ca; vy += sa; }
+      const m = Math.hypot(vx, vy); S._sea = { x: wx, y: wy, d: m > 0.01 ? [vx / m, vy / m] : null }; return S._sea.d; };
     const vl = [], vpoly = (sx, sy, R2, hsh) => { ctx.beginPath(); for (let k = 0; k < 9; k++) { const a = k / 9 * Math.PI * 2, rr = R2 * (0.82 + 0.3 * (((hsh >> (k * 3)) & 7) / 7)); k ? ctx.lineTo(sx + Math.cos(a) * rr, sy + Math.sin(a) * rr * 0.8) : ctx.moveTo(sx + Math.cos(a) * rr, sy + Math.sin(a) * rr * 0.8); } ctx.closePath(); };
     { const vpos = []; for (const S of W.settlements || []) { if (!S.clans || !S.clans.length) continue; let sx = 0, sy = 0; for (const c of S.clans) { const p = cs(c); sx += p[0]; sy += p[1]; } vpos.push([S, sx / S.clans.length, sy / S.clans.length]); }
       for (const [S] of vpos) S._sx = null;
@@ -665,12 +672,13 @@
         const R2 = Math.max(6, Math.min(clamp(Math.sqrt(S.pop) * clamp(zoomed / 6, 0.9, 3.2), 11, 42), gap / 2 / 1.25 - 1)); S._sx = sx; S._sy = sy; S._r = R2;
         let hsh = 0; for (const ch of S.name) hsh = (hsh * 31 + ch.charCodeAt(0)) | 0;
         vl.push([S, sx, sy, R2, hsh]);
-        vpoly(sx, sy, R2, hsh); ctx.fillStyle = 'rgba(150,118,66,0.26)'; ctx.fill(); // trodden earth
+        vpoly(sx, sy, R2, hsh); ctx.fillStyle = zoomed < 28 ? 'rgba(150,118,66,0.38)' : 'rgba(150,118,66,0.3)'; ctx.fill(); // trodden earth
+        ctx.strokeStyle = 'rgba(29,21,14,0.35)'; ctx.lineWidth = 0.7; ctx.beginPath(); ctx.ellipse(sx, sy, R2 * 1.05, R2 * 1.05 * 0.8, 0, 0, Math.PI * 2); ctx.stroke(); // the edge of the village
         const wk = k => S.clans.some(c => c.works && c.works[k]); S._hall = wk('hall');
-        if (wk('ditch')) { ctx.strokeStyle = 'rgba(58,40,24,0.65)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.ellipse(sx, sy, R2 * 1.42, R2 * 1.42 * 0.8, 0, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.ellipse(sx, sy, R2 * 1.42 + 2.2, (R2 * 1.42 + 2.2) * 0.8, 0, 0, Math.PI * 2); ctx.stroke(); }
-        if (wk('pal')) { const rp = R2 * 1.2, ns = Math.max(16, Math.round(rp * 1.3)), ph = clamp(R2 * 0.22, 2.6, 6); ctx.lineCap = 'butt'; ctx.lineWidth = 0.8; ctx.strokeStyle = 'rgba(29,21,14,0.78)'; ctx.beginPath();
+        if (wk('ditch')) { const rd = R2 * 1.42 + 1.1; ctx.strokeStyle = 'rgba(120,95,60,0.25)'; ctx.lineWidth = 2.2; ctx.beginPath(); ctx.ellipse(sx, sy, rd, rd * 0.8, 0, 0, Math.PI * 2); ctx.stroke(); ctx.strokeStyle = 'rgba(58,40,24,0.7)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.ellipse(sx, sy, R2 * 1.42, R2 * 1.42 * 0.8, 0, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.ellipse(sx, sy, R2 * 1.42 + 2.2, (R2 * 1.42 + 2.2) * 0.8, 0, 0, Math.PI * 2); ctx.stroke(); }
+        if (wk('pal')) { const rp = R2 * 1.2, ns = Math.max(16, Math.round(rp * 1.3)), ph = clamp(R2 * 0.22, 3.4, 6); ctx.lineCap = 'butt'; ctx.lineWidth = 0.8; ctx.strokeStyle = 'rgba(29,21,14,0.9)'; ctx.beginPath();
           for (let k = 0; k < ns; k++) { const a = k / ns * Math.PI * 2; if (Math.abs(a - Math.PI * 0.5) < 0.2) continue; const px = sx + Math.cos(a) * rp, py = sy + Math.sin(a) * rp * 0.8; ctx.moveTo(px, py + ph * 0.3); ctx.lineTo(px, py - ph); }
-          ctx.stroke(); ctx.lineCap = 'round'; ctx.lineWidth = 0.6; ctx.strokeStyle = 'rgba(29,21,14,0.5)'; ctx.beginPath(); ctx.ellipse(sx, sy + ph * 0.3, rp, rp * 0.8, 0, Math.PI * 0.6, Math.PI * 2.4 - 0.2 + 0.0); ctx.stroke(); }
+          ctx.stroke(); ctx.lineCap = 'round'; ctx.lineWidth = 0.6; ctx.strokeStyle = 'rgba(29,21,14,0.7)'; ctx.beginPath(); ctx.ellipse(sx, sy + ph * 0.3, rp, rp * 0.8, 0, Math.PI * 0.6, Math.PI * 2.4 - 0.2); ctx.stroke(); }
       } }
     if (show.people) drawTerritories(st, scf);
     if (st) { // how the selected tribe stands with the others
@@ -693,24 +701,31 @@
       for (let k = 1; k < big.length; k++) { const a = big[k]; for (let it = 0; it < 4; it++) { let moved = false; for (let j = 0; j < k; j++) { const o = big[j], dx = a.px - o.px, dy = a.py - o.py, d = Math.hypot(dx, dy) || 0.01, want = (a.M + o.M) * 0.62; if (d < want) { a.px += dx / d * (want - d); a.py += dy / d * (want - d) * 0.8; moved = true; } } if (!moved) break; } }
       for (const a of list) { const x = a.px, y = a.py; if (!on(x, y, 30)) continue; const t = a.t, M = a.M, hov = hovE === t, col = `hsla(${show.kult && t.kult ? t.kult.hue : t.hue},40%,52%,1)`;
         if (hov) { ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.beginPath(); ctx.arc(x, y, M * 0.9 + 4, 0, Math.PI * 2); ctx.fill(); }
-        if (a.v * 2 > a.n) { ctx.beginPath(); ctx.ellipse(x, y + M * 0.08, M * 0.6, M * 0.5, 0, 0, Math.PI * 2); ctx.fillStyle = 'rgba(150,118,66,0.26)'; ctx.fill(); if (hov) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); }
-          const hs = M * 0.4, hk = Math.max(0.75, hs / 8.5), hv = ART.sprites.vhouse; ART.stamp(ctx, hv, x, y - hs * 0.3, hk * 0.95); ART.stamp(ctx, hv, x - hs * 1.05, y + hs * 0.3, hk); ART.stamp(ctx, hv, x + hs * 1.05, y + hs * 0.34, hk); }
-        else { const n = a.n > 120 ? 3 : a.n > 45 ? 2 : 1, tk = M / 15, tc = ART.sprites.vtent; if (n > 1) ART.stamp(ctx, tc, x - M * 0.55, y - M * 0.04, tk * 0.84); if (n > 2) ART.stamp(ctx, tc, x + M * 0.55, y - M * 0.02, tk * 0.78); ART.stamp(ctx, tc, x, y + (n > 1 ? M * 0.1 : 0), tk); }
+        ctx.strokeStyle = 'rgba(120,80,40,0.55)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.ellipse(x, y + M * 0.1, M * 0.78, M * 0.5, 0, 0, Math.PI * 2); ctx.stroke();
+        if (a.v * 2 > a.n) { ctx.beginPath(); ctx.ellipse(x, y + M * 0.1, M * 0.78, M * 0.5, 0, 0, Math.PI * 2); ctx.fillStyle = 'rgba(150,118,66,0.3)'; ctx.fill();
+          const hv = ART.sprites.vhouse, hk = M / 18, hw = hv._lw * hk + 2.4; ART.stamp(ctx, hv, x, y - M * 0.12, hk * 0.95); ART.stamp(ctx, hv, x - hw * 0.5, y + M * 0.14, hk); ART.stamp(ctx, hv, x + hw * 0.5, y + M * 0.14, hk); }
+        else { const n = a.n > 120 ? 3 : a.n > 45 ? 2 : 1, tk = M / 17, tc = ART.sprites.vtent, tw = tc._lw * tk + 2.4; if (n > 1) ART.stamp(ctx, tc, x - tw * 0.55, y + M * 0.05, tk * 0.86); if (n > 2) ART.stamp(ctx, tc, x + tw * 0.55, y + M * 0.05, tk * 0.8); ART.stamp(ctx, tc, x, y - (n > 1 ? M * 0.1 : -M * 0.08), tk); }
         a.mk = [x, y, M]; tmk.set(t, a); marks.push([x, y, M * 0.8, M * 0.6]); seenAdd(t, x, y, M * 0.8); } }
     // villages: permanent places, a huddle of little houses in the map's own ink and wash
     for (const [S, sx, sy, R2, hsh] of vl) {
-      const sp = ART.sprites, fishing = S.type === 'fishing', mixed = !fishing && S.type !== 'farming' && S.type !== 'farm' && S.type != null, hov = hover && hover.e === S;
-      if (sel === S || hov) { vpoly(sx, sy, R2, hsh); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); }
+      const sp = ART.sprites, fishing = S.type === 'fishing', mixed = S.type === 'mixed', hov = hover && hover.e === S;
+      if (sel === S || hov) { vpoly(sx, sy, R2, hsh); ctx.strokeStyle = 'rgba(29,21,14,0.35)'; ctx.lineWidth = 3.4; ctx.stroke(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.2; ctx.stroke(); }
       const jit = i => (((Math.imul(hsh ^ (i * 40503), 2654435761) >>> 9) & 255) / 255) - 0.5;
-      const kz = zoomed < 16 ? 0.4 + 0.6 * zoomed / 16 : 1 + (zoomed - 16) / 62, k = clamp(Math.min(kz, Math.max(0.6, R2 / 7)), 0.6, 2.2);
-      const kind = i => fishing ? 'vfish' : mixed && i % 2 ? 'vfish' : (jit(i + 20) > -0.12 ? 'vhouse' : 'vlong'), wide = nm => sp[nm]._lw * k;
-      const nh = clamp(Math.round(S.pop / 18), 3, 7), hp = [], lane = (hsh & 1) && !S._hall, hallW = S._hall ? sp.vhall._lw * k * 1.15 : 0, wk = 12 * k;
+      const kz = zoomed < 16 ? 0.55 + 0.45 * zoomed / 16 : 1 + (zoomed - 16) / 62, k = clamp(Math.min(kz, Math.max(0.7, R2 / 10)) * (R2 < 14 ? Math.max(0.75, R2 / 14) : 1), 0.7, 2.2);
+      const sea = fishing || mixed ? seaDir(S) : null, sa = sea ? Math.atan2(sea[1], sea[0]) : 0, flip = sea && sea[0] < 0 ? '_l' : '';
+      const houseK = i => jit(i + 20) > -0.12 ? 'vhouse' : 'vlong';
+      const nh = Math.min(clamp(Math.round(S.pop / 18), 3, 7), zoomed < 12 ? 4 : zoomed < 20 ? 5 : 7), hp = [], lane = (hsh & 1) && !S._hall && !sea, hallW = S._hall ? sp.vhall._lw * k * 1.25 : 0, wk = 12 * k;
+      const nf = fishing ? nh : mixed ? Math.ceil(nh / 2) : 0; // huts on the shore side; the rest are houses
       if (lane) { const ang = ((hsh >> 4) & 7) / 7 * 0.5 - 0.25, per = Math.ceil(nh / 2), step = Math.max(wk * 1.05, Math.min(R2 * 1.5 / per, wk * 1.6)), gapy = Math.max(wk * 0.5, R2 * 0.3);
-        for (let i = 0; i < nh; i++) { const row = i % 2 ? 1 : -1, j = (i >> 1) - (per - 1) / 2, u = j * step + jit(i) * 2 * k, v = row * gapy + jit(i + 9) * 2 * k; hp.push([sx + u * Math.cos(ang) - v * Math.sin(ang), sy + (u * Math.sin(ang) + v * Math.cos(ang)) * 0.85, kind(i)]); } }
+        for (let i = 0; i < nh; i++) { const row = i % 2 ? 1 : -1, j = (i >> 1) - (per - 1) / 2, u = j * step + jit(i) * 2 * k, v = row * gapy + jit(i + 9) * 2 * k; hp.push([sx + u * Math.cos(ang) - v * Math.sin(ang), sy + (u * Math.sin(ang) + v * Math.cos(ang)) * 0.85, houseK(i)]); } }
       else { const rr = Math.max(R2 * 0.62, wk * 0.5, hallW * 0.5 + wk * 0.45), a0 = (hsh & 15) * 0.4;
-        for (let i = 0; i < nh; i++) { const a = a0 + i / nh * Math.PI * 2 + jit(i) * 0.25, r = rr * (1 + jit(i + 9) * 0.22); hp.push([sx + Math.cos(a) * r, sy + Math.sin(a) * r * 0.7 + (S._hall ? 0 : 0), kind(i)]); } }
+        for (let i = 0; i < nh; i++) {
+          let a = a0 + i / nh * Math.PI * 2 + jit(i) * 0.25, nm = houseK(i);
+          if (sea && i < nf) { const spread = Math.min(2.4, 0.55 * nf + 0.5); a = sa + (nf > 1 ? (i / (nf - 1) - 0.5) * spread : 0) + jit(i) * 0.15; const near = Math.cos(a - sa) > 0.45; nm = near ? 'vfish' + flip : 'vhut' + flip; }
+          else if (sea) { const m = nh - nf; a = sa + Math.PI + (m > 1 ? ((i - nf) / (m - 1) - 0.5) * 1.8 : 0) + jit(i) * 0.15; }
+          const arc = sea && i < nf ? Math.min(Math.max(rr, nf * wk * 0.85 / Math.min(2.4, 0.55 * nf + 0.5)), R2 * 1.3) : rr, r = Math.min(arc * (1 + jit(i + 9) * 0.22), sea && i < nf ? R2 * 1.3 : R2 * 1.1); hp.push([sx + Math.cos(a) * r, sy + Math.sin(a) * r * 0.7, nm]); } }
       if (S._hall) hp.push([sx, sy - wk * 0.1, 'vhall']);
-      hp.sort((p, q) => p[1] - q[1]); for (const [hx, hy, nm] of hp) ART.stamp(ctx, sp[nm], hx, hy, nm === 'vhall' ? k * 1.1 : k);
+      hp.sort((p, q) => p[1] - q[1]); for (const [hx, hy, nm] of hp) ART.stamp(ctx, sp[nm], hx, hy, nm === 'vhall' ? k * 1.25 : k);
       if (S.metal) ART.put(ctx, S.metal === 2 ? 'bronze' : 'metal', sx + R2 * 0.95, sy - R2 * 0.75, 14);
       if (SIM.knows(W, S.clans[0].x, S.clans[0].y)) { vills.push([S, sx, sy, R2]); seenAdd(S.tribe, sx, sy, R2 * 1.5); }
     }
@@ -737,10 +752,10 @@
       if (c === sc || (zoomed > 14 && st && c.tribe === st)) { ctx.strokeStyle = clanCol(c, 0.8); ctx.lineWidth = 1.2; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(x, y, FORAGE_R * cam.s, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
       if (c === sc && Math.hypot(c.tx - c.x, c.ty - c.y) > 1) { const [tx, ty] = toScreen(c.tx, c.ty); ctx.strokeStyle = clanCol(c); ctx.lineWidth = 1.5; ctx.setLineDash([2, 4]); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(tx, ty); ctx.stroke(); ctx.setLineDash([]); }
       const n = size > 34 ? 3 : size > 16 ? 2 : 1, ring = c === sc ? '#ffffff' : (grp ? grp.cl.some(q => q.cond < 0.7) : c.cond < 0.7) ? 'rgba(176,58,40,0.85)' : null, tk = ts / 14, tc = ART.sprites.vtent;
-      if (ring) { ctx.strokeStyle = ring; ctx.lineWidth = ring === '#ffffff' ? 1.6 : 1.1; ctx.beginPath(); ctx.ellipse(x, y + tc._lh * tk * 0.42, tc._lw * tk * 0.62 * (n > 1 ? 1.5 : 1), tc._lh * tk * 0.24, 0, 0, Math.PI * 2); ctx.stroke(); }
+      if (ring) { ctx.strokeStyle = ring; const rx = tc._lw * tk * 0.62 * (n > 1 ? 1.5 : 1) * 1.15, ry = tc._lh * tk * 0.28; ctx.beginPath(); ctx.ellipse(x, y + tc._lh * tk * 0.42, rx, ry, 0, 0, Math.PI * 2); if (ring === '#ffffff') { ctx.strokeStyle = 'rgba(29,21,14,0.35)'; ctx.lineWidth = 3.4; ctx.stroke(); } ctx.strokeStyle = ring; ctx.lineWidth = ring === '#ffffff' ? 2.2 : 1.3; ctx.stroke(); }
       if (n > 1) ART.stamp(ctx, tc, x - ts * 0.55, y - ts * 0.04, tk * 0.84); if (n > 2) ART.stamp(ctx, tc, x + ts * 0.55, y - ts * 0.02, tk * 0.78);
       ART.stamp(ctx, tc, x, y + (n > 1 ? ts * 0.1 : 0), tk);
-      if (SIM.knows(W, c.x, c.y)) { camps.push([grp ? { name: grp.cl.length + ' camps,', people: { length: grp.n } } : c, x, y, ts]); seenAdd(c.tribe, x, y, ts * 0.75); }
+      if (SIM.knows(W, c.x, c.y)) { camps.push([grp ? { name: grp.cl.length + ' camps', people: { length: grp.n } } : c, x, y, ts]); seenAdd(c.tribe, x, y, ts * 0.75); }
     }
     // traders on the road
     for (const r of W.traders || []) { const [x, y] = toScreen(r.x, r.y); r._sx = null; if (!on(x, y) || !SIM.knows(W, r.x, r.y) || (far && !(pc && r.home === pc))) continue; ART.put(ctx, pc && r.home === pc ? 'trader_me' : 'trader', x, y - 4, 19); r._sx = x; r._sy = y - 4; }
