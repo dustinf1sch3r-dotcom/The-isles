@@ -182,6 +182,26 @@ const ART = (() => {
   mk('pine', 10, 11, g => { line(g, [5, 8.6, 5, 10.8], '#6a4a2a', 0.9); for (const [y, w] of [[6.6, 4.4], [4.2, 3.4], [1.9, 2.3]]) { fs(g, P(`M5 ${y - 3.4} L${5 + w} ${y + 2} L${5 - w} ${y + 2} Z`), '#74834a', INK, 0.6); fs(g, P(`M5 ${y - 3.4} L${5 + w} ${y + 2} L5.4 ${y + 2} Z`), 'rgba(58,70,34,0.45)'); } });
   mk('tree', 11, 11, g => { line(g, [5.5, 7.4, 5.5, 10.8], '#6a4a2a', 1); line(g, [5.5, 9, 4.2, 10.8], '#6a4a2a', 0.5);
     const cr = new Path2D(); cr.ellipse(5.5, 4.6, 4.9, 4.2, 0, 0, TAU); fs(g, cr, '#869556', INK, 0.7); ell(g, 6.9, 5.5, 3, 2.9, 0, 'rgba(62,76,36,0.4)'); ell(g, 4.2, 3.2, 1.8, 1.3, 0, 'rgba(236,232,180,0.4)'); });
+  // villages and camps in the map's own hand: small houses seen from the side, same ink and wash as the trees
+  const WALL = '#e6d8b4', THATCH = '#c4a46a', SHADE = 'rgba(120,88,50,0.45)', DOOR = '#3a2a18';
+  mk('vhouse', 12, 10, g => { fs(g, P('M2 5.2 L10 5.2 L9.8 9.2 L2.2 9.2 Z'), WALL, INK, 0.7); fs(g, P('M6.2 5.2 L10 5.2 L9.8 9.2 L6.2 9.2 Z'), SHADE);
+    fs(g, P('M5.2 6.8 L6.8 6.8 L6.8 9.2 L5.2 9.2 Z'), DOOR);
+    fs(g, P('M0.7 5.6 Q2.2 3.2 6 0.5 Q9.8 3.2 11.3 5.6 Z'), THATCH, INK, 0.7); fs(g, P('M6 0.5 Q9.8 3.2 11.3 5.6 L6.6 5.6 Z'), SHADE); for (const x of [3, 4.6, 7.4, 9]) line(g, [x, 5.2, 6 + (x - 6) * 0.35, 1.8], 'rgba(110,80,40,0.55)', 0.3); });
+  mk('vlong', 16, 9, g => { fs(g, P('M1.6 5.2 L14.4 5.2 L14.2 8.6 L1.8 8.6 Z'), WALL, INK, 0.7); fs(g, P('M8.6 5.2 L14.4 5.2 L14.2 8.6 L8.6 8.6 Z'), SHADE);
+    fs(g, P('M6.6 6.4 L8.2 6.4 L8.2 8.6 L6.6 8.6 Z'), DOOR);
+    fs(g, P('M0.4 5.6 L3.4 1.2 L12.6 1.2 L15.6 5.6 Z'), THATCH, INK, 0.7); fs(g, P('M8 3.4 L15.6 5.6 L12.6 1.2 L8 1.2 Z'), SHADE); for (const x of [3, 5.6, 8.2, 10.8, 13]) line(g, [x, 5.4, 3.4 + (x - 0.4) * 0.8, 1.6], 'rgba(110,80,40,0.5)', 0.3); });
+  mk('vhall', 20, 12, g => { fs(g, P('M2 6.8 L18 6.8 L17.8 11 L2.2 11 Z'), WALL, INK, 0.7); fs(g, P('M10.4 6.8 L18 6.8 L17.8 11 L10.4 11 Z'), SHADE);
+    for (const x of [5.2, 11.8]) fs(g, P(`M${x} 8 L${x + 1.8} 8 L${x + 1.8} 11 L${x} 11 Z`), DOOR);
+    fs(g, P('M0.5 7.2 L4.4 2 L15.6 2 L19.5 7.2 Z'), THATCH, INK, 0.7); fs(g, P('M10 7.2 L19.5 7.2 L15.6 2 L10 2 Z'), SHADE); for (const x of [3, 6, 9, 12, 15, 17.6]) line(g, [x, 6.9, 4.4 + (x - 0.5) * 0.58, 2.4], 'rgba(110,80,40,0.5)', 0.3);
+    line(g, [4.4, 2, 15.6, 2], INK, 0.7); for (const x of [4.4, 15.6]) { line(g, [x - 0.9, 0.2, x + 0.7, 2.2], INK, 0.5); line(g, [x + 0.9, 0.2, x - 0.7, 2.2], INK, 0.5); } });
+  mk('vfish', 18, 10, g => { fs(g, P('M1.4 5.4 L8.4 5.4 L8.2 9.2 L1.6 9.2 Z'), WALL, INK, 0.7); fs(g, P('M5 5.4 L8.4 5.4 L8.2 9.2 L5 9.2 Z'), SHADE); fs(g, P('M3.3 6.8 L4.7 6.8 L4.7 9.2 L3.3 9.2 Z'), DOOR);
+    fs(g, P('M0.4 5.8 Q1.6 3.4 4.9 0.8 Q8.2 3.4 9.4 5.8 Z'), THATCH, INK, 0.7); fs(g, P('M4.9 0.8 Q8.2 3.4 9.4 5.8 L5.5 5.8 Z'), SHADE);
+    fs(g, P('M10 7.2 Q11 9.6 13 9.6 L16 9.6 Q17.4 9.4 17.8 7 Q14 8 10 7.2 Z'), '#a98458', INK, 0.6); line(g, [11, 8.2, 16.6, 8.2], 'rgba(60,40,20,0.5)', 0.3); });
+  mk('vtent', 12, 10, g => { fs(g, P('M0.6 9.2 Q1 5.2 5.2 1.6 L6.8 1.6 Q11 5.2 11.4 9.2 Z'), '#dcc590', INK, 0.7); fs(g, P('M6.8 1.6 Q11 5.2 11.4 9.2 L6.8 9.2 Z'), SHADE);
+    fs(g, P('M5 9.2 Q5.2 6.4 6 5.8 Q6.8 6.4 7 9.2 Z'), DOOR); line(g, [5, 0.2, 7, 2.2], INK, 0.5); line(g, [7, 0.2, 5, 2.2], INK, 0.5); line(g, [2.4, 7.4, 3.6, 4.2], 'rgba(110,80,40,0.5)', 0.3); line(g, [9, 6.4, 8.2, 4], 'rgba(110,80,40,0.4)', 0.3); });
+  mk('vhearth', 12, 11, g => { for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; ell(g, 6 + Math.cos(a) * 4.2, 7.6 + Math.sin(a) * 2.3, 1.1, 0.85, 0, '#c4c0b2', INK, 0.55); }
+    fs(g, P('M6 3.6 Q8.4 6 7.4 8 Q6 8.8 4.6 8 Q3.6 6 6 3.6 Z'), '#c8742e', INK, 0.4); ell(g, 6, 7.4, 0.9, 1.1, 0, '#e8b050');
+    g.beginPath(); g.moveTo(6, 3); g.bezierCurveTo(4.6, 2, 7.4, 1, 6, 0.1); g.strokeStyle = 'rgba(29,21,14,0.55)'; g.lineWidth = 0.35; g.stroke(); });
   mk('bush', 8, 5, g => { const b = new Path2D(); b.ellipse(4, 3, 3.6, 2, 0, 0, TAU); fs(g, b, '#8d9a60', INK, 0.5); ell(g, 5, 3.5, 2, 1.2, 0, 'rgba(62,76,36,0.4)'); });
   const hatch = (g, pts) => { for (const [x, y, len] of pts) line(g, [x, y, x + len * 0.42, y + len], 'rgba(92,66,36,0.75)', 0.3); };
   mk('peak', 16, 8, g => { fs(g, P('M0.5 7.7 L5.6 1.5 L7.3 3 L9.5 0.5 L15.5 7.7 Z'), '#efe5c6'); fs(g, P('M9.5 0.5 L15.5 7.7 L10.6 7.7 L8.6 4.2 Z'), 'rgba(170,138,88,0.55)'); fs(g, P('M5.6 1.5 L7.3 3 L8 7.7 L6.2 7.7 Z'), 'rgba(170,138,88,0.4)');
