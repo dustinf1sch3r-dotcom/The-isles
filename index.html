@@ -4371,7 +4371,7 @@ const SIM = (() => {
     }
     if (id === 'landask' || id === 'landdrive') {
       const tg = A.targets[k]; if (!tg) return null; const F = A.forces[f || 0] || A.forces[0], cl = tg.ref;
-      if (!landLive(W, t).includes(tg.rec) || !cl.alive || !cl.settled) { delete cd[id]; return { title: 'Too late', text: `The ${cl.name} clan have already left.` }; }
+      if (!landLive(W, t).includes(tg.rec) || !cl.alive || !cl.settled) { delete cd[id]; return cl.alive && cl.settled && cl.tribe && isAllied(t, cl.tribe) ? { title: 'Not now', text: `The ${cl.tribe.name} are bound to us now. We do not bid friends go.` } : { title: 'Too late', text: `The ${cl.name} clan have already left.` }; }
       return id === 'landask' ? landDoAsk(W, tg.rec, cl, F) : landDoDrive(W, tg.rec, cl, F);
     }
     if (id === 'invite') {
@@ -6259,6 +6259,7 @@ const SIM = (() => {
     const out = [];
     for (let k = L.length - 1; k >= 0; k--) { const r = L[k], c = W.ents.get(r.c);
       if (W.week - r.w > 52 * LAND_YEARS || !c || c.kind !== 'clan' || !c.alive || !c.settled || !c.people.length || !c.tribe || c.tribe === O || Math.hypot(c.x - r.x, c.y - r.y) > 3000) { L.splice(k, 1); continue; }
+      if (isAllied(O, c.tribe)) continue; // allies and peoples of one realm do not bid each other go: the record waits, and counts again if the bond ends
       r.t = c.tribe.id; out.unshift(r); }
     return out;
   }
@@ -6468,7 +6469,7 @@ const SIM = (() => {
     const r = landLive(W, O).find(x => x.c === cl.id);
     if (ev.type === 'landtaken') {
       if (k === 2) { houseNote(W, `${h.name} let the ${cl.tribe.name} be at ${landV(cl)}.`); return; }
-      if (!r) { W.lastResult = { title: 'They are gone', text: `The ${cl.name} clan have already left ${landV(cl)}.` }; return; }
+      if (!r) { W.lastResult = cl.alive && cl.settled && cl.tribe && isAllied(c.tribe, cl.tribe) ? { title: 'Not now', text: `The ${cl.tribe.name} are bound to us now. We do not bid friends go.` } : { title: 'They are gone', text: `The ${cl.name} clan have already left ${landV(cl)}.` }; return; }
       const cd = P.cool || (P.cool = {}), why = k === 0 ? landAskWhy(W, c, h) : landDriveWhy(W, c, h); // asked again: the head may have changed since the card
       if (why) { W.lastResult = { title: 'Not possible now', text: why + '.' }; return; }
       const F0 = landForce0(W, c, h, ev.data.fid), F = { ...F0, n: ev.data.n != null ? ev.data.n : F0.n }; // the force and the chance are those the card showed
