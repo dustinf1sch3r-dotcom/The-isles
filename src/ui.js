@@ -622,6 +622,7 @@
     }
     foodCache = { key, list }; return list;
   }
+  const VCACHE = new WeakMap(), VC = S => { let o = VCACHE.get(S); if (!o) VCACHE.set(S, o = {}); return o; }; // drawing caches kept beside each village, never in the village itself, so a save never carries them
   function draw() {
     const w = cv.clientWidth, h = cv.clientHeight, zoomed = cam.s * FORAGE_R;
     const key = `${cam.s},${cam.ox},${cam.oy},${baseVer},${detailVer},${layer},${w},${h},${W.roadsVer},${show.roads},${W.farmVer | 0}`;
@@ -657,16 +658,16 @@
     // villages: where they lie and how big; the trodden ground, ditch and palisade go under the land tint, the houses over it
     const seaDir = S => { // which way the nearest sea lies from a village (a unit vector) and how far, found once and kept
       let wx = 0, wy = 0; for (const c of S.clans) { wx += c.x; wy += c.y; } wx /= S.clans.length; wy /= S.clans.length;
-      if (S._sea && Math.hypot(S._sea.x - wx, S._sea.y - wy) < CELL) return S._sea.d;
+      if (VC(S).sea && Math.hypot(VC(S).sea.x - wx, VC(S).sea.y - wy) < CELL) return VC(S).sea.d;
       let best = 99, vx = 0, vy = 0; const found = [];
       for (let q = 0; q < 16; q++) { const a = q / 16 * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a); for (let d = 0.5; d <= 8; d += 0.5) { const i = SIM.cellAt(wx + ca * d * CELL, wy + sa * d * CELL); if (i == null || !W.land[i]) { found.push([ca, sa, d]); if (d < best) best = d; break; } } }
       for (const [ca, sa, d] of found) if (d <= best + 1) { vx += ca; vy += sa; }
-      const m = Math.hypot(vx, vy); S._sea = { x: wx, y: wy, d: m > 0.01 ? [vx / m, vy / m] : null, near: best }; return S._sea.d; };
+      const m = Math.hypot(vx, vy); VC(S).sea = { x: wx, y: wy, d: m > 0.01 ? [vx / m, vy / m] : null, near: best }; return VC(S).sea.d; };
     const landRing = (S, dx, dy, rr, slot) => { // 24 land tests round a ring centred dx,dy px from the village point: true where the ground is dry. Kept while the ring's WORLD size (to about 5%) and place hold, so zooming does not redo it
-      const c0 = S.clans[0], wb = Math.round(Math.log(rr / cam.s) * 20), q = CELL * 1.5, ox = Math.round(dx / cam.s / q), oy = Math.round(dy / cam.s / q), key = wb + ':' + ox + ':' + oy + ':' + Math.round(c0.x / 1000) + ':' + Math.round(c0.y / 1000) + ':' + S.clans.length, sl = '_lr' + slot; if (S[sl] && S[sl].key === key) return S[sl].v;
+      const c0 = S.clans[0], wb = Math.round(Math.log(rr / cam.s) * 20), q = CELL * 1.5, ox = Math.round(dx / cam.s / q), oy = Math.round(dy / cam.s / q), key = wb + ':' + ox + ':' + oy + ':' + Math.round(c0.x / 1000) + ':' + Math.round(c0.y / 1000) + ':' + S.clans.length, sl = '_lr' + slot; if (VC(S)[sl] && VC(S)[sl].key === key) return VC(S)[sl].v;
       let wx = 0, wy = 0; for (const c of S.clans) { wx += c.x; wy += c.y; } wx = wx / S.clans.length + ox * q; wy = wy / S.clans.length + oy * q;
       const rw = Math.exp(wb / 20), v = []; for (let k = 0; k < 24; k++) { const a = (k + 0.5) / 24 * Math.PI * 2, i = SIM.cellAt(wx + Math.cos(a) * rw, wy + Math.sin(a) * rw * 0.7); v.push(i != null && !!W.land[i]); }
-      S[sl] = { key, v }; return v; };
+      VC(S)[sl] = { key, v }; return v; };
     const vl = [], vpoly = (sx, sy, R2, hsh, t) => { if (!t) { t = ctx; ctx.beginPath(); } for (let k = 0; k < 9; k++) { const a = k / 9 * Math.PI * 2, rr = R2 * (0.82 + 0.3 * (((hsh >> (k * 3)) & 7) / 7)); k ? t.lineTo(sx + Math.cos(a) * rr, sy + Math.sin(a) * rr * 0.8) : t.moveTo(sx + Math.cos(a) * rr, sy + Math.sin(a) * rr * 0.8); } t.closePath(); };
     // where the houses of a village stand (one layout rule, small hash jitter), and the size of the ring of posts and the ditch outside them
     const vlayout = (S, sx, sy, R2, hsh, hall, pal, ditch, zoomed) => {
@@ -689,7 +690,7 @@
       let cx = 0, cy = 0, x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; for (const [hx, hy] of hp) { cx += hx; cy += hy; x0 = Math.min(x0, hx); x1 = Math.max(x1, hx); y0 = Math.min(y0, hy); y1 = Math.max(y1, hy); } cx = (cx / hp.length * 0.75 + (x0 + x1) / 2 * 0.25); cy = (cy / hp.length * 0.75 + (y0 + y1) / 2 * 0.25); { const sh = Math.hypot(cx - sx, cy - sy), mx = R2 * 0.35; if (sh > mx) { cx = sx + (cx - sx) * mx / sh; cy = sy + (cy - sy) * mx / sh; } } // the drawing centre: mostly the mean of the houses, a little the middle of their spread (so a lopsided huddle is not given a ring that is empty on one side), a little off the village point at most
       let ext = 0, bot = cy + R2 * 0.8 * 0.7; for (const [hx, hy, nm] of hp) { const s = sp[nm], kk = nm === 'vhall' ? k * 1.25 : k, w = s._lw * kk, h = s._lh * kk, fy = hy + h * 0.42; ext = Math.max(ext, Math.hypot(hx - cx, (fy - cy) / 0.7) + w * 0.3); bot = Math.max(bot, hy + h * 0.5); }
       // the shore: a canoe drawn only where the water is at hand (never a canoe left on dry land)
-      if (sea && S._sea && S._sea.near * CELL * cam.s < R2 * 1.7 + 6) { const r = (S._sea.near - 0.35) * CELL * cam.s; if (r > R2 * 0.3) { const cy = sy + sea[1] * r; hp.push([sx + sea[0] * r, cy, 'vcanoe' + flip]); bot = Math.max(bot, cy + 3); } }
+      if (sea && VC(S).sea && VC(S).sea.near * CELL * cam.s < R2 * 1.7 + 6) { const r = (VC(S).sea.near - 0.35) * CELL * cam.s; if (r > R2 * 0.3) { const cy = sy + sea[1] * r; hp.push([sx + sea[0] * r, cy, 'vcanoe' + flip]); bot = Math.max(bot, cy + 3); } }
       const V = { k, hp, jit, sea, bot, cx, cy, ph: 0, rp: Math.min(Math.max(R2 * 0.75, ext * 1.12 + 1.5), R2 * 1.4) };
       if (pal) { // the ring of posts: tips every 2.3 k px, a gate on the front (or on the shore side when the shore lies in front)
         const rp = V.rp, n = clamp(Math.round(TAU * rp * 0.88 / (2.6 * k)), 18, 150), da = TAU / n;
@@ -700,7 +701,7 @@
     // the layout is worked out once for a village at the origin and kept while its size (to half a px, and a quarter of a zoom step) holds; a pan only moves it
     const vplace = (S, sx, sy, R2, hsh, hall, pal, ditch) => {
       const rq = Math.round(R2 * 2) / 2, zq = Math.round(zoomed * 4) / 4, c0 = S.clans[0], f = (hall ? 1 : 0) + (pal ? 2 : 0) + (ditch ? 4 : 0) + (S.metal || 0) * 8, cb = Math.round(Math.log(cam.s) * 16), px = Math.round(c0.x / 500), py = Math.round(c0.y / 500);
-      let L = S._vl; if (!L || L.rq !== rq || L.zq !== zq || L.cb !== cb || L.hsh !== hsh || L.pop !== S.pop || L.f !== f || L.type !== S.type || L.nc !== S.clans.length || L.px !== px || L.py !== py) { L = vlayout(S, 0, 0, rq, hsh, hall, pal, ditch, zq); L.rq = rq; L.zq = zq; L.cb = cb; L.hsh = hsh; L.pop = S.pop; L.f = f; L.type = S.type; L.nc = S.clans.length; L.px = px; L.py = py; S._vl = L; }
+      let L = VC(S).vl; if (!L || L.rq !== rq || L.zq !== zq || L.cb !== cb || L.hsh !== hsh || L.pop !== S.pop || L.f !== f || L.type !== S.type || L.nc !== S.clans.length || L.px !== px || L.py !== py) { L = vlayout(S, 0, 0, rq, hsh, hall, pal, ditch, zq); L.rq = rq; L.zq = zq; L.cb = cb; L.hsh = hsh; L.pop = S.pop; L.f = f; L.type = S.type; L.nc = S.clans.length; L.px = px; L.py = py; VC(S).vl = L; }
       const V = Object.assign({}, L); V.cx = sx + L.cx; V.cy = sy + L.cy; V.bot = sy + L.bot; V.hp = L.hp.map(h => [sx + h[0], sy + h[1], h[2]]); return V; };
     // the ditch and its bank: ground, so drawn in plan, in the hatching the map gives its hills, a causeway left before the gate
     const drawDitch = (S, sx, sy, V, M) => { // adds this village's ditch, bank and hatching to the paths of its width (all the villages are stroked together)
@@ -711,7 +712,7 @@
       const rx = rb, ry = rd * 0.7 - dw / 2, m = clamp(Math.round(5.34 * rd / 3.2), 12, 160);
       for (let j = 0; j < m; j++) { const a = (j + 0.5) / m * TAU; if (!mask[Math.floor(a / st) % 24] || (a > c0 && a < c1)) continue; const ca = Math.cos(a), sa = Math.sin(a), bx = sx + ca * rx, by = sy + sa * ry, nx = ca / rx, ny = sa / ry, nl = Math.hypot(nx, ny), L = clamp(dw * 1.0, 2.4, 3.4) * (j & 1 ? 0.8 : 1); D.hatch.moveTo(bx, by); D.hatch.lineTo(bx + nx / nl * L, by + ny / nl * L); } };
     const ditchFlush = M => { ctx.lineCap = 'butt'; for (const D of M.values()) { ctx.strokeStyle = 'rgba(96,72,44,0.58)'; ctx.lineWidth = D.dw; ctx.stroke(D.band); ctx.strokeStyle = 'rgba(58,40,24,0.75)'; ctx.lineWidth = 0.7; ctx.stroke(D.bank); ctx.strokeStyle = 'rgba(92,66,36,0.75)'; ctx.lineWidth = 0.5; ctx.stroke(D.hatch); } ctx.lineCap = 'round'; };
-    { const vpos = []; for (const S of W.settlements || []) { if (!S.clans || !S.clans.length) continue; let sx = 0, sy = 0; for (const c of S.clans) { const p = cs(c); sx += p[0]; sy += p[1]; } vpos.push([S, sx / S.clans.length, sy / S.clans.length]); }
+    { const vpos = [], vseen = new Set(); for (const S of W.settlements || []) { if (!S.clans || !S.clans.length || vseen.has(S)) continue; vseen.add(S); let sx = 0, sy = 0; for (const c of S.clans) { const p = cs(c); sx += p[0]; sy += p[1]; } vpos.push([S, sx / S.clans.length, sy / S.clans.length]); }
       for (const [S] of vpos) S._sx = null;
       const vsorted = vpos.slice().sort((a, b) => a[1] - b[1]); vsorted.forEach((e, q) => { e.si = q; }); const tint = new Path2D(), edgeP = new Path2D(), edgeO = new Path2D(), dM = new Map();
       for (let vi = 0; vi < vpos.length; vi++) { const [S, sx, sy] = vpos[vi];
@@ -719,7 +720,7 @@
         if (far && sel !== S && hovE !== S && !(pc && S.clans.includes(pc)) && !(st && S.tribe === st)) continue; // far out, a village is part of its people's one mark
         let gap = 1e9; if (!far) { const i = vpos[vi].si; for (let j = i - 1; j >= 0 && sx - vsorted[j][1] < gap; j--) { const d = Math.hypot(vsorted[j][1] - sx, vsorted[j][2] - sy); if (d < gap) gap = d; } for (let j = i + 1; j < vsorted.length && vsorted[j][1] - sx < gap; j++) { const d = Math.hypot(vsorted[j][1] - sx, vsorted[j][2] - sy); if (d < gap) gap = d; } } // the nearest other village, looked for along the sorted row
         const R2 = Math.max(6, Math.min(clamp(Math.sqrt(S.pop) * clamp(zoomed / 6, 0.9, 3.2), 11, 42), gap / 2 / 1.25 - 1)); S._sx = sx; S._sy = sy; S._r = R2;
-        let hsh = S._hsh; if (hsh === undefined || S._hsn !== S.name) { hsh = 0; for (const ch of S.name) hsh = (hsh * 31 + ch.charCodeAt(0)) | 0; S._hsh = hsh; S._hsn = S.name; }
+        let hsh = VC(S).hsh; if (hsh === undefined || VC(S).hsn !== S.name) { hsh = 0; for (const ch of S.name) hsh = (hsh * 31 + ch.charCodeAt(0)) | 0; VC(S).hsh = hsh; VC(S).hsn = S.name; }
         let wpal = false, wditch = false, whall = false; for (const c of S.clans) { const w = c.works; if (w) { if (w.pal) wpal = true; if (w.ditch) wditch = true; if (w.hall) whall = true; } } S._hall = whall;
         const V = vplace(S, sx, sy, R2, hsh, S._hall, wpal, wditch); vl.push([S, sx, sy, R2, hsh, V]);
         vpoly(V.cx, V.cy, R2, hsh, tint); // trodden earth

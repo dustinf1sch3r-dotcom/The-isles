@@ -26,6 +26,7 @@ The player leads one house (a dynasty) inside a clan inside a tribe, generation 
 | `tools/discovery.js`, `raids.js`, `wars.js`, `stops.js` | Feature measures: how soon a house meets another people (passive and exploring), raids and paybacks in raid-every-chance play, realm wars and their outcomes, cards that stop play by type. Each takes `ISLES_SIM=<path to a sim.js>` to measure another build (for example the one before a change). `balance.js`, `fuzz.js` and `head_swap.js` always use `../build/sim.js`. |
 | `tools/roads.js`, `tools/same_but_roads.js` | Roads: `node tools/roads.js 2,7,21,33 200` prints km of track, path and road and the cells they touch every 50 years. `SIM_A=<old sim.js> node tools/same_but_roads.js 5,11,14` proves a road change alters nothing but the roads. |
 | `tools/land.js` | Land taken by a village: `node tools/land.js` (seeds 2,7,21,33,5,14, 200 years) counts villages raised on another people's claim, the land that passes, demands and drives by the world and their outcomes, villages sent off (and how often they had to go as wanderers). |
+| `tools/map_shots.js`, `tools/map_speed.js` | The map in a browser at phone size (Playwright). `node tools/map_shots.js <index.html> <outdir> <save.sav>` shoots the same spots and zooms on any build (the house's village, a fishing village, a walled village with a hall and ditch, a village with a palisade only, camps, a gathering place, the whole isles) so two builds can be compared shot by shot. `node tools/map_speed.js <save.sav> old=<index.html> new=<index.html>` times the map draw over a zoom sweep and a pan, builds interleaved; run it twice, the noise is 5 to 10%. Use a late-game save (many villages); saves are made with Save to file in the game menu. |
 | `tools/same.js` | `SIM_A=<sim.js> SIM_B=<sim.js> node tools/same.js 5,11,14` proves two builds give bit-identical worlds (for speed work that must not change results). |
 | `play/server.js`, `play/isles` | A text front-end for play-testing from a shell: `node play/server.js &` then `./play/isles 1 "new 5; adv 5; state; deeds"`. `docs/TESTER.md` documents its commands. It also has `testsetup` commands that jump to the late game for testing. |
 | `docs/` | Briefs used for agent engineers and testers, and the last test reports. |
@@ -80,6 +81,7 @@ Lines are very long, often a whole function on one line. Do not print whole file
 | Treasures | `addTreasure` |
 | Walking a story | `walk` |
 | Fog of war | `reveal`, `fogMonth` |
+| Villages, camps and fires on the map | ui.js `draw()`: `vplace` and `vlayout` (houses, ring, gate, kept per village in `VC`, a WeakMap, so no drawing cache is ever saved), `palRuns`, `palGate`, `palLintel`, `palEnd` (palisade), `drawDitch` and `ditchFlush` (ditch and bank), `landRing` and `seaDir` (sea tests); art.js sprites `vhouse`, `vlong`, `vhall`, `vhut`, `vcanoe`, `vtent`, `vhearth`, and `vpal`, `vditch` for the legend |
 
 ## Rules the game keeps (do not break)
 
@@ -102,10 +104,24 @@ Lines are very long, often a whole function on one line. Do not print whole file
 - **Roads and farming:** trade pacts make roads. Clearing fields shows on the map and drives beasts off, and wildlife thins as the land fills.
 - **Roads (#12):** fewer ways; people use the ones that exist.
 - **Land (#13):** a people whose land is taken by another's village can bid it leave or drive it out by war; the world's tribes do the same.
+- **Villages, camps and fires (#15):** drawn like the map's own trees: small houses, tents and hearths in the map's ink and wash, part of the map and not stickers on it. Colour stays with the borders. Names on the map carry no head counts (a tap shows them). Palisade, ditch and hall stay visible: the palisade is a ring of posts standing round the houses (back half behind them, front half in front, a gate), the ditch and bank is hatched like the hills. Zoomed out and zoomed in get equal care. Dustin chose this look from three drafts shown side by side (dark plan blocks, pale plan roofs, pictures like the trees); a first try in plan view read as a heap of logs and was dropped.
 - **Way of working:** Dustin likes the strongest model to plan and check, with cheaper agents building and play-testing, and every claim checked before it is reported.
 
 ## Where things stand (17 November 2026)
-Latest round (issues #12 and #13, built by agent engineers from briefs, each checked by skeptics, then play-tested on the combined build):
+Latest round (issue #15, the look of villages, camps and gathering fires; three drafts built by agent engineers and shown to Dustin side by side, the chosen one finished, each round checked by a visual critic and a code skeptic):
+- **Villages** are huddles of little thatched houses, longhouses and a great hall in the map's ink and wash, in a ring or along a lane; fishing huts face the shore with a canoe at the water's edge. The trodden ground and the ditch and bank lie under the land tint; houses and the palisade stand over it. The ring, ditch and name are centred on the houses, not on the bare village point.
+- **Palisade** (`works.pal`): a band of pointed oak posts on the ground ellipse, back half drawn lighter before the houses, front half after them, a gate with taller posts and a lintel; where the sea cuts the ring a taller post ends each run. **Ditch and bank** (`works.ditch`): a band of darker earth with an inked bank and hachures, a causeway at the gate, never on the sea.
+- **Camps** are hide tents (no flags, no tribe colour), **gathering places** a ring of stones with a small flame; the hungry ring is red-ochre. The whole-isles view keeps one mark per people (three houses, or one to three tents). Names: villages and camps without head counts; a group of camps reads "N camps". Legend: new pictures, plus Palisade and Ditch and bank.
+- Speed: the map draw is cached per village and batched; the nearest-village search runs along a sorted row. Two clean runs of `map_speed.js` on a 150-village save: see the PR for #15.
+- Checks on the final build: fuzz 0 errors and no BAD TEXT; save_roundtrip passes; taps on a village, a gathering place and a camp give the same results as before; a save made with the new build reloads and draws; screenshots at 390 px at every zoom.
+
+Still open from this round:
+- The gate shows only from zoom 0.004 or closer; farther out the palisade is a ring of posts with no visible gap.
+- A fishing village whose huts all crowd the shore still has some bare ground inside its ring.
+- Two separate groups of clans that share a village name share one place record (`updateSettlements` keys places by name): the record keeps only the last group's clans, so the other village is not drawn, and the record is listed twice in `W.settlements` (seen in a year-301 save: Neewunsuk). The map now draws such a record once; the record itself is a simulation bug (the "village names can repeat" item below).
+
+## Earlier round (17 November 2026, roads and land)
+Issues #12 and #13, built by agent engineers from briefs, each checked by skeptics, then play-tested on the combined build:
 - **Roads (#12).** Routes are found by A* that prefers road over path over track (`routeSearch`), so traffic follows the ways that exist; faint tracks fade faster; the whole-isles view draws only paths and roads. Over four seeds at year 200: about 20,000 km of ways against 37,000 before, on 3,400 cells against 5,900. Speed unchanged.
 - **Land taken by a village (#13).** When another people's village stands on a tribe's claim, a record is kept for 25 years (`O.seized`). The player gets a card ("Our land is taken": demand they leave, drive them out, let them be) and two deeds under Act (`landask` once in 2 years, `landdrive` once in 3), with the chances rolled shown. The card counts the strongest force the head can call (a tribe's leader calls up the tribe); under Act the player picks the force. The world's tribes demand and drive too (`landYear`), and the player's own village on held ground can be bidden to leave. A village that goes always goes: to free ground beyond the land, or as wanderers if none is free; the land comes back before it leaves; it leaves its wall and works; it keeps off that people's land for 10 years (`c.landFrom`). The settle deed's "Let the elders choose" keeps off other peoples' land. A record against a people who have since become allies, or joined the same realm, is set aside (no demands or drives between friends) and counts again if the bond ends. Every goodwill figure in the land texts comes from `LAND_AFF`, so the text and the charge cannot drift.
 - Checks on the combined build: fuzz 0 errors; saves and a save from before this round load; head_swap 0; balance on eight seeds: no house ended, world population within 1% of before; the chance shown was the chance rolled in every case checked, and over about 33 tries in play the outcomes matched the chances.
@@ -143,7 +159,7 @@ Do all of these before committing:
 - **Saves:** `node tools/save_roundtrip.js`.
 - **Balance:** `node tools/balance.js 5,8,11,14 120` and `node tools/balance.js 2,7,21,33 120`, compared with the result from before the change. Single seeds swing by chance (a change that adds any `W.rand()` call reorders every later roll), so judge the eight together.
 - **Old saves:** make a save with the build from before the change (seed 9, year 60, always option 0), load it with the new build and play 30 more years.
-- **Interface changes:** load `index.html` at phone size with Playwright (Chromium), and look at the screenshots.
+- **Interface changes:** load `index.html` at phone size with Playwright (Chromium), and look at the screenshots: `tools/map_shots.js` for the map (old and new build, same save, compare shot by shot), and `tools/map_speed.js` to keep panning and zooming as fast as before.
 - **Family or succession changes:** `node tools/head_swap.js` counts head changes while the old head is alive over ten games. It must say 0.
 
 ## Publishing
