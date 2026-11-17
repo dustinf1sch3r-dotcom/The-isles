@@ -7713,19 +7713,20 @@ const ART = (() => {
       let cx = (x0 + x1) / 2, cy = (y0 + y1) / 2; { const sh = Math.hypot(cx - sx, cy - sy), mx = R2 * 0.5; if (sh > mx) { cx = sx + (cx - sx) * mx / sh; cy = sy + (cy - sy) * mx / sh; } } // the drawing centre: the middle of the houses' footprints (a little off the village point at most), so the ring hugs them
       let fx = 0, fyu = 0, fyd = 0, bot = cy + R2 * 0.8 * 0.7, mg = 2.5 * k; for (const [hx, hy, w, h] of fp) { fx = Math.max(fx, Math.abs(hx - cx) + w / 2); fyu = Math.max(fyu, cy - hy + h * 0.2); fyd = Math.max(fyd, hy + h * 0.42 - cy); bot = Math.max(bot, hy + h * 0.5); } // the farthest footprint across, up and down: the ring is fitted to it
       let rx = Math.max(fx + mg, R2 * 0.6, 14 * k), ry = Math.max(fyu, fyd) + mg; if (ry < rx * 0.45) ry = rx * 0.45; else if (ry > rx * 0.9) rx = ry / 0.9;
-      { let sc = 1; for (const [hx, hy, w, h] of fp) { const ex = Math.abs(hx - cx) + w * 0.3, ey = Math.max(cy - hy + h * 0.2, hy + h * 0.42 - cy); sc = Math.max(sc, Math.hypot(ex / rx, ey / ry)); } sc = Math.min(sc, 1.3); rx *= sc; ry *= sc; } // no house corner left outside the ring
+      { let sc = 1; for (const [hx, hy, w, h] of fp) { const ex = Math.abs(hx - cx) + w * 0.3, ey = Math.max(cy - hy + h * 0.2, hy + h * 0.42 - cy); sc = Math.max(sc, Math.hypot(ex / rx, ey / ry)); } sc = Math.min(sc, 1.15); rx *= sc; ry *= sc; } // no house corner left outside the ring
       // the shore: a canoe drawn only where the water is at hand (never a canoe left on dry land)
       if (sea && VC(S).sea && VC(S).sea.near * CELL * cam.s < R2 * 1.7 + 6) { const r = (VC(S).sea.near - 0.35) * CELL * cam.s; if (r > R2 * 0.3) { const cy = sy + sea[1] * r; hp.push([sx + sea[0] * r, cy, 'vcanoe' + flip]); bot = Math.max(bot, cy + 3); } }
       const V = { k, hp, jit, sea, bot, cx, cy, ph: 0, rx, ry };
       if (pal) { // the ring of posts: tips every 2.3 k px, a gate on the front (or on the shore side when the shore lies in front)
-        const per = Math.PI * (3 * (rx + ry) - Math.sqrt((3 * rx + ry) * (rx + 3 * ry))), rm = (rx + ry / 0.7) / 2, n = clamp(Math.round(per * 0.76 / (2.6 * k)), 18, 150), da = TAU / n;
-        V.ph = clamp(5 * k, 2.8, 9); V.n = n; V.da = da; V.ga = sea && sea[1] > 0.3 ? clamp(sa < 0 ? sa + TAU : sa, Math.PI * 0.25, Math.PI * 0.75) : Math.PI / 2; V.gp = Math.max(2, Math.round(9 * k / (rm * da))); { V.gp = Math.min(V.gp, Math.max(1, Math.floor(Math.PI * 0.3 / da) - 2)); const ex = (V.gp + 1.4) * da; V.ga = clamp(V.ga, ex + 0.05, Math.PI - ex - 0.05); }
+        const per = Math.PI * (3 * (rx + ry) - Math.sqrt((3 * rx + ry) * (rx + 3 * ry))), rm = (rx + ry / 0.7) / 2, n = clamp(Math.round(per * 0.86 / (2.6 * k)), 18, 150), da = TAU / n;
+        V.ph = clamp(5 * k, 2.8, 9); V.n = n; V.da = da; V.ga = sea && sea[1] > 0.3 ? clamp(sa < 0 ? sa + TAU : sa, Math.PI * 0.25, Math.PI * 0.75) : Math.PI / 2; V.gp = Math.max(2, Math.round(Math.max(9 * k, 6) / (rm * da))); { V.gp = Math.min(V.gp, Math.max(1, Math.floor(Math.PI * 0.3 / da) - 2)); const ex = (V.gp + 1.4) * da; V.ga = clamp(V.ga, ex + 0.05, Math.PI - ex - 0.05); }
         bot = Math.max(bot, cy + ry + 0.5); }
       if (ditch) { const dw = clamp(2.2 + 0.9 * k, 2.5, 3.5); V.dw = dw; const off = 3.4 + dw / 2 + 1.2 * k; V.rd = rx + off / 0.7; V.rdy = ry + off; if (!V.ga) V.ga = Math.PI / 2; bot = Math.max(bot, cy + V.rdy + dw / 2); }
       if (pal) { // the trodden way out of the gate: 0.42 R2 long, cut short where the sea is
         const ca = Math.cos(V.ga), sa2 = Math.sin(V.ga), nx = ca / V.rx, ny = sa2 / V.ry, nl = Math.hypot(nx, ny) || 1, ux = nx / nl, uy = ny / nl; let wx = 0, wy = 0; for (const c of S.clans) { wx += c.x; wy += c.y; } wx /= S.clans.length; wy /= S.clans.length;
-        let len = R2 * 0.42; for (let t = 0.12; t <= 0.421; t += 0.05) { const L = R2 * t, i = SIM.cellAt(wx + (cx - sx + ca * V.rx + ux * L) / cam.s, wy + (cy - sy + sa2 * V.ry + uy * L) / cam.s); if (i == null || !W.land[i]) { len = Math.max(R2 * 0.18, R2 * (t - 0.05)); break; } }
-        V.gl = len; V.gu = [ux, uy]; }
+        let len = R2 * 0.5; for (let t = 0.12; t <= 0.501; t += 0.05) { const L = R2 * t, i = SIM.cellAt(wx + (cx - sx + ca * V.rx + ux * L) / cam.s, wy + (cy - sy + sa2 * V.ry + uy * L) / cam.s); if (i == null || !W.land[i]) { len = Math.max(R2 * 0.1, R2 * (t - 0.1)); break; } }
+        if (sea && VC(S).sea) { const d = VC(S).sea.near * CELL * cam.s - 7, gx0 = cx - sx + ca * V.rx, gy0 = cy - sy + sa2 * V.ry, us = ux * sea[0] + uy * sea[1]; if (us > 0.2 && d < R2 * 1.7 + 6) len = 0; else if (us > -0.2) len = Math.min(len, (d - (gx0 * sea[0] + gy0 * sea[1])) / Math.max(us, 0.25)); } // never out over the water
+        V.gl = Math.max(0, len); V.gu = [ux, uy]; }
       V.bot = bot; if (V.rd) V.m0 = landRing(S, cx - sx, cy - sy, V.rd, 0, V.rdy / V.rd); if (V.n) V.m1 = landRing(S, cx - sx, cy - sy, V.rx * 0.72, 1, V.ry / V.rx); return V; };
     // the layout is worked out once for a village at the origin and kept while its size (to half a px, and a quarter of a zoom step) holds; a pan only moves it
     const vplace = (S, sx, sy, R2, hsh, hall, pal, ditch) => {
@@ -7755,9 +7756,9 @@ const ART = (() => {
         vpoly(V.cx, V.cy, V.rx, V.ry, hsh, tint); // trodden earth
         const ep = pc && S.clans.includes(pc) ? edgeP : edgeO; ep.moveTo(V.cx + V.rx * 1.1, V.cy); ep.ellipse(V.cx, V.cy, V.rx * 1.1, V.ry * 1.1, 0, 0, Math.PI * 2); // the edge of the village
         if (V.rd) drawDitch(S, V.cx, V.cy, V, dM);
-        if (V.n && V.m1[Math.floor(V.ga / (Math.PI / 12))]) { const ca = Math.cos(V.ga), sa = Math.sin(V.ga), gx = V.cx + ca * V.rx, gy = V.cy + sa * V.ry, ux = V.gu[0], uy = V.gu[1], l0 = Math.max(2, R2 * 0.12), l1 = V.gl; gpath.moveTo(gx - ux * l0, gy - uy * l0); gpath.lineTo(gx + ux * l1, gy + uy * l1); } // the trodden way out of the gate
+        if (V.n && V.m1[Math.floor(V.ga / (Math.PI / 12))]) { const ca = Math.cos(V.ga), sa = Math.sin(V.ga), gx = V.cx + ca * V.rx, gy = V.cy + sa * V.ry, ux = V.gu[0], uy = V.gu[1], l0 = Math.max(2, R2 * 0.12), l1 = V.gl; if (l1 > 4) { gpath.moveTo(gx - ux * l0, gy - uy * l0); gpath.lineTo(gx + ux * l1, gy + uy * l1); } } // the trodden way out of the gate
       }
-      ctx.fillStyle = zoomed < 28 ? 'rgba(150,118,66,0.38)' : 'rgba(150,118,66,0.3)'; ctx.fill(tint); ctx.lineWidth = 0.6; ctx.strokeStyle = 'rgba(29,21,14,0.2)'; ctx.stroke(edgeO); ctx.strokeStyle = 'rgba(29,21,14,0.4)'; ctx.stroke(edgeP); ditchFlush(dM); ctx.lineCap = 'round'; ctx.strokeStyle = 'rgba(132,92,48,0.85)'; ctx.lineWidth = clamp(1.5 + (zoomed - 8) / 24, 1.5, 2.5); ctx.stroke(gpath); }
+      ctx.fillStyle = zoomed < 28 ? 'rgba(150,118,66,0.38)' : 'rgba(150,118,66,0.3)'; ctx.fill(tint); ctx.lineWidth = 0.6; ctx.strokeStyle = 'rgba(29,21,14,0.2)'; ctx.stroke(edgeO); ctx.strokeStyle = 'rgba(29,21,14,0.4)'; ctx.stroke(edgeP); ditchFlush(dM); ctx.lineCap = 'round'; { const gw = clamp(3 + (zoomed - 8) / 24, 3, 3.8); ctx.strokeStyle = 'rgba(226,200,150,0.7)'; ctx.lineWidth = gw + 2.4; ctx.stroke(gpath); ctx.strokeStyle = 'rgba(132,92,48,0.9)'; ctx.lineWidth = gw; ctx.stroke(gpath); } }
     if (show.people) drawTerritories(st, scf);
     if (st) { // how the selected tribe stands with the others
       const [cx, cy] = anchor(st);
@@ -7802,13 +7803,13 @@ const ART = (() => {
         if (!back) { const ba = 0.3 + 0.6 * clamp((k - 0.7) / 0.5, 0, 1); ctx.strokeStyle = `rgba(29,21,14,${ba})`; ctx.lineWidth = lw * 0.8; ctx.stroke(P.foot); }
         if (P.seam) { ctx.strokeStyle = `rgba(29,21,14,${P.sa})`; ctx.lineWidth = 0.4; ctx.stroke(P.seam); }
         if (back) { const la = clamp((k - 0.7) / 0.2, 0, 1); if (la > 0.02) { ctx.strokeStyle = `rgba(29,21,14,${0.95 * la})`; ctx.lineWidth = 1.1; ctx.lineCap = 'butt'; ctx.stroke(P.lint); ctx.lineCap = 'round'; } }
-        else { ctx.fillStyle = '#c0a070'; ctx.fill(P.gate); ctx.strokeStyle = '#1d150e'; ctx.lineWidth = Math.min(1.2, 0.8 * Math.max(1, k)); ctx.stroke(P.gate); }
+        else { ctx.fillStyle = '#c0a070'; ctx.fill(P.gate); ctx.strokeStyle = '#1d150e'; ctx.lineWidth = Math.min(1.3, 0.9 * Math.max(1, k)); ctx.stroke(P.gate); }
         ctx.lineJoin = 'round'; } };
     const palGate = (sx, sy, V, P) => { // two posts either side of the gap, a third taller
-      const { rx: rp, ry, ph, k, da, ga, gp } = V, hh = Math.max(ph * 1.6, ph + 2.4), w = Math.max(2, 2 * k), g = P.gate;
+      const { rx: rp, ry, ph, k, da, ga, gp } = V, hh = Math.max(ph * 2, ph + 4), w = Math.max(2.6, 2 * k), g = P.gate;
       for (const sg of [-1, 1]) for (const o of [0.35, 1.35]) { const a = ga + sg * (gp + o) * da, x = sx + Math.cos(a) * rp, y = sy + Math.sin(a) * ry; g.moveTo(x - w / 2, y); g.lineTo(x - w / 2, y - hh + w * 0.8); g.lineTo(x, y - hh); g.lineTo(x + w / 2, y - hh + w * 0.8); g.lineTo(x + w / 2, y); g.closePath(); } };
     const palLintel = (sx, sy, V, P) => { // the beam across the gate: drawn before the houses, so their roofs stand over it
-      const { rx: rp, ry, ph, da, ga, gp } = V, hh = Math.max(ph * 1.6, ph + 2.4), pts = [];
+      const { rx: rp, ry, ph, da, ga, gp } = V, hh = Math.max(ph * 2, ph + 4), pts = [];
       for (const sg of [-1, 1]) { const a = ga + sg * (gp + 0.35) * da; pts.push([sx + Math.cos(a) * rp, sy + Math.sin(a) * ry - hh * 0.86]); }
       P.lint.moveTo(pts[0][0], pts[0][1]); P.lint.lineTo(pts[1][0], pts[1][1]); };
     const palEnd = (sx, sy, V, a, back) => { // a taller post at each end of a stretch left open to the sea, so the opening reads as a gate
@@ -7974,7 +7975,7 @@ const ART = (() => {
       for (const cf of W.confeds) { if (!show.names && cf !== scf) continue; jobs.push({ cf, p: !tidy ? -1 : mine && mine.confed === cf ? 1 : cf === scf ? 2 : 3.5, n: cf.members ? cf.members.size : 0 }); }
       for (const t of W.tribes) { if (!show.names && t !== st) continue; if (!showAll && !hot(t) && t !== mine && tsz.get(t) < 100 && !isCap(t)) continue; jobs.push({ t, p: t === mine ? 0 : hot(t) ? 2 : isCap(t) ? 3 : 4, n: tsz.get(t) }); }
       jobs.sort((a, b) => a.p - b.p || b.n - a.n);
-      if (tidy) { for (const m of marks) placed.push(m); for (const [, x, y, ts] of camps) placed.push([x, y, ts * 1.5, ts * 0.95]); for (const [, x, y, r, bot, V] of vills) { const w = Math.max(r * 2.4, 2 * V.rx + 4), top = V.cy - Math.max(r * 0.95, V.ry + V.ph + 1), h = Math.max(r * 1.9, (bot || y) - top), bx = [V.cx, top + h / 2, w, h]; V.box = bx; vbx.push(bx); placed.push(bx); } } // names never sit over a mark
+      if (tidy) { for (const m of marks) placed.push(m); for (const [, x, y, ts] of camps) placed.push([x, y, ts * 1.5, ts * 0.95]); for (const [, x, y, r, bot, V] of vills) { const w = Math.max(r * 2.4, 2 * Math.max(V.rx, V.ry / 0.7) + 4), top = V.cy - Math.max(r * 0.95, Math.max(V.rx, V.ry / 0.7) * 0.7 + V.ph + 1), h = Math.max(r * 1.9, (bot || y) - top), bx = [V.cx, top + h / 2, w, h]; V.box = bx; vbx.push(bx); placed.push(bx); } } // names never sit over a mark
       nMk = placed.length; let nT = 0, nR = 0, pushed = tidy;
       for (const j of jobs) {
         if (!pushed && !j.cf) { for (const m of marks) placed.push(m); pushed = true; } // 'Every camp': the old way, marks are kept clear of the banners but not of the realm names
