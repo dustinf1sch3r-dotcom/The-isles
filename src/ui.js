@@ -703,6 +703,7 @@
         lg = { cx: lcx, cy: lcy, rp: Math.min(Math.max(R2 * 0.75, ext * 1.12 + 1.5), R2 * 1.4), bot: lbot }; }
       // the shore: a canoe drawn only where the water is at hand (never a canoe left on dry land)
       if (sea && VC(S).sea && VC(S).sea.near * CELL * cam.s < R2 * 1.7 + 6) { const r = (VC(S).sea.near - 0.35) * CELL * cam.s; if (r > R2 * 0.3) { const cy = sy + sea[1] * r; hp.push([sx + sea[0] * r, cy, 'vcanoe' + flip]); bot = Math.max(bot, cy + 3); lg.bot = Math.max(lg.bot, cy + 3); } }
+      // lg keeps the pre-fit centre, radius and bottom on purpose: the placed box and the name spots are tuned on them, and fitted figures moved village names
       const V = { k, hp, jit, sea, bot, cx, cy, ph: 0, rx, ry, lg };
       if (pal) { // the ring of posts: tips every 2.3 k px
         const per = Math.PI * (3 * (rx + ry) - Math.sqrt((3 * rx + ry) * (rx + 3 * ry))), n = clamp(Math.round(per * 0.86 / (2.6 * k)), 18, 150), da = TAU / n;
@@ -757,7 +758,7 @@
         vpoly(V.cx, V.cy, V.rx, V.ry, hsh, tint); // trodden earth
         const ep = pc && S.clans.includes(pc) ? edgeP : edgeO; ep.moveTo(V.cx + V.rx * 1.1, V.cy); ep.ellipse(V.cx, V.cy, V.rx * 1.1, V.ry * 1.1, 0, 0, Math.PI * 2); // the edge of the village
         if (V.rd) drawDitch(S, V.cx, V.cy, V, dM);
-        if (V.n && V.m1[Math.floor(V.ga / (Math.PI / 12))]) { const ca = Math.cos(V.ga), sa = Math.sin(V.ga), gx = V.cx + ca * V.rx, gy = V.cy + sa * V.ry, ux = V.gu[0], uy = V.gu[1], l0 = Math.max(2, R2 * 0.12), l1 = V.gl; if (l1 > 4 && !(V.gv >= 3 && show.roads)) { gpath.moveTo(gx - ux * l0, gy - uy * l0); gpath.lineTo(gx + ux * l1, gy + uy * l1); } } // the trodden way out of the gate
+        if (V.n && V.m1[Math.floor(V.ga / (Math.PI / 12))]) { const ca = Math.cos(V.ga), sa = Math.sin(V.ga), gx = V.cx + ca * V.rx, gy = V.cy + sa * V.ry, ux = V.gu[0], uy = V.gu[1], l0 = Math.max(2, R2 * 0.12), l1 = V.gl; if (l1 > 4 && !(V.gv >= 1 && show.roads)) { gpath.moveTo(gx - ux * l0, gy - uy * l0); gpath.lineTo(gx + ux * l1, gy + uy * l1); } } // the trodden way out of the gate
       }
       ctx.fillStyle = zoomed < 28 ? 'rgba(150,118,66,0.38)' : 'rgba(150,118,66,0.3)'; ctx.fill(tint); ctx.lineWidth = 0.6; ctx.strokeStyle = 'rgba(29,21,14,0.2)'; ctx.stroke(edgeO); ctx.strokeStyle = 'rgba(29,21,14,0.4)'; ctx.stroke(edgeP); ditchFlush(dM); ctx.lineCap = 'round'; { const zs = clamp(zoomed / 8, 0.7, 1.8), gw = Math.max(2, 1.5 * zs); ctx.strokeStyle = 'rgba(84,58,28,0.6)'; ctx.lineWidth = gw + 1.2; ctx.stroke(gpath); ctx.strokeStyle = 'rgba(132,92,48,0.95)'; ctx.lineWidth = gw; ctx.stroke(gpath); } }
     if (show.people) drawTerritories(st, scf);
