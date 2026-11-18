@@ -1942,14 +1942,18 @@
       easeCamps(dt);
       // repaint the land only when the season changes (or a layer is switched), a slice at a time
       const season = Math.floor(W.week / 13);
+      const PR = SIM.prof.on && running; let r0 = PR ? performance.now() : 0, rPaint = 0, rDetail = 0; // profiler: land painting, detail jobs and draw() are the rendering
       if (dirty) { paint(); detail = null; detailJob = null; detailVer++; dirty = false; lastSeason = season; }
       else if (season !== lastSeason && !baseJob) { baseJob = { y: 0 }; lastSeason = season; if (detail) detail.stale = true; }
       paintStep(3);
+      if (PR) { const r1 = performance.now(); rPaint = r1 - r0; r0 = r1; }
       const zoomedIn = cam.s * WORLD / R > 1.15, camKey = cam.s + ',' + cam.ox + ',' + cam.oy;
       if (camKey !== lastCamKey) { lastCamKey = camKey; camMoved = t; if (detailJob && detailJob.key !== camKey) detailJob = null; }
       if (zoomedIn && !pts.size && t - camMoved > 180 && !detailJob && (!detail || detail.key !== camKey || (detail.stale && t - (detail.at || 0) > 4000))) startDetail(camKey);
       if (detailJob) detailStep(6);
+      if (PR) { const r1 = performance.now(); rDetail = r1 - r0; r0 = r1; }
       draw();
+      if (PR) SIM.prof.render(performance.now() - r0, rPaint, rDetail);
       const now = performance.now();
       if (now - lastPanel > 1500 && !panelHover) { updateTop(); if (running && (panel !== 'log' || W.events.length !== lastEvN)) { const st = $('#panelBody').scrollTop; renderPanel(); $('#panelBody').scrollTop = st; lastEvN = W.events.length; } lastPanel = now; }
     }
@@ -1961,6 +1965,7 @@
   // keep looking at the same spot when the window or phone toolbar changes size (don't jump out to the whole map)
   window.addEventListener('resize', () => { const w0 = cv.clientWidth, h0 = cv.clientHeight; resize(); if (!W) return; cam.ox += (cv.clientWidth - w0) / 2; cam.oy += (cv.clientHeight - h0) / 2; try { draw(); } catch (e) {} });
   resize();
+  try { const pq = new URLSearchParams(location.search); if (pq.has('prof') && pq.get('prof') !== '0') SIM.prof.on = true; } catch (e) {} // ?prof or ?prof=1 times the systems; the summaries go to the console
   STORE.get().then(v => { savedGame = v && v.str ? v : null; }).catch(() => {}).then(() => newWorld(Math.floor(Math.random() * 1e9)));
   requestAnimationFrame(frame);
   window.__dbg = { get W() { return W; }, get cam() { return cam; }, get show() { return show; }, get grp() { return grpOf; }, get mk() { return mkOf; }, get crowd() { return crowdOn; }, herdsN: () => { herdCache.key = ''; return herds().reduce((n, h) => n + (h.sea || h.sp === 'duck' || h.sp === 'sealion' ? 0 : h.cnt), 0); }, probe: (sx, sy) => { const [x, y] = toWorld(sx, sy), gx = Math.floor(x / CELL), gy = Math.floor(y / CELL), P = W.player; const fx = Math.floor((sx - cam.ox) / cam.s / WORLD * FR), fy = Math.floor((sy - cam.oy) / cam.s / WORLD * FR); return { x, y, gx, gy, known: P.known[gy * N + gx], fogA: fogImg ? fogImg.data[(fy * FR + fx) * 4 + 3] : -1, land: W.land[gy * N + gx], dpr: window.devicePixelRatio, cssW: cv.clientWidth, cvW: cv.width }; }, check: (sx, sy) => { if (!placePick) return false; const [x, y] = toWorld(sx, sy); return !SIM.checkPlace(W, placePick.id, x, y); }, reset: () => { modalEv = null; $('#modal').style.display = 'none'; W.pending = []; running = false; wasRunning = false; $('#play').textContent = '▶'; }, open: e => open(e, true), fit: () => fit(), paint: () => { paint(); }, zoom: (x, y, f) => zoomAt(x, y, f), center: (x, y, s) => { cam.s = s; centerOn(x, y); } };

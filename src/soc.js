@@ -202,15 +202,96 @@
     if (q.fam) q.fam.lastDeath = W.week;
   }
 
+  // The 3x test world for profiling (not used by the game): every living clan but the player's gets two copies, in the same tribe, 3 to 6 km off.
+  // Each copy has its own persons (links inside the clan point at the copies, a spouse outside becomes null, other links stay), its own families, and the clan's goods, stores and village name.
+  // the nearest dry-land cell centre to (x, y): the same search as the first landNear above (that name is declared twice in this file and the later, a yes/no test of claims, is the one in force)
+  function landSpot(W, x, y) {
+    const g0 = clamp(Math.floor(x / CELL), 0, N - 1), h0 = clamp(Math.floor(y / CELL), 0, N - 1);
+    for (let r = 0; r <= 12; r++) { let best = null, bd = 1e18;
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; const gx = g0 + dx, gy = h0 + dy; if (gx < 0 || gy < 0 || gx >= N || gy >= N) continue; const i = gy * N + gx; if (!W.land[i] || W.lake[i]) continue; const px = W.px ? W.px[i] : (gx + 0.5) * CELL, py = W.py ? W.py[i] : (gy + 0.5) * CELL, d = (px - x) ** 2 + (py - y) ** 2; if (d < bd) { bd = d; best = [px, py]; } }
+      if (best) return best; }
+    return [x, y];
+  }
+  function profTriple(W) {
+    const pc = W.player && W.player.head && W.player.head.clan, base = W.clans.filter(c => c.alive && c.people.length && c !== pc), SKIP = new Set(['id', 'kind', 'rel', 'hist', 'founded', 'alive', 'name', 'tribe', 'x', 'y', 'tx', 'ty', 'people', 'parent', 'head', 'favored', 'atGathering']);
+    const cp = v => Array.isArray(v) ? v.slice() : v instanceof Map ? new Map(v) : v && typeof v === 'object' && !v.kind && !('sex' in v) ? Object.assign({}, v) : v; // a person or an entity is a link, kept as it is
+    let nc = 0, np = 0;
+    for (const c of base) for (let k = 0; k < 2; k++) {
+      const m = new Map(), fm = new Map(), rnd = mulberry32((W.seed | 0) + c.id * 7 + k), ang = rnd() * 6.2832, dist = 3000 + rnd() * 3000;
+      const live = c.people.filter(q => q.alive), kids = [];
+      for (const q of live) { const n = personShell(); n.id = W.nextPid++; for (const f of Object.keys(q)) if (f !== 'id' && f !== 'dyn') n[f] = cp(q[f]); m.set(q, n); kids.push(n); }
+      const pos = landSpot(W, c.x + Math.cos(ang) * dist, c.y + Math.sin(ang) * dist), clan = newClan(W, c.tribe, pos[0], pos[1], kids, c.name, null);
+      for (const f of Object.keys(c)) if (!SKIP.has(f)) clan[f] = cp(c[f]);
+      clan.head = m.get(c.head) || null; clan.atGathering = false; clan.tx = clan.x; clan.ty = clan.y;
+      for (const q of live) { const n = m.get(q);
+        for (const f of ['mother', 'father', 'nursing', 'lastMate', 'owner']) if (n[f] && m.has(n[f])) n[f] = m.get(n[f]);
+        if (n.spouse) n.spouse = m.get(n.spouse) || null; // a spouse in another clan: none, so marriages stay two-sided
+        if (n.fam) { let f = fm.get(n.fam); if (!f) { const o = n.fam; f = ent(W, 'family', { name: o.name, clan, head: m.get(o.head) || o.head }); for (const x of Object.keys(o)) if (!(x in f) && x !== 'rel' && x !== 'hist') f[x] = cp(o[x]); fm.set(o, f); } n.fam = f; }
+        n.clan = clan; }
+      nc++; np += kids.length;
+    }
+    return { clans: nc, people: np };
+  }
+
+  // ---------- profiler: milliseconds per system per tick (off by default; with it off each timed spot costs one boolean test) ----------
+  // A lap timer: pm(name) adds the time since the last mark to that function, so the functions add up to the whole tick.
+  // PROF lives here in module scope, never on W, so saves and the world are untouched.
+  const pnow = typeof performance !== 'undefined' && performance.now ? () => performance.now() : () => Date.now();
+  const FN_SYS = {
+    'pop.move': 'movement', decideMove: 'movement', tribeHomeUpdate: 'movement',
+    'pop.food': 'food', farmingMonth: 'food', harvest: 'food', gameCap: 'food',
+    'pop.births': 'births/deaths',
+    updateLeaders: 'social/clan', marriages: 'social/clan', seekSpouses: 'social/clan', households: 'social/clan', disputes: 'social/clan', sharing: 'social/clan',
+    clanFission: 'social/clan', clanMerge: 'social/clan', tribeFission: 'social/clan', tribeMerge: 'social/clan', decayRelations: 'social/clan',
+    updateSettlements: 'social/clan', foundingMonth: 'social/clan', planGatherings: 'social/clan', endGatherings: 'social/clan', confedYear: 'social/clan', ruleYear: 'social/clan',
+    removeClan: 'social/clan',
+    revenge: 'conflict', interTribe: 'conflict', warParties: 'conflict', paybackMonth: 'conflict', slaveMonth: 'conflict', landScan: 'conflict', claimsTrips: 'conflict', aiClaims: 'conflict',
+    acquireGoods: 'trade/goods', procure: 'trade/goods', procureOre: 'trade/goods', exchange: 'trade/goods', traderMonth: 'trade/goods', seaMonth: 'trade/goods',
+    stepEnv: 'environment',
+    rebuildBuckets: 'bookkeeping', fogMonth: 'bookkeeping', sightYear: 'bookkeeping', playerEvents: 'bookkeeping', playerMonth: 'bookkeeping', runAuto: 'bookkeeping', yearEnd: 'bookkeeping', loop: 'bookkeeping',
+    draw: 'rendering', paint: 'rendering', detail: 'rendering'
+  };
+  const SYS_ORDER = ['movement', 'food', 'births/deaths', 'social/clan', 'conflict', 'trade/goods', 'environment', 'bookkeeping', 'rendering'];
+  const sysOf = f => FN_SYS[f] || 'bookkeeping';
+  const pwin = () => ({ ticks: 0, frames: 0, fn: {} });
+  let PT = 0;
+  const PROF = {
+    on: false, every: 100,
+    win: pwin(), run: pwin(),
+    onSummary: text => console.log(text),
+    reset() { this.win = pwin(); this.run = pwin(); },
+    render(draw, paint, detail) { const w = this.win.fn; w.draw = (w.draw || 0) + draw; w.paint = (w.paint || 0) + paint; w.detail = (w.detail || 0) + detail; this.win.frames++; },
+    snapshot() {
+      const mk = (a, b) => { const fn = {}, sys = {}; for (const k of SYS_ORDER) sys[k] = 0; for (const w of b ? [a, b] : [a]) for (const f in w.fn) { fn[f] = (fn[f] || 0) + w.fn[f]; sys[sysOf(f)] += w.fn[f]; } return { ticks: a.ticks + (b ? b.ticks : 0), frames: a.frames + (b ? b.frames : 0), sys, fn }; };
+      return { window: mk(this.win), run: mk(this.run, this.win) };
+    },
+    triple: profTriple,
+    text(s, W, label) { // s: one {ticks, frames, sys, fn} block
+      let tot = 0; for (const k of SYS_ORDER) tot += s.sys[k];
+      const f2 = x => x.toFixed(3), n = Math.max(1, s.ticks);
+      const out = [`[prof] ${label || 'last'} ${s.ticks} ticks${s.frames ? ', ' + s.frames + ' frames' : ''}${W ? ', pop ' + W.clans.reduce((a, c) => a + c.people.length, 0) + ', clans ' + W.clans.length : ''}, total ${f2(tot / n)} ms/tick`];
+      for (const k of SYS_ORDER) { if (!s.sys[k] && k === 'rendering') continue; out.push(`  ${k.padEnd(14)} ${f2(s.sys[k] / n).padStart(8)} ms/tick ${(tot ? 100 * s.sys[k] / tot : 0).toFixed(1).padStart(5)}%${k === 'rendering' && s.frames ? '  (' + f2(s.sys[k] / s.frames) + ' ms/frame)' : ''}`); }
+      return out.join('\n');
+    }
+  };
+  const pm = name => { const t = pnow(), w = PROF.win.fn; w[name] = (w[name] || 0) + (t - PT); PT = t; };
+  function profFlush(W) {
+    const w = PROF.win, r = PROF.run; r.ticks += w.ticks; r.frames += w.frames; for (const f in w.fn) r.fn[f] = (r.fn[f] || 0) + w.fn[f];
+    const s = { ticks: w.ticks, frames: w.frames, sys: {}, fn: w.fn }; for (const k of SYS_ORDER) s.sys[k] = 0; for (const f in w.fn) s.sys[sysOf(f)] += w.fn[f];
+    PROF.win = pwin(); PROF.onSummary(PROF.text(s, W));
+  }
+
   // ---------- weekly clan (camp) step: forage, eat, births, deaths ----------
   const setTimeout0 = f => f();
   function stepPop(W, c) {
     const rand = W.rand;
     if (!c.people.length) return;
+    const PF = PROF.on;
     { const ti = cellAt(c.tx, c.ty); if (!W.land[ti] || W.lake[ti]) { const p = landNear(W, c.tx, c.ty); c.tx = p[0]; c.ty = p[1]; } }
     const dx = c.tx - c.x, dy = c.ty - c.y, d = Math.hypot(dx, dy);
     if (d < 1) { const ci0 = cellAt(c.x, c.y); if (!W.land[ci0] || W.lake[ci0]) { const p = landNear(W, c.x, c.y); c.x = c.tx = p[0]; c.y = c.ty = p[1]; } }
     if (d > 1) { const st = Math.min(d, 30000); c.x += dx / d * st; c.y += dy / d * st; }
+    if (PF) pm('pop.move');
     let nk = 0, lab = 0; // a week of the clan's food and its labour, summed in one pass over the people (same sums as needsWeek and labor)
     for (const q of c.people) { nk += personKcal(q); lab += workerEq(q.age) * (0.6 + 0.6 * q.skill) * (q.sex === 'F' ? (q.nursing && q.nursing.alive && q.nursing.age < 1 ? 0.6 : 0.85) : 1) * (q.job ? 0.6 : 1); }
     const need = nk * 7, tool = c.tool;
@@ -250,6 +331,7 @@
     const size = c.people.length, ci = cellAt(c.x, c.y);
     W.forest[ci] = Math.max(0, W.forest[ci] - 0.00003 * size);
     W.nit[ci] = Math.min(140, W.nit[ci] + 0.0015 * size); W.om[ci] += 0.00002 * size;
+    if (PF) pm('pop.food');
 
     const hunger = Math.max(0, 0.86 - c.cond) / 0.86, starvHaz = 3.0 * hunger * hunger;
     const fertMult = clamp((c.cond - 0.5) / 0.4, 0, 1);
@@ -285,6 +367,7 @@
     if (anyDead || born.length) { c.people = c.people.filter(q => q.alive); for (const ch of born) c.people.push(ch); }
     if (c.cond < 0.65) c.lowWeeks++; else c.lowWeeks = 0;
     if (c.lowWeeks === 6) { note(W, c, `Hunger in the ${c.name} camp (${Math.round(c.cond * 100)}% of needs met).`); if (!c.hungerLog || W.week - c.hungerLog > 156) { c.hungerLog = W.week; logEvent(W, `The ${c.name} clan of the ${c.tribe.name} is going hungry.`, c, 'hunger'); } }
+    if (PF) pm('pop.births');
   }
 
   // ---------- leadership ----------
@@ -5790,49 +5873,52 @@
   }
 
   function step(W) {
+    const P = PROF.on; if (P) PT = pnow();
     PX = W.px; PY = W.py;
-    stepEnv(W);
-    rebuildBuckets(W);
+    stepEnv(W); if (P) pm('stepEnv');
+    rebuildBuckets(W); if (P) pm('rebuildBuckets');
     const wk = W.week % 52;
     for (const c of W.clans) stepPop(W, c);
-    if (wk === GATHER_PLAN) { planGatherings(W); W.gathering = true; }
-    if (wk === GATHER_END) { endGatherings(W); W.gathering = false; }
-    if (wk === 33) harvest(W);
-    if (W.week % 4 === 2) gameCap(W);
+    if (P) pm('loop');
+    if (wk === GATHER_PLAN) { planGatherings(W); W.gathering = true; if (P) pm('planGatherings'); }
+    if (wk === GATHER_END) { endGatherings(W); W.gathering = false; if (P) pm('endGatherings'); }
+    if (wk === 33) { harvest(W); if (P) pm('harvest'); }
+    if (W.week % 4 === 2) { gameCap(W); if (P) pm('gameCap'); }
     if (W.week % 4 === 0) {
-      for (const c of W.clans) { acquireGoods(W, c); procure(W, c); }
-      farmingMonth(W);
-      foundingMonth(W);
-      landScan(W);
-      seaMonth(W);
-      playerEvents(W);
-      fogMonth(W);
-      slaveMonth(W);
-      warParties(W);
-      paybackMonth(W);
-      if (W.week % 12 === 0) { claimsTrips(W); aiClaims(W); }
-      traderMonth(W);
-      updateSettlements(W);
-      for (const c of W.clans) procureOre(W, c);
-      playerMonth(W);
+      for (const c of W.clans) { acquireGoods(W, c); if (P) pm('acquireGoods'); procure(W, c); if (P) pm('procure'); }
+      farmingMonth(W); if (P) pm('farmingMonth');
+      foundingMonth(W); if (P) pm('foundingMonth');
+      landScan(W); if (P) pm('landScan');
+      seaMonth(W); if (P) pm('seaMonth');
+      playerEvents(W); if (P) pm('playerEvents');
+      fogMonth(W); if (P) pm('fogMonth');
+      slaveMonth(W); if (P) pm('slaveMonth');
+      warParties(W); if (P) pm('warParties');
+      paybackMonth(W); if (P) pm('paybackMonth');
+      if (W.week % 12 === 0) { claimsTrips(W); if (P) pm('claimsTrips'); aiClaims(W); if (P) pm('aiClaims'); }
+      traderMonth(W); if (P) pm('traderMonth');
+      updateSettlements(W); if (P) pm('updateSettlements');
+      for (const c of W.clans) { procureOre(W, c); if (P) pm('procureOre'); }
+      playerMonth(W); if (P) pm('playerMonth');
       for (const t of [...W.tribes]) {
-        if (!t.alive) continue; updateLeaders(W, t); marriages(W, t); seekSpouses(W, t); households(W, t); disputes(W, t); sharing(W, t);
-        if (t.clans.length > 1) { const a = pick(t.clans, W.rand), b = pick(t.clans, W.rand); if (a !== b && Math.hypot(a.x - b.x, a.y - b.y) < 60000) exchange(W, a, b); }
+        if (!t.alive) continue; updateLeaders(W, t); if (P) pm('updateLeaders'); marriages(W, t); if (P) pm('marriages'); seekSpouses(W, t); if (P) pm('seekSpouses'); households(W, t); if (P) pm('households'); disputes(W, t); if (P) pm('disputes'); sharing(W, t); if (P) pm('sharing');
+        if (t.clans.length > 1) { const a = pick(t.clans, W.rand), b = pick(t.clans, W.rand); if (a !== b && Math.hypot(a.x - b.x, a.y - b.y) < 60000) exchange(W, a, b); if (P) pm('exchange'); }
       }
-      revenge(W); interTribe(W);
-      for (const t of [...W.tribes]) { if (!t.alive) continue; clanFission(W, t); clanMerge(W, t); }
-      for (const t of [...W.tribes]) { if (t.alive) tribeFission(W, t); }
-      for (const t of [...W.tribes]) { if (t.alive) tribeMerge(W, t); }
-      for (const c of [...W.clans]) { if (c.alive) decideMove(W, c); if (c.alive && !c.people.length) removeClan(W, c); }
-      if (W.week % 8 === 0) decayRelations(W);
+      revenge(W); if (P) pm('revenge'); interTribe(W); if (P) pm('interTribe');
+      for (const t of [...W.tribes]) { if (!t.alive) continue; clanFission(W, t); if (P) pm('clanFission'); clanMerge(W, t); if (P) pm('clanMerge'); }
+      for (const t of [...W.tribes]) { if (t.alive) { tribeFission(W, t); if (P) pm('tribeFission'); } }
+      for (const t of [...W.tribes]) { if (t.alive) { tribeMerge(W, t); if (P) pm('tribeMerge'); } }
+      for (const c of [...W.clans]) { if (c.alive) { decideMove(W, c); if (P) pm('decideMove'); } if (c.alive && !c.people.length) { removeClan(W, c); if (P) pm('removeClan'); } }
+      if (W.week % 8 === 0) { decayRelations(W); if (P) pm('decayRelations'); }
     }
-    if (W.week % 52 === 40) { for (const t of [...W.tribes]) if (t.alive) tribeHomeUpdate(W, t); confedYear(W); ruleYear(W); sightYear(W); }
+    if (W.week % 52 === 40) { for (const t of [...W.tribes]) if (t.alive) { tribeHomeUpdate(W, t); if (P) pm('tribeHomeUpdate'); } confedYear(W); if (P) pm('confedYear'); ruleYear(W); if (P) pm('ruleYear'); sightYear(W); if (P) pm('sightYear'); }
     W.week++;
-    runAuto(W);
-    if (W.week % 52 === 0) yearEnd(W);
+    runAuto(W); if (P) pm('runAuto');
+    if (W.week % 52 === 0) { yearEnd(W); if (P) pm('yearEnd'); }
+    if (P) { PROF.win.ticks++; if (PROF.win.ticks >= PROF.every) profFlush(W); }
   }
 
   return { bondWord, tribeKnown, liveSigns, walkWord, SIGN_R, N, CELL, WORLD, HA, FORAGE_R, TRIBE_MAX, tribeMax, BIOMES, GROVES, DEPOSITS, GOOD_NAMES, createWorld, seedFirstPop, step, clanSize, tribeSize, battleOdds, warSides, warBegin, realmWarcall, familiesOf, famMembers, needsWeek, opinion, prestige, isAllied, sameConfed, tribeCenter, roadLevel, pactRoute, playerActions, doAction, dealings, settleFeud, policy: W => pol(W), setPolicy: (W, k, v) => { const p = pol(W); if (k === 'deal' || !(k in p) || (v !== 'ask' && !(AUTOIX[k] && v in AUTOIX[k]))) return; p[k] = v; }, setDeal: (W, id, v) => { if (v === 'auto') delete pol(W).deal[id]; else pol(W).deal[id] = v; }, dealMode: (W, o) => dealWith(W, o), clanHeir, FAITHS, isMatri, faithOf, cultureName, MON, checkPlace, und, speechWord, kultInfo, grainInfo, clanFlow, HOME_R, CREATION, claimsYear, foreignHeld, landLive, landScan, landYear, driveOutOdds, leaveOdds, landTargets, ring, ringSay, BEASTS, beastNm, beastTale, beastOdds, beastWhere, beastToll, beastNear, saveGame, loadGame, saveInfo, ruleInfo, advice, legacy, legacyHTML, TRAITS, epithet, hasTrait, leadWeight, standingWhy, villageInfo, RANKS, SOCIETY, societyOf, rankOf, WORKS, JOBS, walls, canBuild, releaseClaim: (W, i) => { const P = W.player; if (P && P.claims && P.claims[i]) { houseNote(W, `The house gave up its claim to the ${DEPOSITS[P.claims[i].d.type].name.toLowerCase()}.`); P.claims.splice(i, 1); } }, weaponsName, houseSlaves, slaveCount, freeCount, knows, knowsTribe, foodDays, GIFTABLE, STAGES, BOAT_STAGES, METAL_STAGES, boatStage, metalStage, arms, canReach, houseCandidates, choosePlayer, resolve, dynMembers, bloodCount, titlesOf, relWord, vigor, tribeVigor, statureCm, farmSuit, fieldInfo, potential, cellFood, foodBreakdown, kingshipBid, warriors, tribeWealth, confedTribes, confedPeople, newConfed, joinConfed, leaveConfed, formAlliance, kinOf, rulerWord, realmWord, realmInfo, realmHeir, realmRisk, realmPutDown, realmWarList, realmRiseOdds, realmStay, realmNext, realmKingdomNeeds, succession, confedYear,
-    seasonOf, seasonName, tempOffset, cellAt, lifeStage, siler, fecund, makePerson, stepPop };
+    seasonOf, seasonName, tempOffset, cellAt, lifeStage, siler, fecund, makePerson, stepPop, prof: PROF };
 })();
 if (typeof module !== 'undefined') module.exports = SIM;
