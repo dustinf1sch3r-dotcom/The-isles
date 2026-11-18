@@ -204,14 +204,6 @@
 
   // The 3x test world for profiling (not used by the game): every living clan but the player's gets two copies, in the same tribe, 3 to 6 km off.
   // Each copy has its own persons (links inside the clan point at the copies, a spouse outside becomes null, other links stay), its own families, and the clan's goods, stores and village name.
-  // the nearest dry-land cell centre to (x, y): the same search as the first landNear above (that name is declared twice in this file and the later, a yes/no test of claims, is the one in force)
-  function landSpot(W, x, y) {
-    const g0 = clamp(Math.floor(x / CELL), 0, N - 1), h0 = clamp(Math.floor(y / CELL), 0, N - 1);
-    for (let r = 0; r <= 12; r++) { let best = null, bd = 1e18;
-      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; const gx = g0 + dx, gy = h0 + dy; if (gx < 0 || gy < 0 || gx >= N || gy >= N) continue; const i = gy * N + gx; if (!W.land[i] || W.lake[i]) continue; const px = W.px ? W.px[i] : (gx + 0.5) * CELL, py = W.py ? W.py[i] : (gy + 0.5) * CELL, d = (px - x) ** 2 + (py - y) ** 2; if (d < bd) { bd = d; best = [px, py]; } }
-      if (best) return best; }
-    return [x, y];
-  }
   function profTriple(W) {
     const pc = W.player && W.player.head && W.player.head.clan, base = W.clans.filter(c => c.alive && c.people.length && c !== pc), SKIP = new Set(['id', 'kind', 'rel', 'hist', 'founded', 'alive', 'name', 'tribe', 'x', 'y', 'tx', 'ty', 'people', 'parent', 'head', 'favored', 'atGathering']);
     const cp = v => Array.isArray(v) ? v.slice() : v instanceof Map ? new Map(v) : v && typeof v === 'object' && !v.kind && !('sex' in v) ? Object.assign({}, v) : v; // a person or an entity is a link, kept as it is
@@ -220,7 +212,7 @@
       const m = new Map(), fm = new Map(), rnd = mulberry32((W.seed | 0) + c.id * 7 + k), ang = rnd() * 6.2832, dist = 3000 + rnd() * 3000;
       const live = c.people.filter(q => q.alive), kids = [];
       for (const q of live) { const n = personShell(); n.id = W.nextPid++; for (const f of Object.keys(q)) if (f !== 'id' && f !== 'dyn') n[f] = cp(q[f]); m.set(q, n); kids.push(n); }
-      const pos = landSpot(W, c.x + Math.cos(ang) * dist, c.y + Math.sin(ang) * dist), clan = newClan(W, c.tribe, pos[0], pos[1], kids, c.name, null);
+      const pos = landNear(W, c.x + Math.cos(ang) * dist, c.y + Math.sin(ang) * dist), clan = newClan(W, c.tribe, pos[0], pos[1], kids, c.name, null);
       for (const f of Object.keys(c)) if (!SKIP.has(f)) clan[f] = cp(c[f]);
       clan.head = m.get(c.head) || null; clan.atGathering = false; clan.tx = clan.x; clan.ty = clan.y;
       for (const q of live) { const n = m.get(q);
@@ -5489,7 +5481,7 @@
     for (let dy = -k; dy <= k; dy++) for (let dx = -k; dx <= k; dx++) { const xx = gx + dx, yy = gy + dy; if (xx < 0 || yy < 0 || xx >= N || yy >= N) continue; const o = W.claim[yy * N + xx]; if (o >= 0 && o !== t.id) return true; }
     return false;
   }
-  function landNear(W, O, x, y, m) {
+  function claimNear(W, O, x, y, m) {
     const gx = clamp(Math.floor(x / CELL), 0, N - 1), gy = clamp(Math.floor(y / CELL), 0, N - 1), k = Math.ceil(m / CELL), lim = (m / CELL + 0.3) * (m / CELL + 0.3);
     for (let dy = -k; dy <= k; dy++) for (let dx = -k; dx <= k; dx++) { const xx = gx + dx, yy = gy + dy; if (xx < 0 || yy < 0 || xx >= N || yy >= N || dx * dx + dy * dy > lim) continue; if (W.claim[yy * N + xx] === O.id) return true; }
     return false;
@@ -5551,7 +5543,7 @@
     if (!c.alive || !c.people.length) return null;
     for (let k = 0; k < 40; k++) {
       const a = W.rand() * 6.283, r = 8000 + W.rand() * 52000, x = clamp(c.x + Math.cos(a) * r, 3000, WORLD - 3000), y = clamp(c.y + Math.sin(a) * r, 3000, WORLD - 3000), i = cellAt(x, y);
-      if (!W.land[i] || W.lake[i] || !sameIsland(W, c, x, y) || (fish && W.seaDist[i] > 2) || landNear(W, O, x, y, 10000) || landBlocked(W, t, i, memo) || landNearOther(W, t, x, y, 10000)) continue; // not on, nor within 10 km of, anyone's claim: no sooner there than moved on again
+      if (!W.land[i] || W.lake[i] || !sameIsland(W, c, x, y) || (fish && W.seaDist[i] > 2) || claimNear(W, O, x, y, 10000) || landBlocked(W, t, i, memo) || landNearOther(W, t, x, y, 10000)) continue; // not on, nor within 10 km of, anyone's claim: no sooner there than moved on again
       if (nearClans(W, x, y, 6000).some(o => o !== c && o.settled)) continue;
       const sc = villageScore(W, c, x, y); if (sc > bs) { bs = sc; best = [x, y]; }
     }
