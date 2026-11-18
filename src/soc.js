@@ -107,6 +107,7 @@
   function rebuildBuckets(W) { const B = new Map(); for (const c of W.clans) { const k = Math.floor(c.x / BUCKET) + Math.floor(c.y / BUCKET) * 1000; if (!B.has(k)) B.set(k, []); B.get(k).push(c); } W.buckets = B; }
   function nearClans(W, x, y, r) {
     const out = [], r2lo = r * r * 0.999999, r2hi = r * r * 1.000001, bx0 = Math.floor((x - r) / BUCKET), bx1 = Math.floor((x + r) / BUCKET), by0 = Math.floor((y - r) / BUCKET), by1 = Math.floor((y + r) / BUCKET);
+    if (r < 0) return out; // as the exact distance test: nothing lies within a negative reach
     for (let by = by0; by <= by1; by++) for (let bx = bx0; bx <= bx1; bx++) { const L = W.buckets && W.buckets.get(bx + by * 1000); if (L) for (const c of L) { if (!c.alive) continue; const dx = c.x - x, dy = c.y - y, d2 = dx * dx + dy * dy; if (d2 < r2lo || (d2 <= r2hi && Math.hypot(dx, dy) <= r)) out.push(c); } }
     return out;
   }
@@ -185,7 +186,7 @@
 
   function die(W, c, q, cause, byClan, by) {
     heroCandidate(W, q, c);
-    q.alive = false; q.cause = cause; q.died = W.week; c.yr.deaths++; if (by) q.killedBy = by; FMC = null;
+    q.alive = false; q.cause = cause; q.died = W.week; c.yr.deaths++; if (by) q.killedBy = by;
     if (q.dyn && byClan && W.player && !W.player.over) bloodEvent(W, q, byClan);
     { const P = W.player; if (P && !P.over && P.head && q !== P.head) { const H = P.head, hc = H.clan, far = hc && c && c.tribe !== hc.tribe, sp = H.spouse === q || q.spouse === H, kid = q.mother === H || q.father === H;
       if (sp) houseNote(W, `${q.name}, ${q.sex === 'F' ? 'wife' : 'husband'} of ${H.name}, died at ${Math.floor(q.age)} (${cause}).`);
@@ -666,14 +667,12 @@
       marry(W, best, w);
     }
   }
-  let FMC = null; // during one month's round of the tribes: each clan's unmarried men of 20 to 54, listed once however many tribes look at the clan (a marriage only takes a man off the list, which is checked as he is drawn; a death empties it). Not kept on W, clans or people.
   function friendlyMen(W, t, out) { // men of friendly tribes within 40 km of any clan of the tribe: each unmarried man of 20 to 54 is taken with chance p (0.5 of an ally, 0.2 of a friend)
     const rand = W.rand, seenC = new Set(), pT = new Map();
     for (const k of t.clans) for (const c of nearClans(W, k.x, k.y, 40000)) {
       let p = pT.get(c.tribe); if (p === undefined) { p = c.tribe === t || opinion(t, c.tribe) <= 0 ? 0 : isAllied(t, c.tribe) ? 0.5 : 0.2; pT.set(c.tribe, p); }
       if (!p || seenC.has(c)) continue; seenC.add(c);
-      let L = FMC && FMC.get(c); if (!L) { L = []; for (const q of c.people) if (q.sex === 'M' && !q.spouse && q.age >= 20 && q.age < 55 && !q.reserved && !q.slave) L.push(q); (FMC || (FMC = new Map())).set(c, L); }
-      for (const q of L) if (!q.spouse && rand() < p) out.push(q);
+      for (const q of c.people) if (q.sex === 'M' && !q.spouse && q.age >= 20 && q.age < 55 && !q.reserved && !q.slave && rand() < p) out.push(q);
     }
   }
   function closeKinC(C, a, b) { // closeKin with the ancestor sets kept in C
@@ -5928,12 +5927,11 @@
       updateSettlements(W); if (P) pm('updateSettlements');
       for (const c of W.clans) { procureOre(W, c); if (P) pm('procureOre'); }
       playerMonth(W); if (P) pm('playerMonth');
-      FMC = null;
       for (const t of [...W.tribes]) {
         if (!t.alive) continue; updateLeaders(W, t); if (P) pm('updateLeaders'); marriages(W, t); if (P) pm('marriages'); seekSpouses(W, t); if (P) pm('seekSpouses'); households(W, t); if (P) pm('households'); disputes(W, t); if (P) pm('disputes'); sharing(W, t); if (P) pm('sharing');
         if (t.clans.length > 1) { const a = pick(t.clans, W.rand), b = pick(t.clans, W.rand); if (a !== b && Math.hypot(a.x - b.x, a.y - b.y) < 60000) exchange(W, a, b); if (P) pm('exchange'); }
       }
-      FMC = null; revenge(W); if (P) pm('revenge'); interTribe(W); if (P) pm('interTribe');
+      revenge(W); if (P) pm('revenge'); interTribe(W); if (P) pm('interTribe');
       for (const t of [...W.tribes]) { if (!t.alive) continue; clanFission(W, t); if (P) pm('clanFission'); clanMerge(W, t); if (P) pm('clanMerge'); }
       for (const t of [...W.tribes]) { if (t.alive) { tribeFission(W, t); if (P) pm('tribeFission'); } }
       for (const t of [...W.tribes]) { if (t.alive) { tribeMerge(W, t); if (P) pm('tribeMerge'); } }
