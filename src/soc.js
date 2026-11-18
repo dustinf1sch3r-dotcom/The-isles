@@ -295,10 +295,10 @@
     c.cereal += (grainUse / Math.max(1, need) - c.cereal) * 0.02;
     const ct = c.tribe, fa = faithOf(ct), bl = blessed(ct) ? ct.blessing.type : null;
     const huntF = (fa === 'spirits' ? 1.08 : 1) * (bl === 'spirits' ? 1.1 : 1);
-    const boats = c.tribe.boats; let P = 0, coastal = false, sw = 0, sg = 0; const FLs = forageList(W, c), CFD = W._capFD;
+    const boats = c.tribe.boats; let P = 0, coastal = false, sw = 0, sg = 0; const FLs = forageList(W, c), KE = W._gKe && W._gKe.length === N * N ? W._gKe : keffAll(W);
     for (let k = 0; k < FLs.idx.length; k++) {
       const i = FLs.idx[k]; P += cellFood(W, i, FLs.ev[k], tool, boats); if (!W.land[i] && W.shelf[i] === 1) coastal = true;
-      if (W.land[i] && !W.lake[i]) { const e = FLs.ev[k]; sw += e; sg += e * Math.min(1, W.game[i] / gameKeff(W, i, CFD)); } // how much of the hunting ground's game stands, against what it could carry
+      if (W.land[i] && !W.lake[i]) { const e = FLs.ev[k]; sw += e; sg += e * Math.min(1, W.game[i] / KE[i]); } // how much of the hunting ground's game stands, against what it could carry
     }
     c.coastal = coastal; const depl = sw > 0 ? 1 - sg / sw : 0, press = clamp((depl - GP_D1) / (GP_D2 - GP_D1), 0, 1) * (1 - c.cereal); // a clan that lives on its own grain feels the wild stock less
     // autumn: foragers lay in nuts, dried meat and smoked fish against the winter
@@ -314,7 +314,7 @@
         else if (W.lake[i]) { const f = W.fish[i] * FISH_CATCH * t * e * frac; W.fish[i] -= f; got += f; }
         else {
           const tp = W.edible[i] * PLANT_CATCH * e * frac; let tg = W.game[i] * GAME_CATCH * t * e * frac * huntF;
-          { const room = Math.max(0, W.game[i] - GMIN * gameKeff(W, i, CFD)); if (tg > room) { spared += (tg - room) * HA * KCAL_PER_KG_GAME; tg = room; } } // the herd is never hunted below what it regrows from
+          { const room = Math.max(0, W.game[i] - GMIN * KE[i]); if (tg > room) { spared += (tg - room) * HA * KCAL_PER_KG_GAME; tg = room; } } // the herd is never hunted below what it regrows from
           W.edible[i] -= tp; W.game[i] -= tg; got += tp * HA + tg * HA * KCAL_PER_KG_GAME;
           if (W.isRiver[i]) { const f = W.fish[i] * FISH_CATCH * t * e * frac; W.fish[i] -= f; got += f; }
           if (W.shellK[i]) { const f = W.shell[i] * SHELL_CATCH * e * frac; W.shell[i] -= f; got += f; c.shellfish = (c.shellfish || 0) + f; }
@@ -1735,11 +1735,16 @@
     const L = W.landIdx.length || 1; W._fill = clamp(1.3 * held / L + 2 * nv / L, 0, 0.92);
   }
   // the ceiling that game grows back toward (geo.js: 3 + 28 grass + 22 shrub + 10 forest, by warmth) is lowered in those cells; once a month
-  // the game a cell can carry (the ceiling geo.js grows it back toward, lowered where farms and crowds thin it)
-  function gameKeff(W, i, F) { return Math.max(0.05, (3 + 28 * W.grass[i] + 22 * W.shrub[i] + 10 * W.forest[i]) * clamp((W.T0[i] + W.amp[i]) / 16, 0.4, 1) * (F ? F[i] : 1)); }
   function gameCap(W) {
+    keffAll(W);
     const L = W._capCells, F = W._capF; if (!L) return;
     for (let k = 0; k < L.length; k++) { const i = L[k], K = (3 + 28 * W.grass[i] + 22 * W.shrub[i] + 10 * W.forest[i]) * clamp((W.T0[i] + W.amp[i]) / 16, 0.4, 1) * F[k]; if (W.game[i] > K) W.game[i] = Math.max(0.05, K); }
+  }
+  // the game each cell can carry (the ceiling geo.js grows it back toward, lowered where farms and crowds thin it); made once a month for every cell (not saved)
+  function keffAll(W) {
+    const n = N * N, F = W._capFD && W._capFD.length === n ? W._capFD : null, K = W._gKe && W._gKe.length === n ? W._gKe : (W._gKe = new Float32Array(n));
+    for (const i of W.landIdx) K[i] = Math.max(0.05, (3 + 28 * W.grass[i] + 22 * W.shrub[i] + 10 * W.forest[i]) * clamp((W.T0[i] + W.amp[i]) / 16, 0.4, 1) * (F ? F[i] : 1));
+    return K;
   }
   // ---- fewer great beasts as the land fills ----
   const beastFill = W => W._fill || 0;
