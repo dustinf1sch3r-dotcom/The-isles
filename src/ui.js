@@ -698,11 +698,12 @@
           const arc = sea && i < nf ? Math.min(Math.max(rr, nf * wk * 0.85 / Math.min(2.4, 0.55 * nf + 0.5)), R2 * 0.85) : rr, r = Math.min(arc * (1 + jit(i + 9) * 0.22), sea && i < nf ? R2 * 0.85 : R2 * 1.1); hp.push([sx + Math.cos(a) * r, sy + Math.sin(a) * r * 0.7, nm]); } }
       if (hall) hp.push([sx, sy - wk * 0.1, 'vhall']);
       const fp = hp.map(([hx, hy, nm]) => { const s = sp[nm], kk = nm === 'vhall' ? k * 1.25 : k; return [hx, hy, s._lw * kk, s._lh * kk]; });
-      let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; for (const [hx, hy, w, h] of fp) { x0 = Math.min(x0, hx - w / 2); x1 = Math.max(x1, hx + w / 2); y0 = Math.min(y0, hy - h * 0.2); y1 = Math.max(y1, hy + h * 0.42); }
-      let cx = (x0 + x1) / 2, cy = (y0 + y1) / 2; { const sh = Math.hypot(cx - sx, cy - sy), mx = R2 * 0.5; if (sh > mx) { cx = sx + (cx - sx) * mx / sh; cy = sy + (cy - sy) * mx / sh; } } // the drawing centre: the middle of the houses' footprints (a little off the village point at most), so the ring hugs them
-      let fx = 0, fyu = 0, fyd = 0, bot = cy + R2 * 0.8 * 0.7, mg = 2.5 * k; for (const [hx, hy, w, h] of fp) { fx = Math.max(fx, Math.abs(hx - cx) + w / 2); fyu = Math.max(fyu, cy - hy + h * 0.2); fyd = Math.max(fyd, hy + h * 0.42 - cy); bot = Math.max(bot, hy + h * 0.5); } // the farthest footprint across, up and down: the ring is fitted to it
+      const pP = pal ? clamp(5 * k, 2.8, 9) : 0; // the front posts' height: the footprint box takes it, so the front wall stands clear of the front houses
+      let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; for (const [hx, hy, w, h] of fp) { x0 = Math.min(x0, hx - w / 2); x1 = Math.max(x1, hx + w / 2); y0 = Math.min(y0, hy - h * 0.2); y1 = Math.max(y1, hy + h * 0.42 + pP); }
+      let cx = (x0 + x1) / 2, cy = (y0 + y1) / 2; { const sh = Math.hypot(cx - sx, cy - sy), mx = R2 * 0.6; if (sh > mx) { cx = sx + (cx - sx) * mx / sh; cy = sy + (cy - sy) * mx / sh; } } // the drawing centre: the middle of the houses' footprints (a little off the village point at most), so the ring hugs them
+      let fx = 0, fyu = 0, fyd = 0, bot = cy + R2 * 0.8 * 0.7, mg = 3 * k; for (const [hx, hy, w, h] of fp) { fx = Math.max(fx, Math.abs(hx - cx) + w / 2); fyu = Math.max(fyu, cy - hy + h * 0.2); fyd = Math.max(fyd, hy + h * 0.42 + pP - cy); bot = Math.max(bot, hy + h * 0.5); } // the farthest footprint across, up and down: the ring is fitted to it
       let rx = Math.max(fx + mg, R2 * 0.6, 14 * k), ry = Math.max(fyu, fyd) + mg; if (ry < rx * 0.45) ry = rx * 0.45; else if (ry > rx * 0.9) rx = ry / 0.9;
-      { let sc = 1; for (const [hx, hy, w, h] of fp) { const ex = Math.abs(hx - cx) + w * 0.3, ey = Math.max(cy - hy + h * 0.2, hy + h * 0.42 - cy); sc = Math.max(sc, Math.hypot(ex / rx, ey / ry)); } sc = Math.min(sc, 1.15); rx *= sc; ry *= sc; } // no house corner left outside the ring
+      { let sc = 1; for (const [hx, hy, w, h] of fp) { const ax = Math.abs(hx - cx), bx = ax + w * 0.3, by = cy - hy + h * 0.2, fxc = ax + w / 2, fyc = hy + h * 0.42 + pP - cy; sc = Math.max(sc, Math.hypot(bx / rx, by / ry), Math.hypot(fxc / rx, fyc / ry)); } sc = Math.min(sc, 1.3); rx *= sc; ry *= sc; } // no house corner left outside the ring
       let lg; { // the figures names were always placed by (the box of a village, where its name goes): kept as they were before the wall was fitted, so no name moves for it
         let mx0 = 0, my0 = 0, lx0 = 1e9, lx1 = -1e9, ly0 = 1e9, ly1 = -1e9; for (const [hx, hy] of hp) { mx0 += hx; my0 += hy; lx0 = Math.min(lx0, hx); lx1 = Math.max(lx1, hx); ly0 = Math.min(ly0, hy); ly1 = Math.max(ly1, hy); }
         let lcx = mx0 / hp.length * 0.75 + (lx0 + lx1) / 2 * 0.25, lcy = my0 / hp.length * 0.75 + (ly0 + ly1) / 2 * 0.25; { const sh = Math.hypot(lcx - sx, lcy - sy), mx = R2 * 0.35; if (sh > mx) { lcx = sx + (lcx - sx) * mx / sh; lcy = sy + (lcy - sy) * mx / sh; } }
@@ -748,12 +749,14 @@
         const ca = Math.cos(V.ga), sa2 = Math.sin(V.ga), gs = scAt(V.s1, V.ga), gx0 = cx + ca * rx * gs, gy0 = cy + sa2 * ry * gs, gd = V.gu, nn = [ca / rx, sa2 / ry], nl = Math.hypot(nn[0], nn[1]) || 1, dn = Math.max(0.5, (gd[0] * nn[0] + gd[1] * nn[1]) / nl), off = ditch ? 3.4 + V.dw / 2 + 1.2 * k : 3;
         const dry = d => { const px = gx0 + gd[0] * d - sx, py = gy0 + gd[1] * d - sy; return Math.hypot(px, py) <= shpx(px, py); };
         let len = Math.max(R2 * 0.5, off / dn + 4); while (len > 0 && !(dry(len) && dry(len * 0.5) && dry(len * 0.8))) len -= R2 * 0.1; V.gl = len < 3 ? 0 : len; }
-      V.bot = bot; if (V.rd) { V.s0 = sectors(V.rd, V.rdy, 0.5, 'd'); V.inl0 = V.s0 === ONES || V.s0.every(x => x === 1); } return V; };
+      V.bot = bot; if (V.rd) { V.s0 = sectors(V.rd, V.rdy, 0.5, 'd'); V.inl0 = V.s0 === ONES || V.s0.every(x => x === 1); }
+      { let nb = lg.bot; for (let i = 0; i < 48; i++) { const t = i / 48 * TAU, sn = Math.sin(t); if (pal) nb = Math.max(nb, cy + ry * sn * scAt(V.s1, t) + 0.5); if (V.rd) nb = Math.max(nb, cy + V.rdy * sn * scAt(V.s0, t) + V.dw / 2 + 0.5); } V.nb = nb; } // where the village's own name must start: below its real wall and ditch (the box keeps the old figures)
+      return V; };
     // the layout is worked out once for a village at the origin and kept while its size (to half a px, and a quarter of a zoom step) holds; a pan only moves it
     const vplace = (S, sx, sy, R2, hsh, hall, pal, ditch) => {
       const rq = Math.round(R2 * 2) / 2, zq = Math.round(zoomed * 4) / 4, c0 = S.clans[0], f = (hall ? 1 : 0) + (pal ? 2 : 0) + (ditch ? 4 : 0) + (S.metal || 0) * 8, cb = Math.round(Math.log(cam.s) * 16), px = Math.round(c0.x / 500), py = Math.round(c0.y / 500); let mux = 0, muy = 0; for (const c of S.clans) { mux += c.ux != null ? c.ux : c.x; muy += c.uy != null ? c.uy : c.y; } const sk = Math.round(mux / S.clans.length / 500), sl = Math.round(muy / S.clans.length / 500); // sk: the shore profile's own centre (the clans' eased mean), so a village that glides takes the shore of where it stands
       let L = VC(S).vl; if (!L || L.rq !== rq || L.zq !== zq || L.cb !== cb || L.hsh !== hsh || L.pop !== S.pop || L.f !== f || L.type !== S.type || L.nc !== S.clans.length || L.px !== px || L.py !== py || L.sk !== sk || L.sl !== sl || L.rv !== W.roadsVer) { L = vlayout(S, 0, 0, rq, hsh, hall, pal, ditch, zq); L.rq = rq; L.zq = zq; L.cb = cb; L.hsh = hsh; L.pop = S.pop; L.f = f; L.type = S.type; L.nc = S.clans.length; L.px = px; L.py = py; L.sk = sk; L.sl = sl; L.rv = W.roadsVer; VC(S).vl = L; }
-      const V = { gok: L.gok, k: L.k, hp: L.hp.map(h => [sx + h[0], sy + h[1], h[2]]), cx: sx + L.cx, cy: sy + L.cy, rx: L.rx, ry: L.ry, ph: L.ph, n: L.n, da: L.da, ga: L.ga, gv: L.gv, gu: L.gu, gp: L.gp, gl: L.gl, dw: L.dw, rd: L.rd, rdy: L.rdy, s1: L.s1, s0: L.s0, inl: L.inl, inl0: L.inl0, rt: L.rt, re: L.re, bot: sy + L.bot, lg: { cx: sx + L.lg.cx, cy: sy + L.lg.cy, rp: L.lg.rp, bot: sy + L.lg.bot } }; return V; }; // a plain object of one shape (copying every field of the layout was the dearest line of the draw)
+      const V = { gok: L.gok, k: L.k, hp: L.hp.map(h => [sx + h[0], sy + h[1], h[2]]), cx: sx + L.cx, cy: sy + L.cy, rx: L.rx, ry: L.ry, ph: L.ph, n: L.n, da: L.da, ga: L.ga, gv: L.gv, gu: L.gu, gp: L.gp, gl: L.gl, dw: L.dw, rd: L.rd, rdy: L.rdy, s1: L.s1, s0: L.s0, inl: L.inl, inl0: L.inl0, rt: L.rt, re: L.re, bot: sy + L.bot, nb: sy + L.nb, lg: { cx: sx + L.lg.cx, cy: sy + L.lg.cy, rp: L.lg.rp, bot: sy + L.lg.bot } }; return V; }; // a plain object of one shape (copying every field of the layout was the dearest line of the draw)
     // the ditch and its bank: ground, so drawn in plan, in the hatching the map gives its hills, a causeway left before the gate
     const drawDitch = (S, sx, sy, V, M) => { // adds this village's ditch, bank and hatching to the paths of its width (all the villages are stroked together). It is pulled in to the shore like the wall
       const { rd, rdy, dw, ga } = V, TAU = Math.PI * 2, rb = rd - dw / 2, mask = V.s0, cw = (V.gp ? (V.gp + 2) * V.da : 0.35), st = TAU / 24, ivs = [], key = Math.round(dw * 4); let D = M.get(key); if (!D) M.set(key, D = { dw: key / 4, band: new Path2D(), bank: new Path2D(), hatch: new Path2D() });
@@ -840,20 +843,30 @@
     const palEnd = (sx, sy, V, a, back) => { // a taller post at each end of a stretch left open to the sea, so the opening reads as a gate
       const { rx: rp, ry, ph, k } = V, hh = ph * 1.2, w = Math.max(1.5, 1.8 * k), sc = scAt(V.s1, a), x = sx + Math.cos(a) * rp * sc, y = sy + Math.sin(a) * ry * sc, [fa, ia] = backA(k);
       ctx.beginPath(); ctx.moveTo(x - w / 2, y); ctx.lineTo(x - w / 2, y - hh + w * 0.8); ctx.lineTo(x, y - hh); ctx.lineTo(x + w / 2, y - hh + w * 0.8); ctx.lineTo(x + w / 2, y); ctx.closePath(); ctx.fillStyle = back ? `rgba(150,118,80,${fa})` : '#b39060'; ctx.fill(); ctx.strokeStyle = back ? `rgba(29,21,14,${ia})` : '#1d150e'; ctx.lineWidth = back ? 0.5 : 0.65; ctx.lineJoin = 'miter'; ctx.stroke(); ctx.lineJoin = 'round'; };
-    const palRuns = (S, sx, sy, V, A, B, back, P, ends) => { // the posts between A and B, but not where the ring stands in the sea
-      const mask = V.s1, st = Math.PI * 2 / 24; let run = null, afterSea = false;
+    const palRuns = (S, sx, sy, V, A, B, back, P, ends, split) => { // the posts between A and B, but not where the ring stands in the sea
+      const mask = V.s1, st = Math.PI * 2 / 24; let run = null, afterSea = false; if (split) { const q0 = Math.floor(A / st + 1e-9); if (Math.abs(A - q0 * st) < 1e-9 && !mask[(((q0 - 1) % 24) + 24) % 24] && mask[((q0 % 24) + 24) % 24]) afterSea = true; } // a cut made inside the wall keeps the end post of a sea gap that lies beside it
       for (let q = Math.floor(A / st); q * st < B; q++) { const a0 = Math.max(A, q * st), a1 = Math.min(B, (q + 1) * st), ok = mask[((q % 24) + 24) % 24];
         if (ok) { if (run) run[1] = a1; else { run = [a0, a1]; if (afterSea) ends.push([sx, sy, V, a0, back]); } afterSea = false; } else { if (run) { palBand(sx, sy, V, run[0], run[1], back, P); if (a0 > run[1] - 1e-9) ends.push([sx, sy, V, run[1], back]); run = null; } afterSea = true; } }
-      if (run) palBand(sx, sy, V, run[0], run[1], back, P); };
-    { const TAU = Math.PI * 2, sp = ART.sprites, back = palAcc(), front = palAcc(), ends = []; // three passes: the backs of all the rings, then the houses, then the fronts
+      if (run) { palBand(sx, sy, V, run[0], run[1], back, P); if (split) { const q1 = Math.round(B / st); if (Math.abs(B - q1 * st) < 1e-9 && !mask[((q1 % 24) + 24) % 24] && mask[(((q1 - 1) % 24) + 24) % 24]) ends.push([sx, sy, V, run[1], back]); } } };
+    const palSplit = (V, A, B) => { // the front arc A..B as stretches on whole posts: mid = the wall is pulled in by the shore there (drawn behind the houses), else drawn over their feet as ever
+      if (V.inl) return [[A, B, false]]; const out = [], da = V.da, ga = V.ga; let u = A, j = Math.ceil((A - ga) / da + 1e-6);
+      while (u < B - 1e-9) { let w = ga + j * da; if (w <= u + 1e-9) { j++; continue; } if (w > B) w = B; const m = scAt(V.s1, (u + w) / 2) < 0.999, l = out[out.length - 1]; if (l && l[2] === m) l[1] = w; else out.push([u, w, m]); u = w; j++; }
+      return out; };
+    { const TAU = Math.PI * 2, sp = ART.sprites, back = palAcc(), front = palAcc(), ends = [], mid = palAcc(), ends2 = []; // three passes: the backs of all the rings, then the houses, then the fronts
       for (const [S, sx, sy, R2, hsh, V] of vl) {
         if (sel === S || (hover && hover.e === S)) { if (V.inl) vpoly(V.cx, V.cy, V.rx, V.ry, hsh); else { ctx.beginPath(); vring(ctx, V, 'rt'); } ctx.strokeStyle = 'rgba(29,21,14,0.35)'; ctx.lineWidth = 3.4; ctx.stroke(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.2; ctx.stroke(); }
         if (V.n) { const P = palBk(back, V.k, true), ok = V.gok; for (const [a, b] of cutArc(Math.PI, TAU, V.ga, V.gp * V.da)) palRuns(S, V.cx, V.cy, V, a, b, true, P, ends); if (ok && Math.abs(Math.sin(V.ga)) > 0.85 && gateT(V.k) > 0.03) palLintel(V.cx, V.cy, V, P); if (ok && Math.sin(V.ga) < 0 && gateT(V.k) > 0.03) palGate(V.cx, V.cy, V, P, true); } } // the back of the ring; a gate in it is a gap here, its posts in full ink
+      for (const [S, sx, sy, R2, hsh, V] of vl) { if (!V.n) continue; V.fs = [];
+        for (const [a, b] of cutArc(0, Math.PI, V.ga, V.gp * V.da)) for (const q of palSplit(V, a, b)) V.fs.push(q);
+        V.gm = !V.inl && scAt(V.s1, V.ga) < 0.999; let P = null;
+        for (const [a, b, m] of V.fs) if (m) { if (!P) P = palBk(mid, V.k, false); palRuns(S, V.cx, V.cy, V, a, b, false, P, ends2, true); }
+        if (V.gm && V.gok && Math.sin(V.ga) >= 0) palGate(V.cx, V.cy, V, P || palBk(mid, V.k, false), false); } // the stretches of the front wall the shore pulled in: front ink, but under the houses, so a hut at the water stands over them
       palFlush(back, true); for (const e of ends) palEnd(e[0], e[1], e[2], e[3], e[4]); ends.length = 0;
+      palFlush(mid, false); for (const e of ends2) palEnd(e[0], e[1], e[2], e[3], e[4]);
       for (const [S, sx, sy, R2, hsh, V] of vl) {
         const k = V.k, hp = V.hp; hp.sort((p, q) => p[1] - q[1]); for (const [hx, hy, nm] of hp) ART.stamp(ctx, sp[nm], hx, hy, nm === 'vhall' ? k * 1.25 : k); }
       for (const [S, sx, sy, R2, hsh, V] of vl) {
-        if (V.n) { const P = palBk(front, V.k, false); for (const [a, b] of cutArc(0, Math.PI, V.ga, V.gp * V.da)) palRuns(S, V.cx, V.cy, V, a, b, false, P, ends); if (V.gok && Math.sin(V.ga) >= 0) palGate(V.cx, V.cy, V, P, false); } } // the front, over the houses' feet
+        if (V.n) { const P = palBk(front, V.k, false); for (const [a, b, m] of V.fs) if (!m) palRuns(S, V.cx, V.cy, V, a, b, false, P, ends, !V.inl); if (V.gok && !V.gm && Math.sin(V.ga) >= 0) palGate(V.cx, V.cy, V, P, false); } } // the front, over the houses' feet
       palFlush(front, false); for (const e of ends) palEnd(e[0], e[1], e[2], e[3], e[4]);
       for (const [S, sx, sy, R2, hsh, V] of vl) {
         if (S.metal) ART.put(ctx, S.metal === 2 ? 'bronze' : 'metal', sx + R2 * 0.95, sy - R2 * 0.75, 14);
@@ -1015,9 +1028,10 @@
     }
     if (show.names) {
       for (const [S, sx, sy, R2, bot, V] of vills) { const hot = sel === S || (hover && hover.e === S); if (!(zoomed > 7 || S.pop >= 150 || hot)) continue;
-        const lab = S.name, f = `600 11.5px ${SERIF}`; ctx.font = f; const lx = V.lg.cx, tw = ctx.measureText(lab).width + 6, bb = V.box, ys = [(bot || sy + R2 * 0.56) + 9, bb ? bb[1] - bb[3] / 2 - 8 : sy - R2 * 0.8 - 10];
+        const lab = S.name, f = `600 11.5px ${SERIF}`; ctx.font = f; const lx = V.lg.cx, tw = ctx.measureText(lab).width + 6, bb = V.box, ys = [(V.nb != null ? V.nb : (bot || sy + R2 * 0.56)) + 9, bb ? bb[1] - bb[3] / 2 - 8 : sy - R2 * 0.8 - 10]; const oldY = (bot || sy + R2 * 0.56) + 9, moved = V.nb != null && V.nb > (bot || 0) + 0.5; if (moved) ys.push(oldY); // last of all, the old spot (on the wall rather than no name)
         const bi = bb ? placed.indexOf(bb) : -1; if (bi >= 0) placed.splice(bi, 1); // a village's own box never blocks its own name
         let y = ys.find(q => fits(lx, q, tw, 13) && !foggy(lx, q, tw)); // below the village, or else above it
+        if (y != null && moved && ![oldY, ys[1]].some(q => fits(lx, q, tw, 13) && !foggy(lx, q, tw))) y = null; // a name the old spots would have lost stays lost: moving the names down must not crowd out another
         if (y == null) { if (!hot) { if (bi >= 0) placed.push(bb); continue; } y = ys[0]; } if (bi >= 0) placed.push(bb); placed.push([lx, y, tw, 13]); ink(lab, lx, y, f, '#fff2d6'); }
       for (const [s, x, y, r, active] of sites) { if (!(zoomed > 9 || sel === s || active)) continue; const f = `italic 600 11px ${SERIF}`; ctx.font = f; const tw = ctx.measureText(s.name).width + 6, yy = y + r * 0.55 + 8;
         if (!fits(x, yy, tw, 12) && sel !== s) continue; placed.push([x, yy, tw, 12]); ink(s.name, x, yy, f, '#ffe6a0'); }
