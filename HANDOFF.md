@@ -106,10 +106,29 @@ Lines are very long, often a whole function on one line. Do not print whole file
 - **Roads (#12):** fewer ways; people use the ones that exist.
 - **Land (#13):** a people whose land is taken by another's village can bid it leave or drive it out by war; the world's tribes do the same.
 - **Villages, camps and fires (#15):** drawn like the map's own trees: small houses, tents and hearths in the map's ink and wash, part of the map and not stickers on it. Colour stays with the borders. Names on the map carry no head counts (a tap shows them). Palisade, ditch and hall stay visible: the palisade is a ring of posts standing round the houses (back half behind them, front half in front, a gate), the ditch and bank is hatched like the hills. Zoomed out and zoomed in get equal care. Dustin chose this look from three drafts shown side by side (dark plan blocks, pale plan roofs, pictures like the trees); a first try in plan view read as a heap of logs and was dropped.
+- **People:** the population levels off where the land puts it (about 4x the year-300 world, different in each world), by hunting-ground pressure and crowding sickness; no crash (#24).
 - **Way of working:** Dustin likes the strongest model to plan and check, with cheaper agents building and play-testing, and every claim checked before it is reported.
 
 ## Where things stand (18 November 2026)
-Latest round: timing only, nothing changed in the game (`same.js` finds identical worlds with the profiler off and on; saves are byte-identical). Measured on the year-300 save (10,409 people, 344 clans), 1000 ticks, node, three runs each:
+Latest round (issue #24): the people level off where the land puts them, instead of growing until the game is hunted out and then crashing.
+- **Hunting-ground pressure** (`stepPop`, constants `GP_*`, `GMIN`):
+  - Each week a clan weighs how much game stands on its hunting ground against what the land could carry (`W._gKe`, a table of the game ceiling made monthly in `gameCap`, not saved). Past 35% thinned, and fully at 70%, births fall by up to half and hunger deaths rise (they count as hunger).
+  - A clan living on its own grain feels it less (times `1 - cereal`).
+  - Game is never hunted below 40% of what the land carries; the food not got is taken off the clan's store.
+- **Crowding sickness** (constants `DENS_*`):
+  - At week 12 each year every clan counts the people of all clans within 25 km (`c.dens`, per km², saved).
+  - Above 0.12 a km² everyone in it, farmers too, carries an added hazard that grows with the crowding, three times for children under 5.
+  - Its deaths read "(a spreading fever)" in the chronicle, for example: "Wideeq, a slave of Hinasu, died at 32 (a spreading fever)."
+- **Where it levels:**
+  - The year-300 save plays on to about 38,000 people by year 500 and holds there to year 600; the worst 25-year fall is 0.9%. Game stands at about 74% of its ceiling. Hunger deaths are about 5 per 1,000 a year and fever deaths about 6.5.
+  - The old build, from the same save, overshot to about 45,000, the game fell to 9% of its ceiling, and the people fell 37% in 25 years.
+  - Fresh worlds level at about 37,000 (seed 5, by year 650), 43,000 (seed 11, by year 575) and 43,000 (seed 21, by year 500), with no 25-year fall over 3%.
+  - In a fresh world the first 300 years are as before: hunger under 1 per 1,000, no fever, game above 90% of its ceiling.
+- **Early game:** balance on eight seeds (120 years): no house ended, small-clan figures the same, world population 1.5% below the old build in total (seed 21 alone is 10% lower, in both builds of the ceiling; not looked into).
+- **Speed:** within noise of the old build on the year-300 save (18.3 against 18.5 ms per tick, two runs each).
+- **Not done:** farming still has no land limit of its own; the farm share at the plateau is about the same as in the old build at the same population (it swings from run to run).
+
+Earlier round: timing only, nothing changed in the game (`same.js` finds identical worlds with the profiler off and on; saves are byte-identical). Measured on the year-300 save (10,409 people, 344 clans), 1000 ticks, node, three runs each:
 - **1x:** 25 to 27 ms per tick. Social/clan 5.7 ms (22%), food 5.3 (21%), environment 5.2 (21%), bookkeeping 2.4, conflict 2.2, trade/goods 2.0, births/deaths 1.8, movement 0.5.
 - **3x** (clans tripled, 31,077 people, 1,030 clans): 79 ms per tick (3.1x). Social/clan 23.3 ms (4.1x), food 16.1 (3.0x), conflict 10.8 (4.9x), bookkeeping 8.9 (3.7x), trade/goods 7.6, environment 5.4 (flat), births/deaths 4.4 (2.4x), movement 2.4.
 - **What grows faster than the people:** `marriages` (1.3 to 8.9 ms, 6.6x): for every eligible woman it scores every bachelor in the tribe and nearby friendly tribes, so it goes with the square of a tribe's size. Also `interTribe` 6.7x, `tribeFission` 5.9x, `seekSpouses` 5.8x, `aiClaims` 5.6x, `decideMove` 9.8x (small), `yearEnd` 4.1x. Food's cost is stepPop's per-person pass and is linear; environment follows the land, not the people.

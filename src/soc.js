@@ -275,6 +275,9 @@
 
   // ---------- weekly clan (camp) step: forage, eat, births, deaths ----------
   const setTimeout0 = f => f();
+  // a natural ceiling on the people a land can keep: hunting ground thinned past what it regrows starves the camps that live on it, and a crowded country breeds sickness
+  const GP_D1 = 0.35, GP_D2 = 0.7, GP_F = 0.5, GP_M = 0.02, GMIN = 0.4; // hunting-ground pressure: the thinning at which it starts and is full, the fall in births, the added hunger deaths; the game is never hunted below this share of its ceiling
+  const DENS_AREA = 1963, DENS_D0 = 0.12, DENS_K = 0.01, DENS_WEEK = 12; // crowding sickness: people within 25 km per km2 (1,963 km2 of country), the density it starts at, its deaths
   function stepPop(W, c) {
     const rand = W.rand;
     if (!c.people.length) return;
@@ -292,11 +295,17 @@
     c.cereal += (grainUse / Math.max(1, need) - c.cereal) * 0.02;
     const ct = c.tribe, fa = faithOf(ct), bl = blessed(ct) ? ct.blessing.type : null;
     const huntF = (fa === 'spirits' ? 1.08 : 1) * (bl === 'spirits' ? 1.1 : 1);
-    const boats = c.tribe.boats; let P = 0, coastal = false; const FLs = forageList(W, c); for (let k = 0; k < FLs.idx.length; k++) { const i = FLs.idx[k]; P += cellFood(W, i, FLs.ev[k], tool, boats); if (!W.land[i] && W.shelf[i] === 1) coastal = true; } c.coastal = coastal;
+    const boats = c.tribe.boats; let P = 0, coastal = false, sw = 0, sg = 0; const FLs = forageList(W, c), KE = W._gKe && W._gKe.length === N * N ? W._gKe : keffAll(W);
+    for (let k = 0; k < FLs.idx.length; k++) {
+      const i = FLs.idx[k]; P += cellFood(W, i, FLs.ev[k], tool, boats); if (!W.land[i] && W.shelf[i] === 1) coastal = true;
+      if (W.land[i] && !W.lake[i]) { const e = FLs.ev[k]; sw += e; sg += e * Math.min(1, W.game[i] / KE[i]); } // how much of the hunting ground's game stands, against what it could carry
+    }
+    c.coastal = coastal; const depl = sw > 0 ? 1 - sg / sw : 0, press = clamp((depl - GP_D1) / (GP_D2 - GP_D1), 0, 1) * (1 - c.cereal); // a clan that lives on its own grain feels the wild stock less
     // autumn: foragers lay in nuts, dried meat and smoked fish against the winter
     const sn = seasonOf(W.week), cache = !c.settled && sn > 0.6 && sn < 0.9 ? 2.5 : 0;
     const target = Math.max(0, need * (1.85 + cache) - c.store);
     const take = Math.min(P, target, lab * LABOR_KCAL);
+    let spared = 0;
     if (P > 0 && take > 0) {
       const frac = take / P, t = 0.55 + 0.45 * Math.min(1.25, tool);
       for (let k = 0; k < FLs.idx.length; k++) {
@@ -304,7 +313,8 @@
         if (!W.land[i]) { if (W.shelf[i]) { const f = W.fish[i] * FISH_CATCH * seaF(W.shelf[i], boats) * t * e * frac; W.fish[i] -= f; got += f; c.fishCatch = (c.fishCatch || 0) + f; } }
         else if (W.lake[i]) { const f = W.fish[i] * FISH_CATCH * t * e * frac; W.fish[i] -= f; got += f; }
         else {
-          const tp = W.edible[i] * PLANT_CATCH * e * frac, tg = W.game[i] * GAME_CATCH * t * e * frac * huntF;
+          const tp = W.edible[i] * PLANT_CATCH * e * frac; let tg = W.game[i] * GAME_CATCH * t * e * frac * huntF;
+          { const room = Math.max(0, W.game[i] - GMIN * KE[i]); if (tg > room) { spared += (tg - room) * HA * KCAL_PER_KG_GAME; tg = room; } } // the herd is never hunted below what it regrows from
           W.edible[i] -= tp; W.game[i] -= tg; got += tp * HA + tg * HA * KCAL_PER_KG_GAME;
           if (W.isRiver[i]) { const f = W.fish[i] * FISH_CATCH * t * e * frac; W.fish[i] -= f; got += f; }
           if (W.shellK[i]) { const f = W.shell[i] * SHELL_CATCH * e * frac; W.shell[i] -= f; got += f; c.shellfish = (c.shellfish || 0) + f; }
@@ -314,7 +324,7 @@
       }
     }
     c.tool = Math.max(0.3, c.tool - (c.tool > 1 ? 0.002 : 0.004)); // metal tools last longer // stone tools wear out, get lost, need replacing
-    c.store += take;
+    c.store += take - Math.min(take, spared);
     const eaten = Math.min(c.store, need); c.store -= eaten; { const kp = c.live === 'fishing' ? 0.95 : boats >= 0.3 && coastal ? 0.9 : (sn > 0.6 || sn < 0.17) ? 0.93 : 0.85; c.store *= kp + (1 - kp) * 0.2 * potF(c); } // drying & smoking fish; cold keeps the winter cache
     const ratio = need > 0 ? eaten / need : 1;
     c.cond += (ratio - c.cond) * 0.12; c.cond = clamp(c.cond, 0.15, 1);
@@ -326,17 +336,19 @@
     if (PF) pm('pop.food');
 
     const hunger = Math.max(0, 0.86 - c.cond) / 0.86, starvHaz = 3.0 * hunger * hunger;
-    const fertMult = clamp((c.cond - 0.5) / 0.4, 0, 1);
+    const fertMult = clamp((c.cond - 0.5) / 0.4, 0, 1) * (1 - GP_F * press), dens = c.dens || 0, crowdK = dens > DENS_D0 ? DENS_K * (dens - DENS_D0) / DENS_D0 : 0;
     const born = []; let anyDead = false;
     for (const q of c.people) {
       q.age += 1 / 52;
-      const base = siler(q.age), ms = starvHaz * vulnerability(q.age);
+      const base = siler(q.age), ms = (starvHaz + GP_M * press) * vulnerability(q.age);
       let h = base * (fa === 'spirits' ? 0.95 : 1) * (bl === 'spirits' ? 0.92 : 1) + ms;
       if (c.settled) h += crowdDisease(c, q.age);  // villages breed infectious disease
+      const cx = crowdK * (q.age < 5 ? 3 : 1); h += cx;
       if (q.age < 2.5 && q.mother && !q.mother.alive) h += 1.6; // orphaned infants rarely survive without a nursing mother
       if (rand() < 1 - Math.exp(-h / 52)) {
         const starve = rand() < ms / h; if (starve) c.yr.starv++;
-        die(W, c, q, starve ? 'hunger' : q.age < 5 ? 'childhood illness' : q.age > 55 ? 'old age' : pick(q.age < 14 ? ['illness', 'illness', 'fever', 'an accident'] : q.sex === 'F' ? (q.age < 45 ? ['illness', 'illness', 'injury', 'fever', 'childbirth'] : ['illness', 'illness', 'injury', 'fever']) : ['illness', 'illness', 'injury', 'fever', 'a hunting accident'], rand));
+        const sick = !starve && cx > 0 && rand() < cx / (h - ms);
+        die(W, c, q, starve ? 'hunger' : sick ? 'a spreading fever' : q.age < 5 ? 'childhood illness' : q.age > 55 ? 'old age' : pick(q.age < 14 ? ['illness', 'illness', 'fever', 'an accident'] : q.sex === 'F' ? (q.age < 45 ? ['illness', 'illness', 'injury', 'fever', 'childbirth'] : ['illness', 'illness', 'injury', 'fever']) : ['illness', 'illness', 'injury', 'fever', 'a hunting accident'], rand));
         anyDead = true; continue;
       }
       if (q.sex === 'F' && q.age >= 15 && q.age < 50) {
@@ -1719,12 +1731,20 @@
       if (W.lake[i]) continue; const f = Math.max(0.2, (1 / (1 + dens[i] / THIN_D0)) * (1 - 0.6 * Math.min(1, W.farm[i] * 1.5))); if (f < 0.97) { cells.push(i); fs.push(f); }
     }
     W._capCells = Int32Array.from(cells); W._capF = Float32Array.from(fs);
+    const fd = W._capFD && W._capFD.length === n ? W._capFD : (W._capFD = new Float32Array(n)); fd.fill(1); for (let k = 0; k < cells.length; k++) fd[cells[k]] = fs[k]; // the same, dense, for a quick lookup (not saved)
     const L = W.landIdx.length || 1; W._fill = clamp(1.3 * held / L + 2 * nv / L, 0, 0.92);
   }
   // the ceiling that game grows back toward (geo.js: 3 + 28 grass + 22 shrub + 10 forest, by warmth) is lowered in those cells; once a month
   function gameCap(W) {
+    keffAll(W);
     const L = W._capCells, F = W._capF; if (!L) return;
     for (let k = 0; k < L.length; k++) { const i = L[k], K = (3 + 28 * W.grass[i] + 22 * W.shrub[i] + 10 * W.forest[i]) * clamp((W.T0[i] + W.amp[i]) / 16, 0.4, 1) * F[k]; if (W.game[i] > K) W.game[i] = Math.max(0.05, K); }
+  }
+  // the game each cell can carry (the ceiling geo.js grows it back toward, lowered where farms and crowds thin it); made once a month for every cell (not saved)
+  function keffAll(W) {
+    const n = N * N, F = W._capFD && W._capFD.length === n ? W._capFD : null, K = W._gKe && W._gKe.length === n ? W._gKe : (W._gKe = new Float32Array(n));
+    for (const i of W.landIdx) K[i] = Math.max(0.05, (3 + 28 * W.grass[i] + 22 * W.shrub[i] + 10 * W.forest[i]) * clamp((W.T0[i] + W.amp[i]) / 16, 0.4, 1) * (F ? F[i] : 1));
+    return K;
   }
   // ---- fewer great beasts as the land fills ----
   const beastFill = W => W._fill || 0;
@@ -5870,6 +5890,7 @@
     stepEnv(W); if (P) pm('stepEnv');
     rebuildBuckets(W); if (P) pm('rebuildBuckets');
     const wk = W.week % 52;
+    if (wk === DENS_WEEK) for (const c of W.clans) { let n = 0; for (const o of nearClans(W, c.x, c.y, 25000)) n += o.people.length; c.dens = n / DENS_AREA; }
     for (const c of W.clans) stepPop(W, c);
     if (P) pm('loop');
     if (wk === GATHER_PLAN) { planGatherings(W); W.gathering = true; if (P) pm('planGatherings'); }
