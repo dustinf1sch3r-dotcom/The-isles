@@ -106,8 +106,8 @@
   const BUCKET = 30000;
   function rebuildBuckets(W) { const B = new Map(); for (const c of W.clans) { const k = Math.floor(c.x / BUCKET) + Math.floor(c.y / BUCKET) * 1000; if (!B.has(k)) B.set(k, []); B.get(k).push(c); } W.buckets = B; }
   function nearClans(W, x, y, r) {
-    const out = [], bx0 = Math.floor((x - r) / BUCKET), bx1 = Math.floor((x + r) / BUCKET), by0 = Math.floor((y - r) / BUCKET), by1 = Math.floor((y + r) / BUCKET);
-    for (let by = by0; by <= by1; by++) for (let bx = bx0; bx <= bx1; bx++) { const L = W.buckets && W.buckets.get(bx + by * 1000); if (L) for (const c of L) if (c.alive && Math.hypot(c.x - x, c.y - y) <= r) out.push(c); }
+    const out = [], r2lo = r * r * 0.999999, r2hi = r * r * 1.000001, bx0 = Math.floor((x - r) / BUCKET), bx1 = Math.floor((x + r) / BUCKET), by0 = Math.floor((y - r) / BUCKET), by1 = Math.floor((y + r) / BUCKET);
+    for (let by = by0; by <= by1; by++) for (let bx = bx0; bx <= bx1; bx++) { const L = W.buckets && W.buckets.get(bx + by * 1000); if (L) for (const c of L) { if (!c.alive) continue; const dx = c.x - x, dy = c.y - y, d2 = dx * dx + dy * dy; if (d2 < r2lo || (d2 <= r2hi && Math.hypot(dx, dy) <= r)) out.push(c); } }
     return out;
   }
 
@@ -185,7 +185,7 @@
 
   function die(W, c, q, cause, byClan, by) {
     heroCandidate(W, q, c);
-    q.alive = false; q.cause = cause; q.died = W.week; c.yr.deaths++; if (by) q.killedBy = by;
+    q.alive = false; q.cause = cause; q.died = W.week; c.yr.deaths++; if (by) q.killedBy = by; FMC = null;
     if (q.dyn && byClan && W.player && !W.player.over) bloodEvent(W, q, byClan);
     { const P = W.player; if (P && !P.over && P.head && q !== P.head) { const H = P.head, hc = H.clan, far = hc && c && c.tribe !== hc.tribe, sp = H.spouse === q || q.spouse === H, kid = q.mother === H || q.father === H;
       if (sp) houseNote(W, `${q.name}, ${q.sex === 'F' ? 'wife' : 'husband'} of ${H.name}, died at ${Math.floor(q.age)} (${cause}).`);
@@ -641,28 +641,39 @@
   // ---------- marriage (clan exogamy, mostly within the tribe) ----------
   function marriages(W, t) {
     const rand = W.rand, bachelors = [];
-    for (const c of t.clans) for (const q of c.people) if (!q.reserved && !q.slave && q.sex === 'M' && q.age >= 19 && q.age < 65 && (!q.spouse || ((q.wives || 1) < 2 && q.age >= 25))) bachelors.push(q);
-    // men from nearby friendly tribes are also eligible occasionally
-    const seenC = new Set();
-    for (const k of t.clans) for (const c of nearClans(W, k.x, k.y, 40000)) {
-      if (c.tribe === t || seenC.has(c) || opinion(t, c.tribe) <= 0) continue; seenC.add(c);
-      const p = isAllied(t, c.tribe) ? 0.5 : 0.2;
-      for (const q of c.people) if (!q.reserved && !q.slave && q.sex === 'M' && !q.spouse && q.age >= 20 && q.age < 55 && rand() < p) bachelors.push(q);
-    }
+    let gathered = false; // the men (the tribe's own, then those of nearby friendly tribes, who are eligible occasionally) are gathered when the first woman looks: no one has married before that, so a month in which no woman looks never searches the tribe or the country round
     const ancC = new Map(); // each person's near ancestors, worked out once for the whole round
     for (const c of t.clans) for (const w of c.people) {
-      if (w.reserved || w.slave || w.sex !== 'F' || w.spouse || w.age < 16 || w.age > 45 || (w.widowed && W.week - w.widowed < 20) || rand() > 0.2) continue;
+      if (w.sex !== 'F' || w.spouse || w.reserved || w.slave || w.age < 16 || w.age > 45 || (w.widowed && W.week - w.widowed < 20) || rand() > 0.2) continue;
+      if (!gathered) { gathered = true;
+        for (const c of t.clans) for (const q of c.people) if (q.sex === 'M' && !q.reserved && !q.slave && q.age >= 19 && q.age < 65 && (!q.spouse || ((q.wives || 1) < 2 && q.age >= 25))) bachelors.push(q);
+        friendlyMen(W, t, bachelors); }
       let best = null, bs = -Infinity;
+      const wc = w.clan, wf = w.fam || wc;
       for (const m of bachelors) {
-        if ((m.spouse && (m.wives || 1) >= 2) || closeKinC(ancC, m, w) || (m.spouse && W.player && W.player.head === w)) continue;               // incest taboo
-        const poly = m.spouse ? -28 + prestige(m) * 15 : 0;                             // a second wife (polygyny) is possible but less likely
-        const exo = m.clan === w.clan ? -22 : 0;                                       // clan exogamy (relaxed when there is no one else)
+        if (m.spouse && (m.wives || 1) >= 2) continue;
+        const mc = m.clan, pr = prestige(m);
+        const poly = m.spouse ? -28 + pr * 15 : 0;                                      // a second wife (polygyny) is possible but less likely
+        const exo = mc === wc ? -22 : 0;                                                // clan exogamy (relaxed when there is no one else)
         const diff = Math.max(0, Math.abs((m.age - 4) - w.age) - 4);
-        const sc = poly + exo - diff * 2 + opinion(m.clan, w.clan) * 0.4 + (m.clan.tribe === t ? 15 : isAllied(t, m.clan.tribe) ? 8 : 0) + m.clan.goods.amber * 1.5 + opinion(m.fam || m.clan, w.fam || w.clan) * 0.2 + prestige(m) * 10 + rand() * 12;
+        const pre = poly + exo - diff * 2 + opinion(mc, wc) * 0.4 + (mc.tribe === t ? 15 : isAllied(t, mc.tribe) ? 8 : 0) + mc.goods.amber * 1.5 + opinion(m.fam || mc, wf) * 0.2 + pr * 10;
+        if (pre + 12 <= bs) continue;                                                   // even the largest draw (just under 12) could not beat the best so far
+        if (closeKinC(ancC, m, w) || (m.spouse && W.player && W.player.head === w)) continue;  // incest taboo (looked at only for a man who could still win)
+        const sc = pre + rand() * 12;
         if (sc > bs) { bs = sc; best = m; }
       }
       if (!best || bs < -45) continue;
       marry(W, best, w);
+    }
+  }
+  let FMC = null; // during one month's round of the tribes: each clan's unmarried men of 20 to 54, listed once however many tribes look at the clan (a marriage only takes a man off the list, which is checked as he is drawn; a death empties it). Not kept on W, clans or people.
+  function friendlyMen(W, t, out) { // men of friendly tribes within 40 km of any clan of the tribe: each unmarried man of 20 to 54 is taken with chance p (0.5 of an ally, 0.2 of a friend)
+    const rand = W.rand, seenC = new Set(), pT = new Map();
+    for (const k of t.clans) for (const c of nearClans(W, k.x, k.y, 40000)) {
+      let p = pT.get(c.tribe); if (p === undefined) { p = c.tribe === t || opinion(t, c.tribe) <= 0 ? 0 : isAllied(t, c.tribe) ? 0.5 : 0.2; pT.set(c.tribe, p); }
+      if (!p || seenC.has(c)) continue; seenC.add(c);
+      let L = FMC && FMC.get(c); if (!L) { L = []; for (const q of c.people) if (q.sex === 'M' && !q.spouse && q.age >= 20 && q.age < 55 && !q.reserved && !q.slave) L.push(q); (FMC || (FMC = new Map())).set(c, L); }
+      for (const q of L) if (!q.spouse && rand() < p) out.push(q);
     }
   }
   function closeKinC(C, a, b) { // closeKin with the ancestor sets kept in C
@@ -1481,25 +1492,29 @@
   function seekSpouses(W, t) {
     if (t.clans.length !== 1) return; const c = t.clans[0]; if (freeCount(c) >= 26) return; const rand = W.rand;
     const singles = c.people.filter(q => !q.slave && !q.reserved && !q.spouse && q.age >= 17 && q.age < 42); if (!singles.length) return;
-    const pool = []; for (const o of nearClans(W, c.x, c.y, 160000)) { if (o.tribe === t || opinion(t, o.tribe) < -15 || freeCount(o) < 16) continue; for (const q of o.people) if (!q.slave && !q.reserved && !q.spouse && !q.dyn && q !== o.head && q.age >= 16 && q.age < 42 && !o.people.some(k => k.mother === q && k.age < 13)) pool.push(q); }
+    const pool = []; for (const o of nearClans(W, c.x, c.y, 160000)) { if (o.tribe === t || opinion(t, o.tribe) < -15 || freeCount(o) < 16) continue; let kidM = null; for (const q of o.people) if (!q.slave && !q.reserved && !q.spouse && !q.dyn && q !== o.head && q.age >= 16 && q.age < 42) { if (!kidM) { kidM = new Set(); for (const k of o.people) if (k.age < 13 && k.mother) kidM.add(k.mother); } if (!kidM.has(q)) pool.push(q); } }
     const P = W.player, mine = P && !P.over && P.head.alive && P.head.clan === c;
     for (const s of singles) { if (s.spouse || rand() > 0.3) continue;
-      const cand = pool.filter(q => q.sex !== s.sex && !q.spouse && q.clan !== c && !closeKin(s, q) && Math.abs(q.age - s.age) < 12); if (!cand.length) continue;
+      const cand = pool.filter(q => q.sex !== s.sex && !q.spouse && q.clan !== c && Math.abs(q.age - s.age) < 12 && !closeKin(s, q)); if (!cand.length) continue;
       const q = pick(cand, rand), m = s.sex === 'M' ? s : q, w = s.sex === 'M' ? q : s, oc = q.clan;
       oc.people.splice(oc.people.indexOf(q), 1); c.people.push(q); q.clan = c; // the newcomer joins the seeker's people, whatever the custom
       marry(W, m, w); affect(W, t, oc.tribe, 8, `${q.name} of the ${oc.tribe.name} married into the ${t.name}`); rel(t, oc.tribe).kin++;
       if (mine) houseNote(W, `${s.name} went looking for a ${s.sex === 'M' ? 'wife' : 'husband'} and came home with ${q.name} of the ${oc.tribe.name}.`); }
   }
   function marriagesAt(W, clans) {
-    const rand = W.rand, men = [];
-    for (const c of clans) for (const q of c.people) if (!q.reserved && !q.slave && q.sex === 'M' && q.age >= 19 && q.age < 65 && (!q.spouse || ((q.wives || 1) < 2 && q.age >= 25))) men.push(q);
+    const rand = W.rand, men = [], ancC = new Map();
+    for (const c of clans) for (const q of c.people) if (q.sex === 'M' && !q.reserved && !q.slave && q.age >= 19 && q.age < 65 && (!q.spouse || ((q.wives || 1) < 2 && q.age >= 25))) men.push(q);
     for (const c of clans) for (const w of c.people) {
-      if (w.reserved || w.slave || w.sex !== 'F' || w.spouse || w.age < 16 || w.age > 45 || rand() > 0.45) continue;
-      let best = null, bs = -Infinity;
+      if (w.sex !== 'F' || w.spouse || w.reserved || w.slave || w.age < 16 || w.age > 45 || rand() > 0.45) continue;
+      let best = null, bs = -Infinity; const wc = w.clan, wt = wc.tribe;
       for (const m of men) {
-        if ((m.spouse && (m.wives || 1) >= 2) || closeKin(m, w) || (m.spouse && W.player && W.player.head === w) || m.clan === w.clan && rand() < 0.7) continue;
+        if (m.spouse && (m.wives || 1) >= 2) continue;
+        const mc = m.clan, mt = mc.tribe;
         const diff = Math.max(0, Math.abs((m.age - 4) - w.age) - 4), poly = m.spouse ? -28 + prestige(m) * 15 : 0;
-        const sc = poly - diff * 2 + opinion(m.clan, w.clan) * 0.4 + opinion(m.clan.tribe, w.clan.tribe) * 0.2 + (m.clan.tribe === w.clan.tribe ? 6 : isAllied(m.clan.tribe, w.clan.tribe) ? 6 : 0) + m.clan.goods.amber * 1.5 + rand() * 14 - (m.clan.tribe === w.clan.tribe ? 0 : (1 - und(m.clan.tribe, w.clan.tribe)) * 8);
+        const pre = poly - diff * 2 + opinion(mc, wc) * 0.4 + opinion(mt, wt) * 0.2 + (mt === wt ? 6 : isAllied(mt, wt) ? 6 : 0) + mc.goods.amber * 1.5, far = mt === wt ? 0 : (1 - und(mt, wt)) * 8;
+        if (pre + 14 - far <= bs) continue;                                             // even the largest draw (just under 14) could not beat the best so far
+        if (closeKinC(ancC, m, w) || (m.spouse && W.player && W.player.head === w) || mc === wc && rand() < 0.7) continue;
+        const sc = pre + rand() * 14 - far;
         if (sc > bs) { bs = sc; best = m; }
       }
       if (best && bs > -40) marry(W, best, w);
@@ -5913,11 +5928,12 @@
       updateSettlements(W); if (P) pm('updateSettlements');
       for (const c of W.clans) { procureOre(W, c); if (P) pm('procureOre'); }
       playerMonth(W); if (P) pm('playerMonth');
+      FMC = null;
       for (const t of [...W.tribes]) {
         if (!t.alive) continue; updateLeaders(W, t); if (P) pm('updateLeaders'); marriages(W, t); if (P) pm('marriages'); seekSpouses(W, t); if (P) pm('seekSpouses'); households(W, t); if (P) pm('households'); disputes(W, t); if (P) pm('disputes'); sharing(W, t); if (P) pm('sharing');
         if (t.clans.length > 1) { const a = pick(t.clans, W.rand), b = pick(t.clans, W.rand); if (a !== b && Math.hypot(a.x - b.x, a.y - b.y) < 60000) exchange(W, a, b); if (P) pm('exchange'); }
       }
-      revenge(W); if (P) pm('revenge'); interTribe(W); if (P) pm('interTribe');
+      FMC = null; revenge(W); if (P) pm('revenge'); interTribe(W); if (P) pm('interTribe');
       for (const t of [...W.tribes]) { if (!t.alive) continue; clanFission(W, t); if (P) pm('clanFission'); clanMerge(W, t); if (P) pm('clanMerge'); }
       for (const t of [...W.tribes]) { if (t.alive) { tribeFission(W, t); if (P) pm('tribeFission'); } }
       for (const t of [...W.tribes]) { if (t.alive) { tribeMerge(W, t); if (P) pm('tribeMerge'); } }
