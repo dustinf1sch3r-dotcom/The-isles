@@ -107,10 +107,40 @@ Lines are very long, often a whole function on one line. Do not print whole file
 - **Land (#13):** a people whose land is taken by another's village can bid it leave or drive it out by war; the world's tribes do the same.
 - **Villages, camps and fires (#15):** drawn like the map's own trees: small houses, tents and hearths in the map's ink and wash, part of the map and not stickers on it. Colour stays with the borders. Names on the map carry no head counts (a tap shows them). Palisade, ditch and hall stay visible: the palisade is a ring of posts standing round the houses (back half behind them, front half in front, a gate), the ditch and bank is hatched like the hills. Zoomed out and zoomed in get equal care. Dustin chose this look from three drafts shown side by side (dark plan blocks, pale plan roofs, pictures like the trees); a first try in plan view read as a heap of logs and was dropped.
 - **People:** the population levels off where the land puts it (about 4x the year-300 world, different in each world), by hunting-ground pressure and crowding sickness; no crash (#24).
+- **Speed (#26):** make the game faster without changing who marries whom: the same chances, proven, not just similar figures.
 - **Way of working:** Dustin likes the strongest model to plan and check, with cheaper agents building and play-testing, and every claim checked before it is reported.
 
-## Where things stand (18 November 2026)
-Latest round (issue #24): the people level off where the land puts them, instead of growing until the game is hunted out and then crashing.
+## Where things stand (19 November 2026)
+Latest round (issue #26): marriage matching is about five times cheaper once the people reach their ceiling, with the same matches and the same chances.
+- **What changed:**
+  - **`marriages`:** a tribe gathers its bachelors only in a month when one of its women looks (a fifth of them do). Before, every month it walked its own clans and every friendly clan within 40 km, and that walk was 97% of the cost at the ceiling. No one marries before the first woman looks, so she sees the same men. The friendly-tribe men are gathered by `friendlyMen`, each still taken with chance 0.5 (an ally) or 0.2 (a friend).
+  - **Passing over hopeless men:** in `marriages` and `marriagesAt`, a man who could not beat the best score so far even with the largest luck draw (12, or 14 at a gathering) is passed over before the kin check and the draw. The score is summed in the same order as before, so it is the same to the last bit.
+  - **`nearClans`:** compares squared distances and uses the exact `Math.hypot` only within a millionth of the rim. It returns the same clans in the same order (a negative reach returns nothing, as before).
+  - **`seekSpouses`:** builds each clan's set of mothers of children under 13 once, and runs its cheap tests before `closeKin`.
+- **The same matches:**
+  - In copies of the old and new builds, the draws whose number or order changed were replaced by a hash of (week, woman or tribe, man, kind). These are the luck in both matchers, the 0.7 same-clan skip at gatherings and the friendly-tribe draws. The worlds then stay identical: seeds 5, 11 and 14 for 150 years; the year-300 save for 40 years; a tripled world for 10; the year-600 ceiling world for 20.
+  - A copy whose bound was one point too tight was caught within the first year on the ceiling world and by year 5 on the year-300 save. In 60 years on two fresh seeds it was not caught: few matches there come that close. So the big saves are the sharp test.
+  - `nearClans` and `seekSpouses` alone change nothing at all: identical worlds with real luck, 3 seeds, 150 years.
+  - With real luck the draws fall differently, so the worlds part, but the marriage figures agree within chance.
+    - Six 50-year runs of each build from the year-300 save, about 13,000 marriages each, old then new: 19.4 and 19.3 marriages per 1,000 people a year; age gap 3.8 and 3.8 years; same clan 13.5% and 13.3%; second wives 41.3% and 41.1%; across tribes 15.7% and 15.5%; husband moves to her clan 12.6% and 12.9%.
+    - Ten fresh worlds over 150 years agree as closely as the old build does with its own luck shifted.
+    - Balance (`balance.js`, eight seeds, 120 years): no house ended in either build, and world population was 3% higher in total.
+- **Speed** (`tools/profile.js`, 1000 ticks, two runs each, alone; ms per week):
+
+  | World | People | `marriages` old, new | Whole week old, new |
+  |---|---|---|---|
+  | Year-300 save | 10,409 | 1.08, 0.38 | 18.6, 17.8 |
+  | Tripled | 31,077 | 7.35, 1.94 | 64.2, 55.5 |
+  | Grown naturally | 43,322 | 17.3, 4.16 | 111.5, 94.9 |
+  | Ceiling, year 600 | 37,954 | 16.0, 3.34 | 99.7, 88.0 |
+
+  `marriagesAt` runs inside `endGatherings` (under 1 ms everywhere). `seekSpouses` is about the same as before (about 1.3 ms at the ceiling): its own 160 km search dominates it.
+- **Not reached:** at the ceiling, marriages still cost about 9 times what they cost on the year-300 save. What is left is walking the friendly clans' people in the months someone looks, and the `nearClans` searches, both of which grow with the people round about. Going lower without changing the chances would need a ceiling on `prestige`, and it has none (`giftPrestige`).
+- **Tried and dropped:** a list of each clan's unmarried men, kept for the month and shared by every tribe that looks at the clan. It saved 0.1 to 0.2 ms a week at the ceiling, but it would quietly go wrong if anything ever moved a man between clans during the monthly round.
+- **The next costliest at the ceiling** (main, ms per week): `yearEnd` 11, `interTribe` 5, `clanFission` 3.4, `aiClaims` 3.1.
+
+## Earlier round (18 November 2026, the population ceiling)
+Issue #24: the people level off where the land puts them, instead of growing until the game is hunted out and then crashing.
 - **Hunting-ground pressure** (`stepPop`, constants `GP_*`, `GMIN`):
   - Each week a clan weighs how much game stands on its hunting ground against what the land could carry (`W._gKe`, a table of the game ceiling made monthly in `gameCap`, not saved). Past 35% thinned, and fully at 70%, births fall by up to half and hunger deaths rise (they count as hunger).
   - A clan living on its own grain feels it less (times `1 - cereal`).
@@ -209,7 +239,11 @@ Do all of these before committing:
 - **Balance:** `node tools/balance.js 5,8,11,14 120` and `node tools/balance.js 2,7,21,33 120`, compared with the result from before the change. Single seeds swing by chance (a change that adds any `W.rand()` call reorders every later roll), so judge the eight together.
 - **Old saves:** make a save with the build from before the change (seed 9, year 60, always option 0), load it with the new build and play 30 more years.
 - **Interface changes:** load `index.html` at phone size with Playwright (Chromium), and look at the screenshots: `tools/map_shots.js` for the map (old and new build, same save, compare shot by shot), and `tools/map_speed.js` to keep panning and zooming as fast as before.
-- **Family or succession changes:** `node tools/head_swap.js` counts head changes while the old head is alive over ten games. It must say 0.
+- **Family or succession changes:** `node tools/head_swap.js` counts head changes while the old head is alive over ten games. It must say 0. Its "same head, new household" column can count a child head taken in by kin when no grown-up is left in the household ("Young ... now lives in the household of ..."). That is allowed: check what each case is.
+- **Speed-ups that must change nothing:**
+  - If no `W.rand()` call is added, skipped or moved, build the old sim into a scratch folder. Then `SIM_A=<old sim.js> SIM_B=build/sim.js node tools/same.js 5,11,14 150` must say identical, and so must `node tools/same_save.js <old sim.js> build/sim.js <save> 20 5` on a big save.
+  - If draws are skipped or reordered (as in #26), first replace those draws, in copies of both sims, with the same fixed function of what they are drawn for. For example, a small integer hash of the week and the ids, mapped to [0, 1). Then run the same two checks.
+  - Also make a copy that is wrong on purpose, to show the check would catch it. Fresh seeds are a weak test of rare paths; the big saves are sharp.
 
 ## Publishing
 1. Commit `src/`, the rebuilt `index.html`, and any tools.
