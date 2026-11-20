@@ -110,7 +110,22 @@ Lines are very long, often a whole function on one line. Do not print whole file
 - **Speed (#26):** make the game faster without changing who marries whom: the same chances, proven, not just similar figures.
 - **Way of working:** Dustin likes the strongest model to plan and check, with cheaper agents building and play-testing, and every claim checked before it is reported.
 
-## Where things stand (19 November 2026)
+## Where things stand (20 November 2026)
+Latest fix (issue #28): on the owner's iPhone the date, food and grain stopped changing after moving the village, while the game ran on (the pause button showed ❚❚ and the map moved), and the "A new site" card never showed.
+- **Cause:** `frame()` in `src/ui.js` refreshed the top bar (`updateTop`, which writes the date and food) and the side panel only while a flag said no finger was on the panel. A touch on the panel set it; only a lift or leave on the panel cleared it. A phone may send neither after a scroll (it sends a cancel), so the flag could stay set for good. Chromium sends a leave after the cancel, so headless tests never froze.
+- **Fix:** the top bar always refreshes. The panel waits only until 2 s after the last press, move or scroll on it (`panelTouchAt`), so nothing can hold it longer.
+- **Also fixed:** on a touchscreen, the click that follows the tap placing the village landed on the new result card's backdrop and closed it at once. A card now ignores a backdrop click in its first 0.6 s (`cardAt`).
+- **Checked** in a 390 px touch browser, old page against new:
+  - With a finger left on the panel (no lift or leave sent), the old page showed 2 dates in 143 weeks of play and the new one 9.
+  - The move's result card stayed up on the new page and vanished within 0.1 s on the old.
+  - While the panel was scrolled, it was not redrawn on the new page; the old one redrew it mid-scroll.
+- **Found while looking (open, not fixed; see the issues):**
+  - **A merge stops farming:** a tribe of 35 or fewer that joins a neighbour takes the host's farming stage (`tribeMerge`). A settled farming village that joins a tribe below stage 2 never harvests again (`harvest` needs stage 2). Moving a village near a weaker tribe can bring this on.
+  - **Poor ground:** the move deed lets a village move onto poor ground with no warning. The crop goes with the new cell's `W.nit`, so it can fall to a third.
+  - **`W.seaDist` is 0 on every land cell:** it is the sea's distance from land. The land tests that use it (the shore rule for fishing villages, the coastal counts in `soc.js` at about lines 1840 and 3515, and the fishing check in the land expulsion) never do what they say. `W.inland` is the land's distance from the coast.
+  - **Migrate onto claimed land:** "Lead your clan to new lands" can leave the clan camped for months on ground its old tribe still claims, at a third of its harvest.
+
+## Earlier round (19 November 2026, faster marriage matching)
 Latest round (issue #26): marriage matching is about five times cheaper once the people reach their ceiling, with the same matches and the same chances.
 - **What changed:**
   - **`marriages`:** a tribe gathers its bachelors only in a month when one of its women looks (a fifth of them do). Before, every month it walked its own clans and every friendly clan within 40 km, and that walk was 97% of the cost at the ceiling. No one marries before the first woman looks, so she sees the same men. The friendly-tribe men are gathered by `friendlyMen`, each still taken with chance 0.5 (an ally) or 0.2 (a friend).
