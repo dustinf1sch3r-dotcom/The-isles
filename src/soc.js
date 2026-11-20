@@ -1586,11 +1586,11 @@
     const i = cellAt(x, y); if (!W.land[i] || W.lake[i] || W.biome[i] === 2) return 0;
     return clamp(W.nit[i] / 60, 0.3, 1.2) * clamp(W.depth[i] / 0.8, 0.3, 1) * (W.slope[i] < 0.1 ? 1 : 0.5) * (W.T0[i] > 7.5 ? 1 : 0.55) * (W.isRiver[i] || W.hand[i] < 5 ? 1.25 : 0.85) * (W.om[i] > 9 ? 0.5 : 1);
   }
-  function villageSite(W, c, rmin, rmax, force, strict) {
+  function villageSite(W, c, rmin, rmax, force, strict, anyHome) {
     let best = null, bs = -Infinity; const memo = new Map();
     for (let k = 0; k < 30; k++) {
       const a = W.rand() * 6.283, r = rmin + W.rand() * (rmax - rmin), x = clamp(c.x + Math.cos(a) * r, 3000, WORLD - 3000), y = clamp(c.y + Math.sin(a) * r, 3000, WORLD - 3000);
-      if (!sameIsland(W, c, x, y) || (c.tribe.home && Math.hypot(x - c.tribe.home[0], y - c.tribe.home[1]) > (c.tribe.homeR || HOME_R) + 25000)) continue;
+      if (!sameIsland(W, c, x, y) || (!anyHome && c.tribe.home && Math.hypot(x - c.tribe.home[0], y - c.tribe.home[1]) > (c.tribe.homeR || HOME_R) + 25000)) continue;
       if (!force && landBlocked(W, c.tribe, cellAt(x, y), memo)) continue; // ground another people holds, unless we are much stronger and at odds with them
       if (landKeepOff(W, c, cellAt(x, y)) || (strict && foreignHeld(W, c.tribe, cellAt(x, y)))) continue; // a clan sent away keeps off the land of those who sent it; the player's elders keep off all held ground
       const sc = villageScore(W, c, x, y);
@@ -1603,6 +1603,16 @@
     const v = villageSite(W, c, 0, 20000, force, strict) || (!force && (landBlocked(W, c.tribe, cellAt(c.x, c.y), null) || landKeepOff(W, c, cellAt(c.x, c.y))) || (strict && foreignHeld(W, c.tribe, cellAt(c.x, c.y))) ? null : [c.x, c.y]);
     if (!v) return; // no ground that is free: the clan stays a camp for now
     c.tx = v[0]; c.ty = v[1]; c.toSettle = true; return true;
+  }
+  // a clan of a tribe that moved lately has come to its new lands and finds the ground held: it walks on to the nearest ground it may take
+  function walkOn(W, c) {
+    const t = c.tribe; if (!t.migrating || W.week - t.migrating > 52 * 5 || Math.hypot(c.tx - c.x, c.ty - c.y) > 5000) return;
+    let v = null; for (const [a, b] of [[20000, 32000], [32000, 46000], [46000, 60000]]) if ((v = villageSite(W, c, a, b, false, false, true))) break;
+    if (!v) return;
+    const dx = v[0] - c.x, dy = v[1] - c.y, home = t.home || tribeCenter(t);
+    if (Math.hypot(v[0] - home[0], v[1] - home[1]) > (t.homeR || HOME_R) + 25000) t.home = [v[0], v[1]]; // the tribe's home goes with its clan
+    note(W, c, `Found the ground held, and walked on ${Math.round(Math.hypot(dx, dy) / 1000)} km ${compass(dx, dy)} to build.`);
+    c.tx = v[0]; c.ty = v[1]; c.toSettle = true;
   }
   const grainDeposits = W => W.deposits.filter(d => d.type === 'grain');
   const GRAIN_TRIP = 50000; // a few days' walk: near enough to go and reap the wild grain each summer
@@ -1641,7 +1651,7 @@
       }
       if (t.stage === 3) for (const c of t.clans) {
         if (c.live === 'fishing' || c.founding) continue; // a daughter clan raises its village in foundingMonth
-        if (!c.settled && !c.toSettle) settleClan(W, c);
+        if (!c.settled && !c.toSettle && !settleClan(W, c)) walkOn(W, c);
         if (c.toSettle && Math.hypot(c.tx - c.x, c.ty - c.y) < 1000) {
           c.toSettle = false; c.settled = true; c.live = 'farm'; c.settledAt = c.settledAt || W.week; c.soil = 1; c.village = villageAt(W, c, c.tribe, 'vill');
           note(W, c, `Built the village of ${c.village}.`);
