@@ -1150,6 +1150,7 @@
     const PW = W.player, mineT = PW && !PW.over && PW.head.alive && PW.head.clan && PW.head.clan.tribe === t, rdT = mineT && t.clans.some(c => c.raidedAt && W.week - c.raidedAt < 52 * 15), joinedUs = PW && !PW.over && PW.head.alive && PW.head.clan && PW.head.clan.tribe === best;
     TSZ.w = -1;
     for (const c of t.clans) { c.tribe = best; best.clans.push(c); }
+    if (t.dom > best.dom) { best.dom = t.dom; if (!best.learnedFrom) best.learnedFrom = t.name; } // the joined tribe brings its farming know-how; farmingMonth raises the stage
     if (t.confed) leaveConfed(W, t, null);
     note(W, best, `The ${t.name} (${tribeSize(t)} people) joined us.`);
     { const P = W.player; if (joinedUs) { houseNote(W, `The ${t.name}, too few to stand alone, joined our people, the ${best.name}.`); notice(W, `The ${t.name} join us`, `The ${t.name} were too few to stand alone. Their clans are now clans of the ${best.name}, with yours.`); } if (mineT) { houseNote(W, `Our people, the ${t.name}, were too few to stand alone${rdT ? ', worn down by raids,' : ''} and joined the ${best.name}.`); notice(W, `We join the ${best.name}`, `The ${t.name} were too few to stand alone${rdT ? ', worn down by raids' : ''}. Your clan is now one of the clans of the ${best.name}: it follows their leader (${best.headman ? best.headman.name : 'chosen by the clans'}) and lives by their ways and speech.`); } }
