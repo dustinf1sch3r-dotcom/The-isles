@@ -1711,7 +1711,7 @@
   $('#loadFileBtn').onclick = () => { closePops(); loadFile(); };
   $('#newBtn').onclick = () => { closePops(); if (picking) return newWorld(Math.floor(Math.random() * 1e9));
     showCard(' ', 'Start a new world?', 'This world, and your house in it, will be lost.', [{ label: 'Start a new world' }, { label: 'Keep playing' }], k => { if (k === 0) { modalEv = null; wasRunning = false; $('#modal').style.display = 'none'; newWorld(Math.floor(Math.random() * 1e9)); } else closeCard(); }); };
-  $('#modal').addEventListener('click', e => { if (e.target.id !== 'modal') return; if (modalDismiss) modalDismiss(); else { const c = $('#modal .card2'); c.classList.remove('nudge'); void c.offsetWidth; c.classList.add('nudge'); } });
+  $('#modal').addEventListener('click', e => { if (e.target.id !== 'modal') return; if (performance.now() - cardAt < 600) return; /* the click a phone sends after the tap that opened this card */ if (modalDismiss) modalDismiss(); else { const c = $('#modal .card2'); c.classList.remove('nudge'); void c.offsetWidth; c.classList.add('nudge'); } });
   document.querySelectorAll('#layers button').forEach(b => b.onclick = () => { layer = b.dataset.l; document.querySelectorAll('#layers button').forEach(x => x.classList.toggle('on', x === b)); buildLegend(); dirty = true; });
   document.querySelectorAll('#togs button').forEach(b => b.onclick = () => { const k = b.dataset.s; show[k] = !show[k]; b.classList.toggle('on', show[k]); bgKey = ''; });
   function buildLegend() {
@@ -1733,7 +1733,7 @@
   }
 
   // ---------- the game: choose a house, decision cards ----------
-  let wasRunning = false, modalEv = null, picking = false;
+  let wasRunning = false, modalEv = null, picking = false, cardAt = -1e9; // cardAt: when the card on #modal last opened
   function showStart() {
     picking = true; running = false; modalDismiss = null; $('#play').textContent = '▶';
     const C = SIM.houseCandidates(W), gd = W.deposits.find(d => d.type === 'grain');
@@ -1761,7 +1761,7 @@
   // routine matters that can be answered by a standing order: card type -> [policy key, value for each option in order]
   const ROUTINE_POL = { gathering: ['gather', ['gifts', 'trade', 'keep']], omen: ['omen', ['offer', 'quiet', 'sign']], toobig: ['split', ['letgo', 'hold']], friendneed: ['friend', ['give', 'send']], sickness: ['sick', ['scatter', 'tend']], exiles: ['exiles', ['place', 'feed', 'turn']], oath: ['oath', ['swear', 'friendship', 'refuse']], foundling: ['found', ['take', 'other', 'refuse']] };
   function showDecision(ev) {
-    modalEv = ev; wasRunning = running || wasRunning; running = false; $('#play').textContent = '▶';
+    modalEv = ev; cardAt = performance.now(); wasRunning = running || wasRunning; running = false; $('#play').textContent = '▶';
     const P = W.player;
     modalDismiss = ev.options.length === 1 ? () => choose(0) : null;
     const ringS = P && !P.over ? SIM.ringSay(W, ev) : [], hue = P && P.head && P.head.clan ? P.head.clan.tribe.hue : null, first = Math.max(0, ringS.findIndex(r => r.text));
@@ -1777,7 +1777,7 @@
   }
   // ---- player actions (⚑ Act) ----
   function showCard(head, title, text, opts, onPick) {
-    const P = W.player; modalEv = { act: true, pick: onPick, n: opts.length };
+    const P = W.player; modalEv = { act: true, pick: onPick, n: opts.length }; cardAt = performance.now();
     if (!wasRunning) wasRunning = running; running = false; $('#play').textContent = '▶';
     modalDismiss = () => { modalEv = null; closeCard(); };
     const html = '<button class="xbtn" data-x title="Close (Esc)">✕</button>' + `<div class="evhead">${head || (P ? `House of ${esc(P.house)}, year ${yr(W.week)}` : '')}</div><h2>${esc(title)}</h2>${text ? `<p>${iconize(text)}</p>` : ''}` +
@@ -1910,7 +1910,7 @@
     }, 40);
   }
 
-  let lastT = performance.now(), lastPanel = 0, panelHover = false, lastCamKey = '', lastDetail = 0;
+  let lastT = performance.now(), lastPanel = 0, panelTouchAt = -1e9, lastCamKey = '', lastDetail = 0; // panelTouchAt: when a finger or the mouse last pressed, moved or scrolled on the panel
   let frameN = 0, lastStepFrame = 0, stepMs = 2, lastSeason = -1, simBudget = 9, ySpeed = 0, simAt = performance.now(), simWeeks = 0;
   function frame(t) {
     const dt = Math.min(0.1, (t - lastT) / 1000); lastT = t;
@@ -1955,13 +1955,16 @@
       draw();
       if (PR) SIM.prof.render(performance.now() - r0, rPaint, rDetail);
       const now = performance.now();
-      if (now - lastPanel > 1500 && !panelHover) { updateTop(); if (running && (panel !== 'log' || W.events.length !== lastEvN)) { const st = $('#panelBody').scrollTop; renderPanel(); $('#panelBody').scrollTop = st; lastEvN = W.events.length; } lastPanel = now; }
+      if (now - lastPanel > 1500) { updateTop(); if (running && now - panelTouchAt > 2000 && (panel !== 'log' || W.events.length !== lastEvN)) { const st = $('#panelBody').scrollTop; renderPanel(); $('#panelBody').scrollTop = st; lastEvN = W.events.length; } lastPanel = now; }
     }
     requestAnimationFrame(frame);
   }
   let lastEvN = -1;
   const pb = $('#panelBody');
-  pb.addEventListener('pointerdown', () => { panelHover = true; }); pb.addEventListener('pointerup', () => setTimeout(() => panelHover = false, 2000)); pb.addEventListener('pointerleave', () => panelHover = false);
+  // the panel is not redrawn under a finger: it waits until 2 s after the last press, move or scroll on it. It never waits on a lift or leave, which a phone may not send after a scroll.
+  const touchPanel = () => { panelTouchAt = performance.now(); };
+  pb.addEventListener('pointerdown', touchPanel); pb.addEventListener('pointerup', touchPanel); pb.addEventListener('pointercancel', touchPanel); pb.addEventListener('pointermove', e => { if (e.buttons || e.pointerType !== 'mouse') touchPanel(); }); pb.addEventListener('scroll', touchPanel, { passive: true });
+  pb.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') panelTouchAt = -1e9; });
   // keep looking at the same spot when the window or phone toolbar changes size (don't jump out to the whole map)
   window.addEventListener('resize', () => { const w0 = cv.clientWidth, h0 = cv.clientHeight; resize(); if (!W) return; cam.ox += (cv.clientWidth - w0) / 2; cam.oy += (cv.clientHeight - h0) / 2; try { draw(); } catch (e) {} });
   resize();
