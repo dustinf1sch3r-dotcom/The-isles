@@ -173,7 +173,10 @@
   .toast { pointer-events:auto; background:var(--hide); border:1px solid rgba(124,47,30,0.4); border-radius:12px; padding:9px 12px; font-size:13px; line-height:1.4; color:#33261a; box-shadow:0 6px 24px rgba(54,36,14,0.35); transition:opacity .7s; cursor:pointer; }
   .toast b { color:#4f1f12; } .toast.out { opacity:0; }
   #pickbar { position:fixed; top:calc(var(--topb) + 8px); z-index:12; max-width:92vw; left:50%; transform:translateX(-50%); display:none; gap:10px; align-items:center; background:var(--hide); border:1px solid rgba(124,47,30,0.6); border-radius:12px; padding:8px 12px; font-size:13px; color:#4f1f12; box-shadow:0 6px 24px rgba(54,36,14,0.35); }
-  #pickbar button { height:30px; padding:0 10px; }
+  #pickbar { flex-wrap:wrap; justify-content:flex-end; }
+  #pickbar .pbt { flex:1 1 100%; min-width:0; }
+  #pickbar button { height:30px; padding:0 10px; white-space:nowrap; }
+  @media (max-width:600px) { #pickbar { left:12px; transform:none; width:calc(100vw - 24px - 52px); max-width:none; box-sizing:border-box; } } /* clear of the buttons down the right edge */
 
   /* ---- cards: decisions, deeds, start, help ---- */
   #modal, #help { position:fixed; inset:0; z-index:12; display:none; align-items:center; justify-content:center; background:rgba(46,32,16,0.45); padding:14px; }
