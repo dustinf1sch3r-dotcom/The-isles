@@ -1850,7 +1850,7 @@
               const vn = c.village || c.name; c.settled = false; c.tx = v[0]; c.ty = v[1]; c.toSettle = true; c.wornAt = W.week; note(W, c, `The fields of ${vn} were worn out; the clan moved to break new ground.`);
               const P = W.player; if (P && !P.over && P.head && P.head.clan === c) { const km = Math.round(Math.hypot(v[0] - c.x, v[1] - c.y) / 1000), dir = compass(v[0] - c.x, v[1] - c.y);
                 houseNote(W, `The fields of ${vn} were worn out; the clan moved ${km} km ${dir} to break new ground.`);
-                notice(W, 'The fields are worn out', `The fields of ${vn} are worn out. The ${c.name} clan pull down their houses and walk ${km} km ${dir} to fresh ground, where they will build again.`); }
+                notice(W, 'The fields are worn out', `The fields of ${vn} are worn out. The ${c.name} clan pull down their houses and walk ${km} km ${dir} to fresh ground, where they will build again.${c.works && Object.keys(c.works).length ? ' All they built here stays behind.' : ''}`); }
             }
           }
         }
@@ -3022,7 +3022,7 @@
     }
     const h = P.head, c = h.clan, t = c.tribe;
     ambitionCheck(W);
-    if (c.toSettle && !c.settled && Math.hypot(c.tx - c.x, c.ty - c.y) < 1500) { c.toSettle = false; c.settled = true; c.live = c.live || 'farm'; c.settledAt = c.settledAt || W.week; c.soil = 1; const rebuilt = !!c.wornAt; c.wornAt = 0; c.village = villageAt(W, c, t, 'vill'); credit(P.head, 'village', c.village);
+    if (c.toSettle && !c.settled && Math.hypot(c.tx - c.x, c.ty - c.y) < 1500) { c.toSettle = false; c.settled = true; c.live = c.live || 'farm'; c.settledAt = c.settledAt || W.week; c.soil = 1; c.holdUntil = 0; const rebuilt = !!c.wornAt && W.week - c.wornAt < 52; c.wornAt = 0; // rebuilt: the walk after worn-out fields (weeks); an old wornAt from a walk given up does not count c.village = villageAt(W, c, t, 'vill'); credit(P.head, 'village', c.village);
       note(W, c, `Built the village of ${c.village}.`); logEvent(W, `🏘 The ${c.name} clan (${t.name}) build the village of ${c.village}.`, c, 'settle'); houseNote(W, rebuilt ? `The village of ${c.village} was built again on fresh ground.` : `The village of ${c.village} was built.`); notice(W, `The village of ${c.village} stands`, rebuilt ? `The ${c.name} clan have raised their houses again on fresh ground, where the soil is good once more.` : `The ${c.name} clan have reached the spot and raised their houses. ${c.village} is your home now: stores, fields, and room to grow.`); }
     if (W.week % 52 === 20 && !c.settled && !c.toSettle && !P.toldSettle) { const a = playerActions(W).find(x => x.id === 'settle'); if (a && a.ok) { P.toldSettle = true; houseNote(W, 'We could found a village now.'); notice(W, 'You could found a village', `${t.stage >= 2 ? 'Your people sow grain now' : 'These waters are rich enough to live from'}. A village stays in one place, stores food, has more children and can grow far larger than a camp. Open Act and choose "${a.label}" when you are ready.`); } }
     const close = q => q === h || q.father === h || q.mother === h || (q.father && (q.father.father === h || q.father.mother === h)) || (q.mother && (q.mother.father === h || q.mother.mother === h)) || (h.father && q.father === h.father) || (h.mother && q.mother === h.mother);
