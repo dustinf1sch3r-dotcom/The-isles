@@ -359,7 +359,7 @@
             if (rand() < 0.012) { die(W, c, q, 'childbirth'); anyDead = true; }
             const ch = makePerson(W, rand() < 0.512 ? 'M' : 'F', 0, q, q.spouse || q.lastMate || null); if ((ch.father && ch.father.dyn) || (q.dyn)) { ch.dyn = true; const P0 = W.player; if (P0 && !P0.over && P0.head.alive) { const hd = P0.head, f0 = ch.father; if (q === hd || f0 === hd) houseNote(W, `A ${ch.sex === 'F' ? 'daughter' : 'son'}, ${ch.name}, was born to ${hd.name}${q !== hd ? ' and ' + q.name : f0 ? ' and ' + f0.name : ''}.`); else if (q.mother === hd || q.father === hd || (f0 && (f0.mother === hd || f0.father === hd))) houseNote(W, `A grand${ch.sex === 'F' ? 'daughter' : 'son'}, ${ch.name}, was born to ${hd.name}'s ${q.mother === hd || q.father === hd ? 'daughter ' + q.name : 'son ' + f0.name}.`); else if (inHouseClan(W, c)) houseCount(W, 'sumB'); } } if (q.slave) { ch.slave = true; ch.owner = q.owner; ch.origin = q.origin; ch.taken = W.week; }
             ch.fam = q.fam; ch.clan = c; born.push(ch);
-            q.nursing = ch; q.kids++; if (ch.father) ch.father.kids = (ch.father.kids || 0) + 1; q.pp = W.week + Math.round(LACT_WKS * (1 - 0.5 * c.cereal - (c.live === 'fishing' ? 0.2 : 0)) * (1 + 0.8 * hunger) * (0.8 + rand() * 0.4)); // porridge weans babies sooner -> shorter birth spacing
+            q.nursing = ch; q.kids++; if (ch.father) ch.father.kids = (ch.father.kids || 0) + 1; q.pp = W.week + Math.round(LACT_WKS * Math.max(0.6, 1 - 0.5 * c.cereal - (c.live === 'fishing' ? 0.2 : 0)) * (1 + 0.8 * hunger) * (0.8 + rand() * 0.4)); // porridge and fish both wean babies sooner, but no sooner than porridge at its fullest (0.6: a farm village's best) -> shorter birth spacing
             c.yr.births++;
           }
         } else {
@@ -895,7 +895,7 @@
     if (km > FOUND_MAX / 1000) return `That is ${Math.round(km0)} km away. A daughter village must stand within ${FOUND_MAX / 1000} km.`;
     if (x < 3000 || y < 3000 || x >= WORLD - 3000 || y >= WORLD - 3000 || !W.land[i] || W.lake[i]) return 'That is water. Choose a spot on land.';
     if (!canReach(W, c, x, y)) return 'The clan cannot walk to that land — it lies across the sea.';
-    if (c.live === 'fishing' && W.seaDist[i] > 2) return 'A fishing village must stand on the shore.';
+    if (c.live === 'fishing' && W.inland[i] > 1) return 'A fishing village must stand on the shore.';
     for (const o of nearClans(W, x, y, FOUND_APART)) if (o.settled) return `Another village, ${o.village || 'the ' + o.name + ' clan'}, stands within ${FOUND_APART / 1000} km.`;
     for (const o of W.clans) if (o.alive && o.toSettle && !o.settled && Math.hypot(o.tx - x, o.ty - y) <= FOUND_APART) return `A village is already being raised within ${FOUND_APART / 1000} km.`;
     return null;
@@ -1071,7 +1071,7 @@
         options: lead ? [{ label: 'Lead them there', hint: `${km} km ${dir}` }, { label: 'Stay where we are', hint: 'As leader, you keep the tribe here' }] : [{ label: 'Go with the tribe', hint: `${km} km ${dir}` }, { label: 'Stay behind', hint: t.clans.length > 1 ? `Your clan stays and becomes a people of its own` : 'Your clan stays' }] });
       return true;
     }
-    t.home = dest; t.migrating = W.week;
+    t.home = dest; t.migrating = t.movedAt = W.week;
     for (const c of t.clans) { const a = W.rand() * 6.283, r = 6000 + W.rand() * 22000; let x = clamp(dest[0] + Math.cos(a) * r, 3000, WORLD - 3000), y = clamp(dest[1] + Math.sin(a) * r, 3000, WORLD - 3000); if (!W.land[cellAt(x, y)] || landBlocked(W, t, cellAt(x, y), null)) { x = dest[0]; y = dest[1]; } wear(W, c.x, c.y, x, y, c.people.length / 15); c.tx = x; c.ty = y; c.atGathering = false; }
     const km = Math.round(Math.hypot(dest[0] - from[0], dest[1] - from[1]) / 1000), dir = compass(dest[0] - from[0], dest[1] - from[1]);
     const crossed = t.clans[0] && W.comp[cellAt(dest[0], dest[1])] !== W.comp[cellAt(t.clans[0].x, t.clans[0].y)];
@@ -1150,6 +1150,7 @@
     const PW = W.player, mineT = PW && !PW.over && PW.head.alive && PW.head.clan && PW.head.clan.tribe === t, rdT = mineT && t.clans.some(c => c.raidedAt && W.week - c.raidedAt < 52 * 15), joinedUs = PW && !PW.over && PW.head.alive && PW.head.clan && PW.head.clan.tribe === best;
     TSZ.w = -1;
     for (const c of t.clans) { c.tribe = best; best.clans.push(c); }
+    if (!(best.resistUntil && W.week < best.resistUntil)) { const up = Math.min(t.dom, 0.3); if (up > best.dom) { best.dom = up; if (t.stage >= 2 && !best.learnedFrom) best.learnedFrom = t.name; } } // the host learns to sow (the start of stage 2); settling for good comes with time; a host that keeps to the old ways learns nothing
     if (t.confed) leaveConfed(W, t, null);
     note(W, best, `The ${t.name} (${tribeSize(t)} people) joined us.`);
     { const P = W.player; if (joinedUs) { houseNote(W, `The ${t.name}, too few to stand alone, joined our people, the ${best.name}.`); notice(W, `The ${t.name} join us`, `The ${t.name} were too few to stand alone. Their clans are now clans of the ${best.name}, with yours.`); } if (mineT) { houseNote(W, `Our people, the ${t.name}, were too few to stand alone${rdT ? ', worn down by raids,' : ''} and joined the ${best.name}.`); notice(W, `We join the ${best.name}`, `The ${t.name} were too few to stand alone${rdT ? ', worn down by raids' : ''}. Your clan is now one of the clans of the ${best.name}: it follows their leader (${best.headman ? best.headman.name : 'chosen by the clans'}) and lives by their ways and speech.`); } }
@@ -1586,11 +1587,11 @@
     const i = cellAt(x, y); if (!W.land[i] || W.lake[i] || W.biome[i] === 2) return 0;
     return clamp(W.nit[i] / 60, 0.3, 1.2) * clamp(W.depth[i] / 0.8, 0.3, 1) * (W.slope[i] < 0.1 ? 1 : 0.5) * (W.T0[i] > 7.5 ? 1 : 0.55) * (W.isRiver[i] || W.hand[i] < 5 ? 1.25 : 0.85) * (W.om[i] > 9 ? 0.5 : 1);
   }
-  function villageSite(W, c, rmin, rmax, force, strict) {
+  function villageSite(W, c, rmin, rmax, force, strict, anyHome) {
     let best = null, bs = -Infinity; const memo = new Map();
     for (let k = 0; k < 30; k++) {
       const a = W.rand() * 6.283, r = rmin + W.rand() * (rmax - rmin), x = clamp(c.x + Math.cos(a) * r, 3000, WORLD - 3000), y = clamp(c.y + Math.sin(a) * r, 3000, WORLD - 3000);
-      if (!sameIsland(W, c, x, y) || (c.tribe.home && Math.hypot(x - c.tribe.home[0], y - c.tribe.home[1]) > (c.tribe.homeR || HOME_R) + 25000)) continue;
+      if (!sameIsland(W, c, x, y) || (!anyHome && c.tribe.home && Math.hypot(x - c.tribe.home[0], y - c.tribe.home[1]) > (c.tribe.homeR || HOME_R) + 25000)) continue;
       if (!force && landBlocked(W, c.tribe, cellAt(x, y), memo)) continue; // ground another people holds, unless we are much stronger and at odds with them
       if (landKeepOff(W, c, cellAt(x, y)) || (strict && foreignHeld(W, c.tribe, cellAt(x, y)))) continue; // a clan sent away keeps off the land of those who sent it; the player's elders keep off all held ground
       const sc = villageScore(W, c, x, y);
@@ -1603,6 +1604,18 @@
     const v = villageSite(W, c, 0, 20000, force, strict) || (!force && (landBlocked(W, c.tribe, cellAt(c.x, c.y), null) || landKeepOff(W, c, cellAt(c.x, c.y))) || (strict && foreignHeld(W, c.tribe, cellAt(c.x, c.y))) ? null : [c.x, c.y]);
     if (!v) return; // no ground that is free: the clan stays a camp for now
     c.tx = v[0]; c.ty = v[1]; c.toSettle = true; return true;
+  }
+  // a clan of a tribe that moved lately has come to its new lands and finds the ground held: it walks on to the nearest ground it may take
+  function walkOn(W, c) {
+    const t = c.tribe; if (!t.movedAt || W.week - t.movedAt > 52 * 5 || (c.holdUntil && c.holdUntil > W.week) || Math.hypot(c.tx - c.x, c.ty - c.y) > 5000) return;
+    let v = null; for (const [a, b] of [[20000, 32000], [32000, 46000], [46000, 60000]]) { const s = villageSite(W, c, a, b, false, false, true); if (s && farmSuit(W, s[0], s[1]) > 0) { v = s; break; } } // never onto ground no farmer can use
+    if (!v) return;
+    const O = foreignHeld(W, t, cellAt(c.x, c.y)), dx = v[0] - c.x, dy = v[1] - c.y, home = t.home || tribeCenter(t), km = Math.round(Math.hypot(dx, dy) / 1000), dir = compass(dx, dy);
+    if (Math.hypot(v[0] - home[0], v[1] - home[1]) > (t.homeR || HOME_R) + 25000 && (t.clans.length < 2 || !t.clans.some(o => o.settled) || c.people.length * 2 >= t.clans.reduce((s, o) => s + o.people.length, 0))) t.home = [v[0], v[1]]; // the tribe's home goes with its clan, but not for one small camp of a tribe that has settled
+    const txt = `The land here was held by ${O ? 'the ' + O.name : 'another people'}; walked on ${km} km ${dir} to build.`;
+    note(W, c, txt);
+    const P = W.player; if (P && !P.over && P.head.alive && P.head.clan === c) { houseNote(W, `The ${c.name} clan found the land held, and walked on ${km} km ${dir} to build.`); notice(W, 'The clan walks on', `The land where the clan stopped is held by ${O ? 'the ' + O.name : 'another people'}, so it walks on ${km} km ${dir} to build its village.`); }
+    c.tx = v[0]; c.ty = v[1]; c.toSettle = true;
   }
   const grainDeposits = W => W.deposits.filter(d => d.type === 'grain');
   const GRAIN_TRIP = 50000; // a few days' walk: near enough to go and reap the wild grain each summer
@@ -1630,6 +1643,7 @@
           }
         }
       }
+      if (!resisting && t.dom < 0.3 && t.clans.some(c => c.alive !== false && c.settled && c.live === 'farm')) t.dom = 0.3; // a farm village already stands (an old save, a clan that came): the tribe learns to sow (the start of stage 2); settling for good comes with time. It does not lose the village
       const prev = t.stage;
       t.stage = t.dom >= 0.55 ? 3 : t.dom >= 0.3 ? 2 : t.dom >= 0.05 ? 1 : 0;
       if (t.stage > prev) {
@@ -1639,13 +1653,17 @@
         if (t.stage === 3) { note(W, t, `Settled for good in farming villages.`); logEvent(W, `🏠 The ${t.name} give up the wandering life and settle in permanent farming villages.`, t, 'grain'); }
         if (W.player && W.player.head && W.player.head.clan && W.player.head.clan.tribe === t && t.stage >= 2) pushGrainEvent(W, t);
       }
+      if (t.stage < 2) { const P = W.player, pc = P && !P.over && P.head && P.head.clan; for (const c of t.clans) if (c.toSettle && !c.founding && c.live !== 'fishing' && (resisting || c !== pc)) c.toSettle = false; } // a tribe holding to the old ways does not walk to build farm villages
+      if (t.stage < 2) for (const c of t.clans) if (c.alive !== false && c.settled && c.live === 'farm') { // a farming village in a tribe that does not sow: the clan gives up the fields and lives as its people do
+        c.settled = false; c.toSettle = false; c.live = null; c.founding = false; const vn = c.village || c.name;
+        note(W, c, `Left the fields of ${vn}: our people do not sow.`); const P = W.player; if (P && !P.over && P.head.clan && P.head.clan.tribe === t) houseNote(W, c === P.head.clan ? `Our clan left the fields of ${vn}: our people do not sow.` : `The ${c.name} left the fields of ${vn}: our people do not sow.`);
+      }
+      if (t.stage === 2) { const P = W.player, pc = P && !P.over && P.head && P.head.clan; for (const c of t.clans) if (c !== pc && c.alive !== false && c.live !== 'fishing' && !c.founding) buildArrived(W, c); } // a worn-out village of a sowing people rebuilds where it came to; it starts no new ones
       if (t.stage === 3) for (const c of t.clans) {
         if (c.live === 'fishing' || c.founding) continue; // a daughter clan raises its village in foundingMonth
-        if (!c.settled && !c.toSettle) settleClan(W, c);
-        if (c.toSettle && Math.hypot(c.tx - c.x, c.ty - c.y) < 1000) {
-          c.toSettle = false; c.settled = true; c.live = 'farm'; c.settledAt = c.settledAt || W.week; c.soil = 1; c.village = villageAt(W, c, c.tribe, 'vill');
-          note(W, c, `Built the village of ${c.village}.`);
-        }
+        if (!c.settled && !c.toSettle && t.movedAt && W.week - t.movedAt < 52 * 5 && Math.hypot(c.tx - c.x, c.ty - c.y) > 5000) continue; // still walking to the new lands: it builds where it comes to, not on the road
+        if (!c.settled && !c.toSettle && !settleClan(W, c)) walkOn(W, c);
+        if (c !== (W.player && !W.player.over && W.player.head && W.player.head.clan)) buildArrived(W, c); // the player's own clan is built by playerMonth, with its notice
       }
     }
   }
@@ -1655,7 +1673,14 @@
   //  (and in time the great beasts) away. The world's own clans do it by themselves.
   // =====================================================================
   const FIELD_STEPS = ['the home fields', 'fields out to the first stream', 'fields to the second stream', 'fields to the foot of the hills', 'fields from one side of the valley to the other'];
+  const FISH_FIELDS = 0.5; // a fishing village of a sowing people keeps half the fields of a farming village, by the shore
   const FIELD_GAP = 52 * 4, FIELD_WEAR = 0.25, FIELD_CROP = 0.06, FIELD_REACH = 25000;
+  // a clan that walked to its new ground and has come to it raises its village there (the farming loop; playerMonth builds the player's own clan, with its notice)
+  function buildArrived(W, c) {
+    if (!c.toSettle || c.settled || c.founding || c.live === 'fishing' || Math.hypot(c.tx - c.x, c.ty - c.y) >= 1000) return false;
+    c.toSettle = false; c.holdUntil = 0; c.settled = true; c.live = 'farm'; c.settledAt = c.settledAt || W.week; c.soil = 1; c.wornAt = 0; c.village = villageAt(W, c, c.tribe, 'vill');
+    note(W, c, `Built the village of ${c.village}.`); return true;
+  }
   const fieldLv = c => c.fieldLv || 0;
   const fieldMetal = c => (c.goods && (c.goods.bronze > 0 || c.goods.metal > 0)) ? 1 : 0;
   const fieldCap = c => 1 + Math.floor(freeCount(c) / 25) + fieldMetal(c);
@@ -1703,10 +1728,20 @@
     const lv = fieldLv(c), cap = fieldCap(c), n = c.plots ? c.plots.length : 1;
     return { lv, cap, n, step: fieldStep(lv), farm: fieldFarmer(c), wear: 1 / (1 + FIELD_WEAR * lv), crop: 1 + FIELD_CROP * lv };
   }
+  // would the deed Take up farming be offered for clan c? the deed list's own test
+  function canTakeFarming(W, c) { const P = W.player; return !!(P && !P.over && P.head && P.head.alive && c && c === P.head.clan && c.head === P.head && c.settled && c.live === 'fishing' && !c.founding && c.tribe && c.tribe.stage >= 2); }
+  // the warning for worn soil, for the deed's hint, its confirm step and its result card. harvest wears a farm village's soil by 0.012 / (1 + FIELD_WEAR * level)
+  // each year and moves the village when the soil is then under 0.4: Y harvests after taking up farming. '' while the soil is 0.6 or better.
+  function soilWarn(c, short) {
+    const s = c.soil == null ? 1 : c.soil, pc = Math.round(s * 100); if (pc >= 60) return '';
+    const y = Math.max(1, Math.floor((s - 0.4) / (0.012 / (1 + FIELD_WEAR * fieldLv(c)))) + 1);
+    if (short) return `The soil here is already worn (${pc}%): that comes ${y === 1 ? 'after the next harvest' : 'after about ' + y + ' more harvests'}`;
+    return `The soil here is worn (${pc}%): it will bear ${y === 1 ? 'one more harvest' : 'about ' + y + ' more harvests'}, then the fields are worn out and the village must move to fresh ground`;
+  }
   function fieldWhy(W, c, h) {
     const lv = fieldLv(c), free = freeCount(c), m = fieldMetal(c), cd = W.player && W.player.cool || {}, since = cd.fields != null ? W.week - cd.fields : 1e9;
     if (!c.settled) return 'A camp moves with the seasons and clears no fields; only a village that farms does';
-    if (c.live !== 'farm') return c.live === 'fishing' ? 'This village lives from the sea; only a farming village clears fields' : 'This village does not farm; only a farming village clears fields';
+    if (c.live !== 'farm') return c.live === 'fishing' ? (c.tribe && c.tribe.stage >= 2 ? 'This village lives from the sea and keeps only small fields by the shore' + (canTakeFarming(W, c) ? '; Take up farming (under Act) and it may clear more' : '') : 'This village lives from the sea; only a farming village clears fields') : 'This village does not farm; only a farming village clears fields';
     if (!(c.tribe && c.tribe.stage >= 2)) return 'Your people do not yet sow grain; fields come with the sowing';
     if (!fieldFarmer(c)) return 'Only a farming village can clear new fields';
     if (c.head && c.head !== h) return `${c.head.name} leads the clan, and clears new fields when the clan is short of grain`;
@@ -1736,7 +1771,7 @@
     const n = N * N, dens = W._dens && W._dens.length === n ? W._dens : (W._dens = new Float32Array(n)), near = W._near && W._near.length === n ? W._near : (W._near = new Uint8Array(n));
     dens.fill(0); near.fill(0);
     for (const c of W.clans) {
-      if (!c.alive) continue; const ci = cellAt(c.x, c.y), x0 = ci % N, y0 = (ci / N) | 0, w = c.settled && c.live === 'farm' ? freeCount(c) : 0; // only farming villages thin the game: foragers and fishers live on it, and the balance with them must hold
+      if (!c.alive) continue; const ci = cellAt(c.x, c.y), x0 = ci % N, y0 = (ci / N) | 0, w = c.settled && c.live === 'farm' ? freeCount(c) : 0; // only farming villages thin the game: foragers and fishers live on it, and the balance with them must hold (a sowing fishing village's small fields still mark W.farm on its own cell, in harvest)
       for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) { const x = x0 + dx, y = y0 + dy; if (x < 0 || y < 0 || x >= N || y >= N) continue; const d = Math.hypot(dx, dy); if (d > 5.01) continue; const j = y * N + x; if (c.settled && d <= 4.01) near[j] = 1; if (w && d < THIN_R) dens[j] += w * (1 - d / THIN_R); }
     }
     const cells = [], fs = []; let held = 0, nv = 0;
@@ -1798,19 +1833,25 @@
     for (const c of W.clans) {
       const t = c.tribe, ci = cellAt(c.x, c.y), lab = labor(c);
       if (t.stage >= 2) {
-        if (c.live === 'fishing') continue;
+        const fish = c.live === 'fishing'; if (fish && !c.settled) continue; // a fishing village keeps small fields by the shore; a fishing camp keeps none
+        if (fish && c.soil === undefined) c.soil = 1; // old saves
         const metalT = c.goods.bronze > 0 ? 1.3 : c.goods.metal > 0 || c.tool >= 1 ? 1.2 : 1; // copper axes clear more land, sickles reap faster
-        if (c.settled) syncFields(W, c, ci);
-        const fields = Math.min(c.people.length * 0.4 * metalT, lab * 1.1 * metalT) * (c.settled ? 1 : 0.35);
+        if (c.settled && !fish) syncFields(W, c, ci);
+        const fields = Math.min(c.people.length * 0.4 * metalT, lab * 1.1 * metalT) * (c.settled ? 1 : 0.35) * (fish ? FISH_FIELDS : 1);
         const soilF = (c.settled ? c.soil : 1) * clamp(W.nit[ci] / 55, 0.4, 1.2);
-        const crop = fields * (0.4 + 2.6 * Math.min(1, t.dom)) * 1e6 * soilF * (c.settled ? 1 + FIELD_CROP * fieldLv(c) : 1) * clamp(1.3 - Math.abs(wx - 1) * 0.6, 0.4, 1.2);
+        const crop = fields * (0.4 + 2.6 * Math.min(1, t.dom)) * 1e6 * soilF * (c.settled && !fish ? 1 + FIELD_CROP * fieldLv(c) : 1) * clamp(1.3 - Math.abs(wx - 1) * 0.6, 0.4, 1.2);
         c.grain += crop; c.lastCrop = crop;
         if (c.settled) {
-          c.soil = Math.max(0.2, c.soil - 0.012 / (1 + FIELD_WEAR * fieldLv(c)));
+          c.soil = fish ? Math.max(0.5, c.soil - 0.006) : Math.max(0.2, c.soil - 0.012 / (1 + FIELD_WEAR * fieldLv(c)));
           W.farm[ci] = Math.min(1, W.farm[ci] + fields / HA * 25); spreadFarm(W, c);
-          if (c.soil < 0.4) { // worn-out fields: move the village to fresh ground
+          if (c.soil < 0.4 && !fish) { // worn-out fields: move the village to fresh ground
             const v = villageSite(W, c, 8000, 25000);
-            if (v) { c.settled = false; c.tx = v[0]; c.ty = v[1]; c.toSettle = true; note(W, c, `The fields of ${c.village} were worn out; the clan moved to break new ground.`); }
+            if (v) {
+              const vn = c.village || c.name; c.settled = false; c.tx = v[0]; c.ty = v[1]; c.toSettle = true; c.wornAt = W.week; note(W, c, `The fields of ${vn} were worn out; the clan moved to break new ground.`);
+              const P = W.player; if (P && !P.over && P.head && P.head.clan === c) { const km = Math.round(Math.hypot(v[0] - c.x, v[1] - c.y) / 1000), dir = compass(v[0] - c.x, v[1] - c.y);
+                houseNote(W, `The fields of ${vn} were worn out; the clan moved ${km} km ${dir} to break new ground.`);
+                notice(W, 'The fields are worn out', `The fields of ${vn} are worn out. The ${c.name} clan pull down their houses and walk ${km} km ${dir} to fresh ground, where they will build again.${c.works && Object.keys(c.works).length ? ' All they built here stays behind.' : ''}`); }
+            }
           }
         }
       } else if (grainAccess(W, c) > 0.04) {
@@ -1837,7 +1878,7 @@
       if (!t.clans.length) continue;
       // --- boatbuilding: coastal clans learn by doing; neighbours copy ---
       // anyone living by the sea, a big river or a lake learns to hollow out a log; the sea teaches seagoing craft
-      let coastal = 0, river = 0; for (const c of t.clans) { const ci = cellAt(c.x, c.y); if (c.coastal || W.seaDist[ci] <= 4) coastal++; else if (W.acc[ci] > 400 || W.lake[ci]) river++; }
+      let coastal = 0, river = 0; for (const c of t.clans) { const ci = cellAt(c.x, c.y); if (c.coastal || W.inland[ci] <= 3) coastal++; else if (W.acc[ci] > 400 || W.lake[ci]) river++; }
       const prevB = boatStage(t);
       if (coastal + river) t.boats = Math.min(1, t.boats + (t.boats < 0.3 ? 0.0007 * Math.min(3, coastal + river * 0.5) : coastal ? 0.0003 * Math.min(3, coastal) : 0));
       if (W.week % 52 === 0) for (const o of W.tribes) if (o !== t && o.boats > t.boats + 0.1 && coastal && opinion(t, o) > 0 && o.clans.some(a => t.clans.some(b => Math.abs(a.x - b.x) < 50000 && Math.abs(a.y - b.y) < 50000))) t.boats = Math.min(o.boats, t.boats + 0.05);
@@ -2992,8 +3033,8 @@
     }
     const h = P.head, c = h.clan, t = c.tribe;
     ambitionCheck(W);
-    if (c.toSettle && !c.settled && Math.hypot(c.tx - c.x, c.ty - c.y) < 1500) { c.toSettle = false; c.settled = true; c.live = c.live || 'farm'; c.settledAt = c.settledAt || W.week; c.soil = 1; c.village = villageAt(W, c, t, 'vill'); credit(P.head, 'village', c.village);
-      note(W, c, `Built the village of ${c.village}.`); logEvent(W, `🏘 The ${c.name} clan (${t.name}) build the village of ${c.village}.`, c, 'settle'); houseNote(W, `The village of ${c.village} was built.`); notice(W, `The village of ${c.village} stands`, `The ${c.name} clan have reached the spot and raised their houses. ${c.village} is your home now: stores, fields, and room to grow.`); }
+    if (c.toSettle && !c.settled && Math.hypot(c.tx - c.x, c.ty - c.y) < 1500) { c.toSettle = false; c.settled = true; c.live = c.live || 'farm'; c.settledAt = c.settledAt || W.week; c.soil = 1; c.holdUntil = 0; const rebuilt = !!c.wornAt && W.week - c.wornAt < 52; c.wornAt = 0; // rebuilt: the walk after worn-out fields (weeks); an old wornAt from a walk given up does not count c.village = villageAt(W, c, t, 'vill'); credit(P.head, 'village', c.village);
+      note(W, c, `Built the village of ${c.village}.`); logEvent(W, `🏘 The ${c.name} clan (${t.name}) build the village of ${c.village}.`, c, 'settle'); houseNote(W, rebuilt ? `The village of ${c.village} was built again on fresh ground.` : `The village of ${c.village} was built.`); notice(W, `The village of ${c.village} stands`, rebuilt ? `The ${c.name} clan have raised their houses again on fresh ground, where the soil is good once more.` : `The ${c.name} clan have reached the spot and raised their houses. ${c.village} is your home now: stores, fields, and room to grow.`); }
     if (W.week % 52 === 20 && !c.settled && !c.toSettle && !P.toldSettle) { const a = playerActions(W).find(x => x.id === 'settle'); if (a && a.ok) { P.toldSettle = true; houseNote(W, 'We could found a village now.'); notice(W, 'You could found a village', `${t.stage >= 2 ? 'Your people sow grain now' : 'These waters are rich enough to live from'}. A village stays in one place, stores food, has more children and can grow far larger than a camp. Open Act and choose "${a.label}" when you are ready.`); } }
     const close = q => q === h || q.father === h || q.mother === h || (q.father && (q.father.father === h || q.father.mother === h)) || (q.mother && (q.mother.father === h || q.mother.mother === h)) || (h.father && q.father === h.father) || (h.mother && q.mother === h.mother);
     const dynAll = dynMembers(W); for (const q of dynAll) q.reserved = !q.spouse && close(q);
@@ -3366,7 +3407,7 @@
         const { tribe } = ev.data;
         if (ev.stage === 2) {
           if (k === 0) { tribe.dom = Math.min(0.6, tribe.dom + 0.08); houseNote(W, `${h.name} urged the ${tribe.name} to tend the grain fields.`); }
-          else { tribe.resistUntil = W.week + 52 * 25; tribe.dom = Math.max(0.2, tribe.dom - 0.05); houseNote(W, `${h.name} held to the old wandering ways.`); }
+          else { tribe.resistUntil = W.week + 52 * 25; tribe.dom = Math.max(0.2, Math.min(tribe.dom, 0.3) - 0.05); houseNote(W, `${h.name} held to the old wandering ways.`); }
         }
         return;
       }
@@ -3375,8 +3416,9 @@
   const t0 = c => c.tribe;
   function pushGrainEvent(W, t) {
     const P = W.player; if (!P || P.over) return;
-    if (t.stage === 2) pushEvent(W, { type: 'grain', key: 'g2' + t.id, stage: 2, title: 'The first fields', text: `The ${t.name} have begun to sow the grain they once only gathered. Tending fields means staying in one place — more food that keeps through winter, and more children; but a diet of porridge makes people smaller and sicker, and villages are easy to find for raiders. Will ${P.head.name} encourage it?`, data: { tribe: t },
-      options: [{ label: 'Tend the fields', hint: 'Speed the move to farming' }, { label: 'Keep to the old ways', hint: 'Halt the change for a generation' }] });
+    const vills = t.clans.filter(c => c.alive !== false && c.settled && c.live === 'farm').length;
+    if (t.stage === 2) pushEvent(W, { type: 'grain', key: 'g2' + t.id, stage: 2, title: 'The first fields', text: `The ${t.name} have begun to sow the grain they once only gathered. Tending fields means staying in one place — more food that keeps through winter, and more children; but a diet of porridge makes people smaller and sicker, and villages are easy to find for raiders.${P.head.clan && P.head.clan.settled && P.head.clan.live === 'fishing' ? ` If they go on sowing, your fishing village will keep small fields by the shore${canTakeFarming(W, P.head.clan) ? '; Take up farming (under Act) would give it full ones' : ''}.` : ''} Will ${P.head.name} encourage it?`, data: { tribe: t },
+      options: [{ label: 'Tend the fields', hint: 'Speed the move to farming' }, { label: 'Keep to the old ways', hint: vills ? `Halt the change for a generation; ${vills === 1 ? 'the farming village goes back to a camp' : 'the farming villages go back to camps'}` : 'Halt the change for a generation' }] });
     if (t.stage === 3) pushEvent(W, { type: 'grain', key: 'g3' + t.id, stage: 3, title: 'A settled people', text: `The ${t.name} have given up wandering and are building permanent villages among their fields. Expect many more children — and shorter, sicker people who are weaker in a fight.`, data: { tribe: t }, options: [{ label: 'So be it' }] });
   }
   function playerYear(W) {
@@ -3470,7 +3512,7 @@
     if (!c.settled && !c.toSettle) A.push({ id: 'movecamp', icon: '⛺', label: c.head === h || !c.head ? 'Move camp' : `Ask ${c.head.name} to move the camp`, hint: `Choose where your clan camps, up to 80 km away: beside the wild grain, a flint source, the shore. The camp stays there until it is moved again${c.head && c.head !== h ? `. ${c.head.name} leads the clan and may say no` : ''}`, ok: ready('movecamp', c.head === h ? 1 : 2),
       why: c.head === h ? 'The clan has only just pitched camp (1 yr)' : `You asked not long ago (${yl('movecamp', 2)})`, targets: [{ pick: { maxKm: 80 }, label: 'Choose the place on the map…', hint: 'Any land you know of within 80 km that your people can reach' }] });
     // move the village to a site of our choosing (fresh fields, a better shore)
-    if (c.settled && c.head === h) A.push({ id: 'movevillage', icon: '🏚', label: `Move ${c.village || 'the village'}`, hint: 'Rebuild on fresh ground within 40 km — new fields, full soil', ok: ready('movevillage', 8), why: `The village was only just built (${yl('movevillage', 8)})`, targets: [{ pick: { maxKm: 40 }, label: 'Choose the new site on the map…', hint: 'Anywhere on land within 40 km. Ground another people holds is theirs: they may demand that you leave' }] });
+    if (c.settled && c.head === h) A.push({ id: 'movevillage', icon: '🏚', label: `Move ${c.village || 'the village'}`, hint: 'Rebuild on fresh ground within 40 km — new fields, full soil', ok: ready('movevillage', 8), why: `The village was only just built (${yl('movevillage', 8)})`, targets: [{ pick: { maxKm: 40 }, label: 'Choose the new site on the map…', hint: (c.live === 'fishing' ? 'On the shore, within 40 km' : 'Anywhere on land within 40 km') + '. Ground another people holds is theirs: they may demand that you leave' }] });
     // found a daughter village: the head of a village, or the leader of the tribe, sends its younger houses to new ground
     { const lead = t.headman === h, mine = c.head === h, grown = h.age >= 16;
       const cl = [...(mine || lead ? [c] : []), ...(lead ? t.clans.filter(o => o !== c && o.alive) : [])].filter(o => o.settled || o === c), good = [], bad = [];
@@ -3481,6 +3523,9 @@
       const nm = bad.find(b => b.o === c) || bad[0];
       A.push({ id: 'foundvillage', icon: '🏘', label: 'Found a daughter village', hint: `Send a quarter to a third of a crowded village — the houses least close to the head's own, never the head's own household or the heir's — to raise a village of their own ${FOUND_MIN / 1000} to ${FOUND_MAX / 1000} km away. They take their share of the food and grain, and stay kin to you. Once in ${FOUND_YEARS} years for each village`, ok: grown && good.length > 0 && (mine || lead), targets,
         why: good.length > 0 && (mine || lead) && grown ? '' : !(mine || lead) ? 'Only a clan head or the leader of the tribe can send a clan\'s houses away' : !grown ? 'Your head is still a child' : !c.settled && !lead ? 'Your clan does not live in a village' : nm ? nm.why : 'No clan of the tribe lives in a village' }); }
+    // a fishing village of a sowing people may turn to full fields (one way)
+    if (c.settled && c.live === 'fishing' && !c.founding && c.head === h && t.stage >= 2)
+      { const sw = soilWarn(c); A.push({ id: 'takefarming', icon: '🌾', label: 'Take up farming', hint: 'Make the village a farming village: full fields give about twice the grain, and you may clear more. The boats still fish while it stands by the shore, but food keeps less well and babies are no longer weaned on fish. It cannot be undone' + (sw ? '. ' + sw : ''), ok: true, why: '', targets: [{ label: 'Turn the village to the plough', hint: 'Full fields from the next harvest' }] }); }
     // clear new fields: push the cleared ground out from the village
     if (t.stage >= 2 || c.settled) { const why = fieldWhy(W, c, h), lv = fieldLv(c), wearNow = Math.round(100 / (1 + FIELD_WEAR * lv)), wearNext = Math.round(100 / (1 + FIELD_WEAR * (lv + 1)));
       A.push({ id: 'fields', icon: '🌾', label: 'Clear new fields', hint: `Break new ground beyond the village: ${fieldStep(lv + 1)}. It eats three weeks of the clan's food and can be done once in four years. The land can lie fallow in turn, so the soil wears at ${wearNext}% of the old rate (now ${wearNow}%), and the crop is ${Math.round(FIELD_CROP * 100)}% bigger for each step. The game leaves the cleared ground, and a great beast whose ground lies near it is driven off`, ok: !why, why }); }
@@ -3523,7 +3568,7 @@
       A.push({ id: 'claim', icon: '⛏', label: 'Claim a source for the house', hint: `Your household will work it every season — ${n ? `now working ${n}` : 'flint, axe-stone, amber, salt, ochre, ore'}`, ok: ct.length > 0 && n < 4, why: n >= 4 ? 'The house can work at most 4 sources' : 'You know of no unclaimed sources within 180 km — explore first',
         targets: ct.map(e => ({ ref: e, label: `${DEPOSITS[e.d.type].icon} ${DEPOSITS[e.d.type].name}, ${e.km} km ${compass(e.d.x - c.x, e.d.y - c.y)}`, hint: `${e.d.note} · ${e.guard.length ? `in the land of the ${e.guard[0].tribe.name} (${isAllied(t, e.guard[0].tribe) ? bondWord(W, t, e.guard[0].tribe) + ': no trouble from them' : opinion(e.guard[0].tribe, t) > 15 ? 'friendly' : opinion(e.guard[0].tribe, t) < -15 ? 'hostile — expect trouble' : 'wary'})` : 'no one lives there'} · about ${CLAIM_YIELD[e.d.type] * 4} a year` })) }); }
     // build canoes
-    { const ci = cellAt(c.x, c.y), water = c.coastal || W.seaDist[ci] <= 4 || W.acc[ci] > 400 || W.lake[ci];
+    { const ci = cellAt(c.x, c.y), water = c.coastal || W.inland[ci] <= 3 || W.acc[ci] > 400 || W.lake[ci];
       if (boatStage(t) < 2) A.push({ id: 'canoes', icon: '🛶', label: t.boats < 0.3 ? 'Build the first canoes' : 'Build seagoing canoes', hint: t.boats < 0.3 ? 'Hollow out great logs — fish further out, travel by water' : 'Hide-and-timber boats for the open sea, whales and crossings', ok: water && ready('canoes', 6), why: !water ? 'You camp far from the sea, a big river or a lake' : `Your boatbuilders are at work (${yl('canoes', 6)})` }); }
     // free a slave of the house
     { const sl = houseSlaves(W).filter(q => q.owner === h);
@@ -3608,14 +3653,41 @@
     if (id === 'settle' || id === 'movevillage') {
       if (Math.round(km) > 40) return `A village must be built within 40 km of where the clan is now (that is ${Math.round(km)} km).`;
       if (nearClans(W, x, y, 6000).some(o => o.settled && o !== c)) return 'Another village already stands there.';
-      if (id === 'settle' && c.tribe.stage < 2 && W.seaDist[i] > 2) return 'A fishing village must stand on the shore.';
+      if ((id === 'settle' && c.tribe.stage < 2 || id === 'movevillage' && c.live === 'fishing') && W.inland[i] > 1) return 'A fishing village must stand on the shore.';
     }
     return null;
+  }
+  // How good the ground at (x, y) is for fields, for the player's clan: the site terms of harvest() — the cell's nit through its clamp,
+  // the soil a village would have there (1 after a move or a new village) and the field level it has once it stands there (fieldLvAt:
+  // syncFields' own rule; 0 for a daughter village). Weather and hands do not depend on the site and are left out: they are the same at either place.
+  // Returns null where there is nothing to say (a people that does not yet sow). A fishing village of a sowing people has small fields (half): its move line is the same ratio, its new-site line names no harvest. share = the next harvest there over the next harvest at the
+  // present site (a move), or, for a new village, over the same fields on the richest ground: the land cell with the most nit (clamped as above).
+  const nitF = (W, ci) => clamp(W.nit[ci] / 55, 0.4, 1.2);
+  const richCache = new WeakMap(); // per world, so an old world is not kept alive
+  function richestNitF(W) { let rc = richCache.get(W); if (!rc || W.week - rc.wk >= 26 || W.week < rc.wk) { rc = { wk: W.week, v: 1.2 }; richCache.set(W, rc); let m = 0; for (let i = 0; i < W.nit.length; i++) if (W.land[i] && !W.lake[i] && W.nit[i] > m) m = W.nit[i]; rc.v = clamp(m / 55, 0.4, 1.2); } return rc.v; }
+  // each word stands for a share; a cut-off lies halfway between the shares of two neighbouring words, so the word is always the nearest one
+  // (third .333, half .5, two thirds .667, a little less .85, the same 1, a little more 1.2, half as much again 1.5, twice 2, more than twice 2.5)
+  const SHARES = [[0.27, 'well under a third of', 'less than a third of'], [0.417, 'about a third of', 'about a third of'], [0.583, 'about half', 'about half'], [0.758, 'about two thirds of', 'about two thirds of'], [0.925, 'a little less than', 'a little less than'], [1.1, 'about the same as', 'about the same as'], [1.35, 'a little more than', 'a little more than'], [1.75, 'about half as much again as', 'about half as much again as'], [2.25, 'about twice', 'about twice'], [1e9, 'more than twice', 'more than twice']];
+  function shareWord(r, i) { for (const e of SHARES) if (r < e[0]) return e[i]; return SHARES[SHARES.length - 1][i]; }
+  // the field level a village has once it stands at cell ci: syncFields' own rule (no plots yet, or the plots already start in this cell: unchanged; else one lower)
+  function fieldLvAt(c, ci) { return !c.plots || !c.plots.length || c.plots[0] === ci ? fieldLv(c) : Math.max(0, fieldLv(c) - 1); }
+  function groundAt(W, id, x, y, clan) { // clan: the clan that would farm there (a daughter village is sent by the clan chosen, not always the player's)
+    const P = W.player, c = clan || (P && P.head && P.head.clan); if (!c || !(id === 'movevillage' || id === 'settle' || id === 'foundvillage')) return null;
+    if (!(c.tribe && c.tribe.stage >= 2)) return null; // settle at stage 2+ makes a farming village; a fishing village of a sowing people keeps small fields, and its ground is told the same way
+    const ci = cellAt(x, y); if (!(ci >= 0) || !W.land[ci]) return null;
+    const fish = c.live === 'fishing' && id !== 'settle', move = id === 'movevillage' && c.settled, lvNew = id === 'foundvillage' || fish ? 0 : fieldLvAt(c, ci); // the fishing harvest ignores field level
+    const q = nitF(W, ci) * (1 + FIELD_CROP * lvNew), word = q >= 1.1 ? 'Rich' : q >= 0.85 ? 'Good' : q >= 0.6 ? 'Fair' : 'Thin';
+    let share, text;
+    if (move) { share = q / ((c.soil == null ? 1 : c.soil) * nitF(W, cellAt(c.x, c.y)) * (1 + FIELD_CROP * (fish ? 0 : fieldLv(c)))); text = `${word} ground: harvests here would be ${shareWord(share, 1)} what your fields give now.`.replace(/ (as|than) what your fields/, ' $1 your fields'); }
+    else if (fish) { share = q / (richestNitF(W) * (1 + FIELD_CROP * lvNew)); text = `${word} ground for the small fields of a fishing village.`; } // the richest ground is a farming village's harvest: no sum is made against it
+    else { share = q / (richestNitF(W) * (1 + FIELD_CROP * lvNew)); text = share >= 0.925 ? `${word} ground: as good for fields as any the land holds.` : `${word} ground: fields here would give ${shareWord(share, 1)} what the richest ground gives.`.replace(/ (as|than) what the richest/, ' $1 the richest'); }
+    return { word, quality: q, share, text };
   }
   function doAction(W, id, k, f, place) { const h0 = W.player && W.player.head, R = doAction0(W, id, k, f, place); if (R && R.title !== 'Not possible' && h0 && id !== 'hunt' && id !== 'walk' && id !== 'treasure' && (id !== 'raid' || /succeeds/.test(R.title)) && !/says no|fails|No pact|Not yet|refuse/.test(R.title)) credit(h0, 'p_' + id); return R; }
   function doAction0(W, id, k, f, place) {
     const P = W.player, h = P.head, c = h.clan, t = c.tribe, A = (W._acts && W._acts.week === W.week && W._acts.head === h ? W._acts.A : playerActions(W)).find(a => a.id === id); // act on exactly the choices the player saw
     if (!A || !A.ok) return { title: 'Not possible', text: A ? A.why : '' };
+    if (place && (id === 'movevillage' || id === 'movecamp')) { const bad = checkPlace(W, id, place.x, place.y); if (bad) return { title: 'Not possible', text: bad }; }
     const cd = P.cool; cd[id] = W.week;
     // asking the clan's leader: standing and the goodwill between the two houses decide whether they listen
     if ((id === 'movecamp' || id === 'build' || (id === 'rite' && t.headman !== h)) && c.head && c.head !== h) {
@@ -3715,6 +3787,13 @@
       houseNote(W, `${h.name} moved the camp ${km} km ${dir}.`);
       return { title: 'The camp moves', text: `The ${c.name} clan strike their tents and walk ${km} km ${dir}. They will camp there until you move them again, unless the land cannot feed them.${gi && t.stage < 2 ? '<br><br>Wild grain grows within reach of the new camp. Reaping it year after year is how a people learns to sow.' : ''}` };
     }
+    if (id === 'takefarming') {
+      if (c.live !== 'fishing') return null; const v = c.village || 'the village';
+      c.live = 'farm'; if (c.soil === undefined) c.soil = 1; W.farmVer = (W.farmVer || 0) + 1;
+      houseNote(W, `${h.name} turned ${v} to full fields.`); note(W, c, `Took up farming at ${v}.`);
+      const sw = soilWarn(c, true);
+      return { title: 'A farming village', text: `The ${c.name} clan turn ${v} to the plough, with fields of the full size. From now on:<br>• The same ground gives about twice the grain, but the soil wears twice as fast, and when the fields are worn out the village must move to fresh ground.${sw ? ' ' + sw + '.' : ''}<br>• You may clear new fields (Act).<br>• The boats still fish while the village stands by the shore. You may also move it inland.<br>• Stored food keeps less well than dried fish.<br>• Women conceive more readily, but babies are no longer weaned on fish.<br>• The village no longer takes furs in good years, and it drives more of the game away.<br>• Fewer people fall to beasts, and the village no longer gives up when the waters fail.<br><br>It cannot be undone.` };
+    }
     if (id === 'fields') {
       const n = clearFields(W, c); if (!n) return { title: 'No ground', text: 'There is no good ground left to clear.' };
       const lv = fieldLv(c), driven = driveBeasts(W, c), v = c.village || 'the village';
@@ -3722,10 +3801,10 @@
       return { title: 'New fields', text: `Through the slack weeks the ${c.name} clan fell the trees, burn the scrub and break new ground. Another ${n} stretches are cleared, and the village now has ${fieldStep(lv)}. It cost three weeks of the clan's food.<br><br>The soil will wear at ${Math.round(100 / (1 + FIELD_WEAR * lv))}% of the old rate, because land can lie fallow in turn, and each year's crop is ${Math.round(FIELD_CROP * lv * 100)}% bigger than the home fields gave. The game has left the cleared ground.${driven.length ? `<br><br>${driven.map(d => `${beastNm(d.b)[0].toUpperCase() + beastNm(d.b).slice(1)} ${d.moved ? 'has been driven from its ground' : 'will not be seen again'}`).join('; ')}.` : ''}` };
     }
     if (id === 'movevillage') {
-      if (!place) return null;
+      if (!place) return null; const gd = groundAt(W, id, place.x, place.y);
       c.tx = place.x; c.ty = place.y; c.soil = 1; c.settledAt = W.week; wear(W, c.x, c.y, place.x, place.y, c.people.length / 10);
       houseNote(W, `${h.name} moved ${c.village || 'the village'} ${Math.round(Math.hypot(place.x - c.x, place.y - c.y) / 1000)} km ${compass(place.x - c.x, place.y - c.y)}.`);
-      return { title: 'A new site', text: `The people of ${c.village || 'the village'} pull down their houses and rebuild ${Math.round(Math.hypot(place.x - c.x, place.y - c.y) / 1000)} km ${compass(place.x - c.x, place.y - c.y)}, on fresh ground.${landWarn(W, t, place.x, place.y) ? '<br><br>' + landWarn(W, t, place.x, place.y) : ''}` };
+      return { title: 'A new site', text: `The people of ${c.village || 'the village'} pull down their houses and rebuild ${Math.round(Math.hypot(place.x - c.x, place.y - c.y) / 1000)} km ${compass(place.x - c.x, place.y - c.y)}, on fresh ground.${gd ? '<br><br>' + gd.text : ''}${landWarn(W, t, place.x, place.y) ? '<br><br>' + landWarn(W, t, place.x, place.y) : ''}` };
     }
     if (id === 'trader') {
       const o = A.targets[k] && A.targets[k].ref; if (!o) return null; const r = sendTrader(W, c, o, null);
@@ -3764,13 +3843,13 @@
       const err = siteWhy(W, o, site[0], site[1], true); if (err) { delete cd[id]; return { title: 'Not there', text: err }; }
       const lv = plan.leavers, big = new Map(); for (const q of lv) if (q.fam) big.set(q.fam, (big.get(q.fam) || 0) + 1);
       const B = [...plan.leave].sort((a, b) => (big.get(b) || 0) - (big.get(a) || 0))[0], H = o.head, bl = lv.filter(q => q.dyn && !q.slave), sl = lv.filter(q => q.slave && q.owner && q.owner.dyn);
-      const nc = foundDaughter(W, o, plan.leave, site, B.name), km = Math.round(Math.hypot(site[0] - o.x, site[1] - o.y) / 1000), dir = compass(site[0] - o.x, site[1] - o.y), fish = o.live === 'fishing';
+      const gd = groundAt(W, id, site[0], site[1], o), nc = foundDaughter(W, o, plan.leave, site, B.name), km = Math.round(Math.hypot(site[0] - o.x, site[1] - o.y) / 1000), dir = compass(site[0] - o.x, site[1] - o.y), fish = o.live === 'fishing';
       affect(W, nc, o, 20, `Founded with the blessing of the ${o.name} clan`, 0); o.foundAt = o.letSplit = o.splitDone = W.week;
       const from = o.village || `the ${o.name} clan`, rest = o.people.length, who = o === c ? 'our' : `the ${o.name} clan's`;
       note(W, o, `${h.name} sent ${lv.length} people of ${goName(plan, o)} to raise a daughter village ${km} km ${dir}: the ${nc.name} clan.`); note(W, nc, `Sent out from ${from} with the blessing of the ${o.name} clan, to raise a village ${km} km ${dir}.`);
       logEvent(W, `The ${o.name} clan of ${from} sends ${lv.length} people to found a daughter village: the ${nc.name} clan, ${km} km ${dir}.`, nc, 'info');
       houseNote(W, `${h.name} sent ${lv.length} people of ${who} village to raise the ${nc.name} clan's ${fish ? 'fishing ' : ''}village ${km} km ${dir}. ${rest} stay${o === c ? ' with us' : ''}.${bl.length ? ` Of our blood, ${bl.length > 3 ? bl.length + ' went, among them ' + nameList(bl) : nameList(bl) + ' went'}.` : ''}`);
-      return { title: 'A daughter village', text: `${lv.length} people of ${from}, ${goName(plan, o)}, take their share of the stores and set out as the ${nc.name} clan, kin and friends of the ${o.name}. They will walk ${km} km ${dir} and raise a ${fish ? 'fishing ' : ''}village on the ground you chose; it will stand a few weeks after they arrive. ${rest} remain in ${from}${H ? `, under ${H.name}` : ''}.${bl.length ? `<br><br>Of your blood, ${bl.length > 3 ? bl.length + ' go, among them ' + nameList(bl) : nameList(bl) + (bl.length > 1 ? ' go' : ' goes') + ' with them'}.` : ''}${sl.length ? ` ${sl.length === 1 ? sl[0].name + ', a slave of the house, goes' : sl.length + ' slaves of the house go'} too.` : ''}${landWarn(W, t, site[0], site[1]) ? '<br><br>' + landWarn(W, t, site[0], site[1]) : ''}` };
+      return { title: 'A daughter village', text: `${lv.length} people of ${from}, ${goName(plan, o)}, take their share of the stores and set out as the ${nc.name} clan, kin and friends of the ${o.name}. They will walk ${km} km ${dir} and raise a ${fish ? 'fishing ' : ''}village on the ground you chose; it will stand a few weeks after they arrive. ${rest} remain in ${from}${H ? `, under ${H.name}` : ''}.${gd ? '<br><br>' + gd.text : ''}${bl.length ? `<br><br>Of your blood, ${bl.length > 3 ? bl.length + ' go, among them ' + nameList(bl) : nameList(bl) + (bl.length > 1 ? ' go' : ' goes') + ' with them'}.` : ''}${sl.length ? ` ${sl.length === 1 ? sl[0].name + ', a slave of the house, goes' : sl.length + ' slaves of the house go'} too.` : ''}${landWarn(W, t, site[0], site[1]) ? '<br><br>' + landWarn(W, t, site[0], site[1]) : ''}` };
     }
     if (id === 'migrate') {
       const d = place ? { x: place.x, y: place.y, km: Math.round(Math.hypot(place.x - c.x, place.y - c.y) / 1000), dir: compass(place.x - c.x, place.y - c.y), label: 'Chosen' } : A.targets[k] && A.targets[k].ref; if (!d || d.pick) return null;
@@ -3820,8 +3899,8 @@
     if (id === 'war') { const o = A.targets[k] && A.targets[k].ref; if (!o) return null; const cf = t.confed; if (!realmWarList(W, cf).ok.some(x => x.o === o)) return { title: 'No war', text: `The host cannot march on the ${o.name} now.` }; cf.wars.set(o.id, 0); o.warLosses = 0; warBegin(W, cf, o); realmWarAllies(W, cf, o); logEvent(W, `⚔ ${rulerWord(cf)} ${h.name} of ${cf.name} goes to war to subjugate the ${o.name}.`, cf, 'blood'); houseNote(W, `${rulerWord(cf)} ${h.name} went to war against the ${o.name}.`); return { title: 'War', text: `${h.name}'s warriors march against the ${o.name}. Battles will be fought each year until they submit — or you give up.` }; }
     if (id === 'settle') {
       if (t.stage >= 2) { c.live = 'farm'; if (place) settleClan(W, c, true); else if (!settleClan(W, c, false, true)) settleClan(W, c, true); if (place) { c.tx = place.x; c.ty = place.y; } c.holdUntil = 0; t.dom = Math.min(0.6, t.dom + 0.05);
-        const km = Math.round(Math.hypot(c.tx - c.x, c.ty - c.y) / 1000); P.renown += 2; houseNote(W, `${h.name} led the ${c.name} clan to build a permanent village.`);
-        return { title: km > 2 ? 'The clan sets out' : 'A village is founded', text: km > 2 ? `The ${c.name} clan pack up and walk ${km} km to the chosen ground. The village will stand as soon as they arrive, in a few weeks. After that they wander no more: stores that last the winter, many more children, and a place raiders know where to find.${landWarn(W, t, c.tx, c.ty) ? '<br><br>' + landWarn(W, t, c.tx, c.ty) : ''}` : `The ${c.name} clan begin to build where they stand. They will wander no more: stores that last the winter, many more children, and a place raiders know where to find.${landWarn(W, t, c.tx, c.ty) ? '<br><br>' + landWarn(W, t, c.tx, c.ty) : ''}` }; }
+        const km = Math.round(Math.hypot(c.tx - c.x, c.ty - c.y) / 1000), gd = groundAt(W, id, c.tx, c.ty), gl = gd ? '<br><br>' + gd.text : ''; P.renown += 2; houseNote(W, `${h.name} led the ${c.name} clan to build a permanent village.`);
+        return { title: km > 2 ? 'The clan sets out' : 'A village is founded', text: km > 2 ? `The ${c.name} clan pack up and walk ${km} km to the chosen ground. The village will stand as soon as they arrive, in a few weeks. After that they wander no more: stores that last the winter, many more children, and a place raiders know where to find.${gl}${landWarn(W, t, c.tx, c.ty) ? '<br><br>' + landWarn(W, t, c.tx, c.ty) : ''}` : `The ${c.name} clan begin to build where they stand. They will wander no more: stores that last the winter, many more children, and a place raiders know where to find.${gl}${landWarn(W, t, c.tx, c.ty) ? '<br><br>' + landWarn(W, t, c.tx, c.ty) : ''}` }; }
       else { c.settled = true; c.live = 'fishing'; c.settledAt = W.week; c.village = freshName(W, c.tribe, 'haven'); c.tx = place ? place.x : c.x; c.ty = place ? place.y : c.y; logEvent(W, `🏘 The ${c.name} clan (${t.name}) build a permanent fishing village: ${c.village}.`, c, 'settle'); }
       P.renown += 2; houseNote(W, `${h.name} led the ${c.name} clan to build a permanent village.`);
       return { title: 'A village is founded', text: `The ${c.name} clan will wander no more. Expect stores that last the winter, many more children — and a place raiders know where to find.${landWarn(W, t, c.tx, c.ty) ? '<br><br>' + landWarn(W, t, c.tx, c.ty) : ''}` };
@@ -3846,9 +3925,9 @@
       t.favored = h; t.headman = h;
       if (!old.clans.length) { W.tribes.splice(W.tribes.indexOf(old), 1); kill(W, old); }
     }
-    t.home = [d.x, d.y]; t.migrating = W.week;
+    t.home = [d.x, d.y]; t.migrating = t.movedAt = W.week;
     { const L = Math.hypot(d.x - c.x, d.y - c.y); for (let s2 = 0; s2 <= L; s2 += 12000) reveal(W, c.x + (d.x - c.x) * s2 / Math.max(1, L), c.y + (d.y - c.y) * s2 / Math.max(1, L), 14000); reveal(W, d.x, d.y, 30000); }
-    for (const o of t.clans) { const a = W.rand() * 6.283, r = o === c ? 0 : 8000 + W.rand() * 12000; o.tx = clamp(d.x + Math.cos(a) * r, 3000, WORLD - 3000); o.ty = clamp(d.y + Math.sin(a) * r, 3000, WORLD - 3000); if (!W.land[cellAt(o.tx, o.ty)]) { o.tx = d.x; o.ty = d.y; } o.settled = false; o.founding = false; o.toSettle = false; o.atGathering = false; wear(W, o.x, o.y, o.tx, o.ty, o.people.length / 15); }
+    for (const o of t.clans) { const a = W.rand() * 6.283, r = o === c ? 0 : 8000 + W.rand() * 12000; o.tx = clamp(d.x + Math.cos(a) * r, 3000, WORLD - 3000); o.ty = clamp(d.y + Math.sin(a) * r, 3000, WORLD - 3000); if (!W.land[cellAt(o.tx, o.ty)]) { o.tx = d.x; o.ty = d.y; } o.settled = false; o.founding = false; o.toSettle = false; o.holdUntil = 0; o.atGathering = false; wear(W, o.x, o.y, o.tx, o.ty, o.people.length / 15); }
     if (t.stage === 3) for (const o of t.clans) o.live = o.live === 'fishing' ? null : o.live;
     P.renown += t !== old ? 6 : 2;
     const across = W.comp[cellAt(d.x, d.y)] !== W.comp[cellAt(c.x, c.y)];
@@ -5588,7 +5667,7 @@
     if (!c.alive || !c.people.length) return null;
     for (let k = 0; k < 40; k++) {
       const a = W.rand() * 6.283, r = 8000 + W.rand() * 52000, x = clamp(c.x + Math.cos(a) * r, 3000, WORLD - 3000), y = clamp(c.y + Math.sin(a) * r, 3000, WORLD - 3000), i = cellAt(x, y);
-      if (!W.land[i] || W.lake[i] || !sameIsland(W, c, x, y) || (fish && W.seaDist[i] > 2) || claimNear(W, O, x, y, 10000) || landBlocked(W, t, i, memo) || landNearOther(W, t, x, y, 10000)) continue; // not on, nor within 10 km of, anyone's claim: no sooner there than moved on again
+      if (!W.land[i] || W.lake[i] || !sameIsland(W, c, x, y) || (fish && W.inland[i] > 1) || claimNear(W, O, x, y, 10000) || landBlocked(W, t, i, memo) || landNearOther(W, t, x, y, 10000)) continue; // not on, nor within 10 km of, anyone's claim: no sooner there than moved on again
       if (nearClans(W, x, y, 6000).some(o => o !== c && o.settled)) continue;
       const sc = villageScore(W, c, x, y); if (sc > bs) { bs = sc; best = [x, y]; }
     }
@@ -5956,7 +6035,7 @@
     if (P) { PROF.win.ticks++; if (PROF.win.ticks >= PROF.every) profFlush(W); }
   }
 
-  return { bondWord, tribeKnown, liveSigns, walkWord, SIGN_R, N, CELL, WORLD, HA, FORAGE_R, TRIBE_MAX, tribeMax, BIOMES, GROVES, DEPOSITS, GOOD_NAMES, createWorld, seedFirstPop, step, clanSize, tribeSize, battleOdds, warSides, warBegin, realmWarcall, familiesOf, famMembers, needsWeek, opinion, prestige, isAllied, sameConfed, tribeCenter, roadLevel, pactRoute, playerActions, doAction, dealings, settleFeud, policy: W => pol(W), setPolicy: (W, k, v) => { const p = pol(W); if (k === 'deal' || !(k in p) || (v !== 'ask' && !(AUTOIX[k] && v in AUTOIX[k]))) return; p[k] = v; }, setDeal: (W, id, v) => { if (v === 'auto') delete pol(W).deal[id]; else pol(W).deal[id] = v; }, dealMode: (W, o) => dealWith(W, o), clanHeir, FAITHS, isMatri, faithOf, cultureName, MON, checkPlace, und, speechWord, kultInfo, grainInfo, clanFlow, HOME_R, CREATION, claimsYear, foreignHeld, landLive, landScan, landYear, driveOutOdds, leaveOdds, landTargets, ring, ringSay, BEASTS, beastNm, beastTale, beastOdds, beastWhere, beastToll, beastNear, saveGame, loadGame, saveInfo, ruleInfo, advice, legacy, legacyHTML, TRAITS, epithet, hasTrait, leadWeight, standingWhy, villageInfo, RANKS, SOCIETY, societyOf, rankOf, WORKS, JOBS, walls, canBuild, releaseClaim: (W, i) => { const P = W.player; if (P && P.claims && P.claims[i]) { houseNote(W, `The house gave up its claim to the ${DEPOSITS[P.claims[i].d.type].name.toLowerCase()}.`); P.claims.splice(i, 1); } }, weaponsName, houseSlaves, slaveCount, freeCount, knows, knowsTribe, foodDays, GIFTABLE, STAGES, BOAT_STAGES, METAL_STAGES, boatStage, metalStage, arms, canReach, houseCandidates, choosePlayer, resolve, dynMembers, bloodCount, titlesOf, relWord, vigor, tribeVigor, statureCm, farmSuit, fieldInfo, potential, cellFood, foodBreakdown, kingshipBid, warriors, tribeWealth, confedTribes, confedPeople, newConfed, joinConfed, leaveConfed, formAlliance, kinOf, rulerWord, realmWord, realmInfo, realmHeir, realmRisk, realmPutDown, realmWarList, realmRiseOdds, realmStay, realmNext, realmKingdomNeeds, succession, confedYear,
+  return { canTakeFarming, soilWarn, groundAt, bondWord, tribeKnown, liveSigns, walkWord, SIGN_R, N, CELL, WORLD, HA, FORAGE_R, TRIBE_MAX, tribeMax, BIOMES, GROVES, DEPOSITS, GOOD_NAMES, createWorld, seedFirstPop, step, clanSize, tribeSize, battleOdds, warSides, warBegin, realmWarcall, familiesOf, famMembers, needsWeek, opinion, prestige, isAllied, sameConfed, tribeCenter, roadLevel, pactRoute, playerActions, doAction, dealings, settleFeud, policy: W => pol(W), setPolicy: (W, k, v) => { const p = pol(W); if (k === 'deal' || !(k in p) || (v !== 'ask' && !(AUTOIX[k] && v in AUTOIX[k]))) return; p[k] = v; }, setDeal: (W, id, v) => { if (v === 'auto') delete pol(W).deal[id]; else pol(W).deal[id] = v; }, dealMode: (W, o) => dealWith(W, o), clanHeir, FAITHS, isMatri, faithOf, cultureName, MON, checkPlace, und, speechWord, kultInfo, grainInfo, clanFlow, HOME_R, CREATION, claimsYear, foreignHeld, landLive, landScan, landYear, driveOutOdds, leaveOdds, landTargets, ring, ringSay, BEASTS, beastNm, beastTale, beastOdds, beastWhere, beastToll, beastNear, saveGame, loadGame, saveInfo, ruleInfo, advice, legacy, legacyHTML, TRAITS, epithet, hasTrait, leadWeight, standingWhy, villageInfo, RANKS, SOCIETY, societyOf, rankOf, WORKS, JOBS, walls, canBuild, releaseClaim: (W, i) => { const P = W.player; if (P && P.claims && P.claims[i]) { houseNote(W, `The house gave up its claim to the ${DEPOSITS[P.claims[i].d.type].name.toLowerCase()}.`); P.claims.splice(i, 1); } }, weaponsName, houseSlaves, slaveCount, freeCount, knows, knowsTribe, foodDays, GIFTABLE, STAGES, BOAT_STAGES, METAL_STAGES, boatStage, metalStage, arms, canReach, houseCandidates, choosePlayer, resolve, dynMembers, bloodCount, titlesOf, relWord, vigor, tribeVigor, statureCm, farmSuit, fieldInfo, potential, cellFood, foodBreakdown, kingshipBid, warriors, tribeWealth, confedTribes, confedPeople, newConfed, joinConfed, leaveConfed, formAlliance, kinOf, rulerWord, realmWord, realmInfo, realmHeir, realmRisk, realmPutDown, realmWarList, realmRiseOdds, realmStay, realmNext, realmKingdomNeeds, succession, confedYear,
     seasonOf, seasonName, tempOffset, cellAt, lifeStage, siler, fecund, makePerson, stepPop, prof: PROF };
 })();
 if (typeof module !== 'undefined') module.exports = SIM;
