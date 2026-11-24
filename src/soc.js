@@ -2233,7 +2233,7 @@
     }
   }
 
-  const WAR_QUIT = 0.4, WAR_CRUSH = 2.5, REALM_TRIB = 0.15; // a lost battle ends the host's war with this chance (always from the third battle); a victory this many times over ends it at once; the share of stored food a subject clan gives each year
+  const WAR_QUIT = 0.4, WAR_CRUSH = 2.5, REALM_TRIB = 0.15; // a lost battle ends the host's war with this chance (always from the third battle); a victory this many times over ends it at once; the share of stored food and grain a subject clan gives each year
   // a war begins: its record is opened, and clans of the attacked tribe that are at odds with its leader may hold back their men
   function warBegin(W, cf, t) {
     const L = (cf.warLog = cf.warLog || {})[t.id] = { from: W.week, won: 0, lost: 0, hold: [], stand: null };
@@ -2534,20 +2534,20 @@
   // the tribute of one subject, to the ruler's clan, as before (and half of it while it is lightened); told once a year in realmTributeNote
   function realmPay(W, cf, t, m, tl) {
     const to = cf.king.clan, from = t.clans.length ? pick(t.clans, W.rand) : null, light = m.light > W.week, gave = []; let food = 0;
-    for (const g of ['amber', 'axe', 'salt', 'ochre', 'flint']) if (from && to && from.goods[g] > 0 && W.rand() < (light ? 0.25 : 0.5)) { from.goods[g]--; to.goods[g] = Math.min(10, to.goods[g] + 1); gave.push((GOOD_NAMES[g] || g).toLowerCase()); }
-    if (from && to) { const f = from.store * (light ? REALM_TRIB / 2 : REALM_TRIB); from.store -= f; to.store += f; food = f; }
+    for (const g of ['amber', 'axe', 'salt', 'ochre', 'flint']) if (from && to && from.goods[g] > 0 && W.rand() < (light ? 0.25 : 0.5) && (to.goods[g] || 0) < 10) { from.goods[g]--; to.goods[g] = (to.goods[g] || 0) + 1; gave.push((GOOD_NAMES[g] || g).toLowerCase()); }
+    if (from && to) { const k = light ? REALM_TRIB / 2 : REALM_TRIB, fs = from.store * k, fg = from.grain * k; from.store -= fs; from.grain -= fg; to.store += fs; to.grain += fg; food = fs + fg; }
     affect(W, t, cf.capital, light ? -1 : -4, `Tribute paid to the ${rulerWord(cf).toLowerCase()}`);
     tl.push({ t, food, gave });
   }
-  // the light tribute of a free member (an ally, or another founding tribe): a third of a subject's weight; a hungry tribe sends nothing
+  // the light tribute of a free member (an ally, or another founding tribe): a third of a subject's share; a hungry tribe sends nothing, and a ruling clan that holds ten of a good takes no more of it
   const REALM_ALLY = 0.05, REALM_ALLY_GOOD = 1 / 6; // a twentieth of a clan's stored food and grain; each good at one chance in six
   function tribeHungry(t) { let n = 0, s = 0; for (const c of t.clans) { n += c.people.length; s += c.cond * c.people.length; } return !n || s / n < 0.85; }
   function realmShare(W, cf, t, tl) {
     const to = cf.king.clan; if (!to || !t.clans.length || tribeHungry(t)) return;
     const from = pick(t.clans, W.rand), gave = []; let food = 0;
-    for (const g of ['amber', 'axe', 'salt', 'ochre', 'flint']) if (from.goods[g] > 0 && W.rand() < REALM_ALLY_GOOD) { from.goods[g]--; to.goods[g] = Math.min(10, (to.goods[g] || 0) + 1); gave.push((GOOD_NAMES[g] || g).toLowerCase()); }
+    for (const g of ['amber', 'axe', 'salt', 'ochre', 'flint']) if (from.goods[g] > 0 && W.rand() < REALM_ALLY_GOOD && (to.goods[g] || 0) < 10) { from.goods[g]--; to.goods[g] = (to.goods[g] || 0) + 1; gave.push((GOOD_NAMES[g] || g).toLowerCase()); }
     const fs = from.store * REALM_ALLY, fg = from.grain * REALM_ALLY; from.store -= fs; from.grain -= fg; to.store += fs; to.grain += fg; food = fs + fg;
-    affect(W, t, cf.capital, -1, `Tribute paid to the ${rulerWord(cf).toLowerCase()}`);
+    if (food > 0 || gave.length) affect(W, t, cf.capital, -1, `Tribute paid to the ${rulerWord(cf).toLowerCase()}`);
     tl.push({ t, food, gave, light: true });
   }
   function realmTributeNote(W, cf, tl) {
@@ -2574,7 +2574,7 @@
     const P = W.player, myT = realmPlayerTribe(W); if (!myT || t !== myT || P.head !== t.headman) return false;
     if (W.week - (P.lastInvite || -1e9) < 52 * 5) return true;
     P.lastInvite = W.week; const K = cf.king;
-    pushEvent(W, { type: 'realminvite', key: cf.id, title: `${realmCap(cf.name)} asks the ${t.name}`, text: `${K.name}, ${rulerOf(cf, K)}, asks the ${t.name} to join ${cf.name} as an ally. ${cf.members.size} tribes, ${confedPeople(W, cf)} people and ${confedTribes(W, cf).reduce((s, x) => s + warriors(x), 0)} warriors stand with ${heHer(K)}. An ally keeps its own leaders and sends a light tribute each year: one clan, drawn by lot, gives the ruling clan a twentieth of its stored food and grain and, of each of amber, axes, salt, ochre and flint it holds, one piece at one chance in six. A tribe that goes hungry sends nothing. An ally fights for the realm, and when the ${rulerWord(cf).toLowerCase()} dies it may stay or go. You may leave later (under Act).`, data: { cf, t },
+    pushEvent(W, { type: 'realminvite', key: cf.id, title: `${realmCap(cf.name)} asks the ${t.name}`, text: `${K.name}, ${rulerOf(cf, K)}, asks the ${t.name} to join ${cf.name} as an ally. ${cf.members.size} tribes, ${confedPeople(W, cf)} people and ${confedTribes(W, cf).reduce((s, x) => s + warriors(x), 0)} warriors stand with ${himHer(K)}. An ally keeps its own leaders and sends a light tribute each year: one clan, drawn by lot, gives the ruling clan a twentieth of its stored food and grain and, of each of amber, axes, salt, ochre and flint it holds, one piece at one chance in six. A tribe that goes hungry sends nothing.${cf.kingdom ? ` As ${cf.name} is a kingdom, each tribe that is not hungry also sends its share of the food the realm gives the ${rulerWord(cf).toLowerCase()} each year.` : ''} An ally fights for the realm, and when the ${rulerWord(cf).toLowerCase()} dies it may stay or go. You may leave later (under Act).`, data: { cf, t },
       options: [{ label: 'Join as an ally', hint: `The ${t.name} become a member of ${cf.name}, and send a light tribute each year` }, { label: 'Refuse', hint: `They think a little less of us; they will not ask again for five years` }] });
     return true;
   }
@@ -2624,7 +2624,7 @@
   function realmTold(W, cf, t, status) { // the tribe of the player's house joins or submits without the player deciding: the house is told who decided
     if (REALM_QUIET) return; const myT = realmPlayerTribe(W); if (!myT || t !== myT) return;
     const P = W.player, who = t.headman && t.headman !== P.head ? `${t.headman.name}, who leads the ${t.name}, ` : `Those who lead the ${t.name} `, K = cf.king;
-    const tx = status === 'subject' ? `${who}bowed to ${rulerMid(cf, K)} ${K.name} of ${cf.name}. The ${t.name} are now subjects and pay tribute. Each year one of their clans, drawn by lot, must give the ${K.clan ? K.clan.name + ' clan' : 'ruling clan'} ${Math.round(REALM_TRIB * 100)}% of its stored food and, of each of amber, axes, salt, ochre and flint it holds, one piece at an even chance.` : `${who}took the ${t.name} into ${cf.name} under ${rulerMid(cf, K)} ${K.name}.${status === 'ally' ? ` Each year, unless they go hungry, one of their clans, drawn by lot, gives the ${K.clan ? K.clan.name + ' clan' : 'ruling clan'} a twentieth of its stored food and grain and, of each of amber, axes, salt, ochre and flint it holds, one piece at one chance in six.` : ''}`;
+    const tx = status === 'subject' ? `${who}bowed to ${rulerMid(cf, K)} ${K.name} of ${cf.name}. The ${t.name} are now subjects and pay tribute. Each year one of their clans, drawn by lot, must give the ${K.clan ? K.clan.name + ' clan' : 'ruling clan'} ${Math.round(REALM_TRIB * 100)}% of its stored food and grain and, of each of amber, axes, salt, ochre and flint it holds, one piece at an even chance.` : `${who}took the ${t.name} into ${cf.name} under ${rulerMid(cf, K)} ${K.name}.${status === 'ally' ? ` Each year, unless they go hungry, one of their clans, drawn by lot, gives the ${K.clan ? K.clan.name + ' clan' : 'ruling clan'} a twentieth of its stored food and grain and, of each of amber, axes, salt, ochre and flint it holds, one piece at one chance in six.` : ''}`;
     houseNote(W, tx); notice(W, status === 'subject' ? `The ${t.name} are made subjects` : `The ${t.name} join ${cf.name}`, tx);
   }
   function realmDropped(W, cf, t, why) {
