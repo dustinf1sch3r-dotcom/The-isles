@@ -2557,7 +2557,7 @@
     if (P.head === K) {
       const sb = tl.filter(x => !x.light).map(line).map(l => l.txt), fr = tl.filter(x => x.light).map(line).filter(l => l.any).map(l => l.txt);
       if (!sb.length && !fr.length) return;
-      houseNote(W, sb.length ? `Tribute came to the ${rc.name} clan from our subjects: ${sb.join('; ')}.${fr.length ? ` From the free tribes of ${cf.name} came lighter tribute: ${fr.join('; ')}.` : ''}` : `Tribute came to the ${rc.name} clan from the free tribes of ${cf.name}: ${fr.join('; ')}.`);
+      houseNote(W, sb.length ? `Tribute came to the ${rc.name} clan from our subjects: ${sb.join('; ')}.${fr.length ? ` From the free tribes of ${cf.name} came tribute: ${fr.join('; ')}.` : ''}` : `Tribute came to the ${rc.name} clan from the free tribes of ${cf.name}: ${fr.join('; ')}.`);
     } else { const mine = tl.find(x => x.t === myT); if (mine) { const l = line(mine); if (!mine.light || l.any) houseNote(W, `The ${myT.name} sent tribute to ${rulerMid(cf, K)} ${K.name}: ${l.txt.replace(/^the [^(]*\(/, '').replace(/\)$/, '')}.`); } }
   }
   function realmRisings(W, cf, tl) {
@@ -2819,7 +2819,7 @@
     if (realmRule(cf) === 0) A.push({ id: 'bloodseat', icon: '👪', label: 'Make the seat pass by blood', hint: 'The step after that: once the tribes choose their ruler, make the seat pass to your heir by blood, so that the tribes seldom leave.', ok: false, why: 'First the tribes must be bound to the seat' });
     if (!cf.kingdom) {
       const ns = realmKingdomNeeds(W, cf), c = h.clan;
-      A.push({ id: 'kingdom', icon: '👑', label: 'Found a kingdom', hint: `Raise ${cf.name} to a kingdom, with you as ${h.sex === 'F' ? 'queen' : 'king'}. It costs a great feast: eight weeks of your clan's food (a clan that lives from the catch pays what it keeps and the rest in a lean season). Nothing is left to chance: when the needs are met, it is done. Tribes then seldom leave when a grown heir follows, and each year send you a little tribute.`, ok: ns.every(n => n.ok), why: un(ns) });
+      A.push({ id: 'kingdom', icon: '👑', label: 'Found a kingdom', hint: `Raise ${cf.name} to a kingdom, with you as ${h.sex === 'F' ? 'queen' : 'king'}. It costs a great feast: eight weeks of your clan's food (a clan that lives from the catch pays what it keeps and the rest in a lean season). Nothing is left to chance: when the needs are met, it is done. Tribes then seldom leave when a grown heir follows, and each year send you a little more food besides.`, ok: ns.every(n => n.ok), why: un(ns) });
     }
   }
   // the deed of a tribe that is a member of someone else's realm: to leave it, or (a subject) to rise against its ruler
@@ -2829,7 +2829,7 @@
     const why = !lead ? `Only the leader of the ${t.name} can take them out of ${cf.name}` : yrs < 3 && subj ? `The ${t.name} submitted only ${Math.floor(yrs) < 1 ? 'lately' : Math.floor(yrs) + ' years ago'}, and the defeat is fresh` : calm && subj ? 'You cannot rise again so soon after the last time' : '';
     if (subj) { const odds = realmRiseOdds(W, cf, t), pct = Math.round(odds * 100);
       A.push({ id: 'leaverealm', icon: '⛓', label: `Rise against ${rm} ${K.name}`, hint: `Throw off ${K.name}'s rule and the tribute with it. About ${pct}% to win free (their host has ${confedTribes(W, cf).reduce((s, x) => s + (x === t ? 0 : warriors(x)), 0)} warriors against your ${warriors(t)}). If it fails, some of your warriors fall, the ${cap.name} think worse of you, your standing falls, and you cannot try again for eight years. If it wins, the ${cap.name} may come against you again.`, ok: !why, why, data: { odds } }); }
-    else A.push({ id: 'leaverealm', icon: '🚪', label: `Leave the ${realmWord(cf)}`, hint: `Take the ${t.name} out of ${cf.name}. A people that joined freely may go. The ${cap.name} will think much worse of you (goodwill −25, and a grudge), and ${K.name}, if the realm is much the stronger, may march on you: about one year in three for eight years. Your standing falls a little.`, ok: !why, why });
+    else A.push({ id: 'leaverealm', icon: '🚪', label: `Leave the ${realmWord(cf)}`, hint: `Take the ${t.name} out of ${cf.name}. A people that joined freely may go, and its light yearly tribute ends. The ${cap.name} will think much worse of you (goodwill −25, and a grudge), and ${K.name}, if the realm is much the stronger, may march on you: about one year in three for eight years. Your standing falls a little.`, ok: !why, why });
   }
   function realmLeave(W, h, t, A) {
     const P = W.player, cf = t.confed; if (!cf || cf.capital === t || !cf.members.has(t.id)) return null;
