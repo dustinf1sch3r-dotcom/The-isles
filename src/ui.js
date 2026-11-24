@@ -1141,9 +1141,10 @@
   const ruleTile = e => { const R = SIM.ruleInfo(W, e);
     return `<div class="tiles"><div class="tile" style="grid-column:1/-1"><div class="k">How it is led</div><div class="v">${esc(R.name)}</div><div class="muted">${esc(R.text)}${R.since != null ? ` Since year ${yr(R.since)}.` : ''}</div>${R.heir ? `<div class="muted"><b>Would follow today:</b> ${esc(R.heir.who.name)}, ${esc(R.heir.how)}</div>` : ''}</div></div>`; };
   // the Fields tile: how far the village's cleared ground reaches
+  const sows = c => c.settled && (c.live === 'farm' || (c.live === 'fishing' && c.tribe.stage >= 2)); // a village that keeps fields
   function fieldsTile(c) {
     if (!c.settled || c.tribe.stage < 2) return '';
-    if (c.live === 'fishing') return `<div class="tiles"><div class="tile" style="grid-column:1/-1"><div class="k">Fields</div><div class="v">Small fields by the shore</div><div class="muted">half the fields of a farming village · soil ${pct(c.soil == null ? 1 : c.soil)} · Act, Take up farming, lets the village clear more</div></div></div>`;
+    if (c.live === 'fishing') return `<div class="tiles"><div class="tile" style="grid-column:1/-1"><div class="k">Fields</div><div class="v">Small fields by the shore</div><div class="muted">half the fields of a farming village${SIM.canTakeFarming(W, c) ? ' · Take up farming (under Act) lets the village clear more' : ''}</div></div></div>`;
     const F = SIM.fieldInfo(W, c);
     return `<div class="tiles"><div class="tile" style="grid-column:1/-1"><div class="k">Fields</div><div class="v">${esc(F.step[0].toUpperCase() + F.step.slice(1))}</div><div class="muted">${F.n} stretch${F.n === 1 ? '' : 'es'} of cleared ground · soil ${pct(c.soil)}${F.lv >= F.cap ? ' · too few hands to clear more' : ''}</div></div></div>`;
   }
@@ -1452,7 +1453,7 @@
           <div><div class="k">Stone tools</div><div class="v">${pct(c.tool)}</div>${bar(c.tool, '#cfd6e0')}<div class="muted">${own.length ? `quarry their own ${own.map(d => DEPOSITS[d.type].name.toLowerCase()).join(' & ')}` : c.tool > 0.5 ? 'stone obtained by trade' : 'poor local stone — need flint'}</div></div>
           <div><div class="k">Food stored</div><div class="v">${(c.store / (need / 7)).toFixed(1)} days</div><div class="muted">range holds ${c.supply.toFixed(1)}× needs</div></div>
         </div>
-        ${c.tribe.stage >= 1 || c.grain > 0 || c.settled ? `<div class="tiles"><div class="tile"><div class="k">${c.settled ? (c.live === 'fishing' ? 'Fishing village' : 'Village') : 'Way of life'}</div><div class="v">${c.settled ? (() => { const S = (W.settlements || []).find(s => s.clans && s.clans.includes(c)); return S ? link(S, S.name) : esc(c.village); })() : SIM.STAGES[c.tribe.stage]}</div><div class="muted">${c.settled ? 'permanent settlement' : c.toSettle ? 'moving to found a village' : ''}</div></div><div class="tile"><div class="k">Grain stores</div><div class="v">${Math.round(c.grain / Math.max(1, SIM.needsWeek(c) / 7))} days</div><div class="muted">${c.lastCrop ? `last harvest ${Math.round(c.lastCrop / 1e6)}M kcal` : ''}</div></div><div class="tile"><div class="k">${c.settled ? 'Field soil' : 'Cereal in diet'}</div><div class="v">${c.settled ? pct(c.soil) : pct(c.cereal)}</div><div class="muted">men ~${SIM.statureCm(c)[0]} cm</div></div></div>${fieldsTile(c)}` : ''}
+        ${c.tribe.stage >= 1 || c.grain > 0 || c.settled ? `<div class="tiles"><div class="tile"><div class="k">${c.settled ? (c.live === 'fishing' ? 'Fishing village' : 'Village') : 'Way of life'}</div><div class="v">${c.settled ? (() => { const S = (W.settlements || []).find(s => s.clans && s.clans.includes(c)); return S ? link(S, S.name) : esc(c.village); })() : SIM.STAGES[c.tribe.stage]}</div><div class="muted">${c.settled ? 'permanent settlement' : c.toSettle ? 'moving to found a village' : ''}</div></div><div class="tile"><div class="k">Grain stores</div><div class="v">${Math.round(c.grain / Math.max(1, SIM.needsWeek(c) / 7))} days</div><div class="muted">${c.lastCrop ? `last harvest ${Math.round(c.lastCrop / 1e6)}M kcal` : ''}</div></div><div class="tile"><div class="k">${c.settled && sows(c) ? 'Field soil' : 'Cereal in diet'}</div><div class="v">${c.settled && sows(c) ? pct(c.soil == null ? 1 : c.soil) : pct(c.cereal)}</div><div class="muted">men ~${SIM.statureCm(c)[0]} cm</div></div></div>${fieldsTile(c)}` : ''}
         ${c.settled ? (() => { const V = SIM.villageInfo(W, c), cr = V.people;
           return `<div class="k sec">The village</div><div class="tiles">
             <div class="tile"><div class="k">Standing</div><div class="v">${V.rankName}</div><div class="muted">${V.rank < 4 ? ['', 'grows into a village at 28 people with a craftsman', 'a large village needs 65 people and two crafts', 'a town needs 110 people, three crafts and a hall or granary'][V.rank] : 'the greatest kind of settlement'}</div></div>
@@ -1819,10 +1820,13 @@
     hoverPt = [x, y];
     if (err) { placePick.at = null; if (go) go.style.display = 'none'; if (m) m.innerHTML = pickLine(x, y); return; }
     if (!placePick.mark) { const pp = placePick; endPlacePick(); return showResult(SIM.doAction(W, pp.id, pp.k, 0, { x, y })); }
-    placePick.at = [x, y]; if (m) m.innerHTML = pickLine(x, y); if (go) go.style.display = '';
+    placePick.at = [x, y]; placePick.mo = W.week >> 2; if (m) m.innerHTML = pickLine(x, y); if (go) go.style.display = '';
   }
   function drawPlacePick() {
-    if (!placePick) return; const [cx, cy] = toScreen(placePick.x, placePick.y), r = placePick.maxKm * 1000 * cam.s;
+    if (!placePick) return;
+    if (placePick.mark && placePick.at && placePick.mo !== (W.week >> 2)) { // play runs while a mark stands: the line is drawn again once a month (the ground and the places change), not every frame
+      placePick.mo = W.week >> 2; const [mx, my] = placePick.at, m = $('#pickMsg'); if (SIM.checkPlace(W, placePick.id, mx, my)) { placePick.at = null; const go = $('#pickGo'); if (go) go.style.display = 'none'; } if (m) m.innerHTML = pickLine(mx, my);
+    } const [cx, cy] = toScreen(placePick.x, placePick.y), r = placePick.maxKm * 1000 * cam.s;
     ctx.save(); ctx.strokeStyle = 'rgba(255,227,160,0.9)'; ctx.lineWidth = 2; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
     ctx.fillStyle = 'rgba(255,227,160,0.07)'; ctx.fill();
     const hp = placePick.mark && placePick.at ? placePick.at : hoverPt;
