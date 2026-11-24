@@ -1611,8 +1611,8 @@
     let v = null; for (const [a, b] of [[20000, 32000], [32000, 46000], [46000, 60000]]) { const s = villageSite(W, c, a, b, false, false, true); if (s && farmSuit(W, s[0], s[1]) > 0) { v = s; break; } } // never onto ground no farmer can use
     if (!v) return;
     const O = foreignHeld(W, t, cellAt(c.x, c.y)), dx = v[0] - c.x, dy = v[1] - c.y, home = t.home || tribeCenter(t), km = Math.round(Math.hypot(dx, dy) / 1000), dir = compass(dx, dy);
-    if (Math.hypot(v[0] - home[0], v[1] - home[1]) > (t.homeR || HOME_R) + 25000 && (t.clans.length < 2 || !t.clans.some(o => o.settled) || (t.headman && t.headman.clan === c))) t.home = [v[0], v[1]]; // the tribe's home goes with its clan, but not for one camp of a tribe that has settled
-    const txt = `The land here was ${O ? 'the ' + O.name + "'s" : "another people's"}; walked on ${km} km ${dir} to build.`;
+    if (Math.hypot(v[0] - home[0], v[1] - home[1]) > (t.homeR || HOME_R) + 25000 && (t.clans.length < 2 || !t.clans.some(o => o.settled) || c.people.length * 2 >= t.clans.reduce((s, o) => s + o.people.length, 0))) t.home = [v[0], v[1]]; // the tribe's home goes with its clan, but not for one small camp of a tribe that has settled
+    const txt = `The land here was held by ${O ? 'the ' + O.name : 'another people'}; walked on ${km} km ${dir} to build.`;
     note(W, c, txt);
     const P = W.player; if (P && !P.over && P.head.alive && P.head.clan === c) { houseNote(W, `The ${c.name} clan found the land held, and walked on ${km} km ${dir} to build.`); notice(W, 'The clan walks on', `The land where the clan stopped is held by ${O ? 'the ' + O.name : 'another people'}, so it walks on ${km} km ${dir} to build its village.`); }
     c.tx = v[0]; c.ty = v[1]; c.toSettle = true;
@@ -1643,6 +1643,7 @@
           }
         }
       }
+      if (!resisting && t.dom < 0.3 && t.clans.some(c => c.alive !== false && c.settled && c.live === 'farm')) t.dom = 0.549; // a farm village already stands (an old save, a clan that came): the tribe has learned to sow, it does not lose the village
       const prev = t.stage;
       t.stage = t.dom >= 0.55 ? 3 : t.dom >= 0.3 ? 2 : t.dom >= 0.05 ? 1 : 0;
       if (t.stage > prev) {
@@ -1652,6 +1653,7 @@
         if (t.stage === 3) { note(W, t, `Settled for good in farming villages.`); logEvent(W, `🏠 The ${t.name} give up the wandering life and settle in permanent farming villages.`, t, 'grain'); }
         if (W.player && W.player.head && W.player.head.clan && W.player.head.clan.tribe === t && t.stage >= 2) pushGrainEvent(W, t);
       }
+      if (t.stage < 2 && resisting) for (const c of t.clans) if (c.toSettle && !c.founding && c.live !== 'fishing') c.toSettle = false; // a tribe holding to the old ways does not walk to build farm villages
       if (t.stage < 2) for (const c of t.clans) if (c.alive !== false && c.settled && c.live === 'farm') { // a farming village in a tribe that does not sow: the clan gives up the fields and lives as its people do
         c.settled = false; c.toSettle = false; c.live = null; c.founding = false; const vn = c.village || c.name;
         note(W, c, `Left the fields of ${vn}: our people do not sow.`); const P = W.player; if (P && !P.over && P.head.clan && P.head.clan.tribe === t) houseNote(W, c === P.head.clan ? `Our clan left the fields of ${vn}: our people do not sow.` : `The ${c.name} left the fields of ${vn}: our people do not sow.`);
@@ -1660,7 +1662,7 @@
         if (c.live === 'fishing' || c.founding) continue; // a daughter clan raises its village in foundingMonth
         if (!c.settled && !c.toSettle && !settleClan(W, c)) walkOn(W, c);
         if (c.toSettle && Math.hypot(c.tx - c.x, c.ty - c.y) < 1000) {
-          c.toSettle = false; c.settled = true; c.live = 'farm'; c.settledAt = c.settledAt || W.week; c.soil = 1; c.village = villageAt(W, c, c.tribe, 'vill');
+          c.toSettle = false; c.holdUntil = 0; c.settled = true; c.live = 'farm'; c.settledAt = c.settledAt || W.week; c.soil = 1; c.village = villageAt(W, c, c.tribe, 'vill');
           note(W, c, `Built the village of ${c.village}.`);
         }
       }
@@ -3381,8 +3383,9 @@
   const t0 = c => c.tribe;
   function pushGrainEvent(W, t) {
     const P = W.player; if (!P || P.over) return;
+    const vills = t.clans.filter(c => c.alive !== false && c.settled && c.live === 'farm').length;
     if (t.stage === 2) pushEvent(W, { type: 'grain', key: 'g2' + t.id, stage: 2, title: 'The first fields', text: `The ${t.name} have begun to sow the grain they once only gathered. Tending fields means staying in one place — more food that keeps through winter, and more children; but a diet of porridge makes people smaller and sicker, and villages are easy to find for raiders. Will ${P.head.name} encourage it?`, data: { tribe: t },
-      options: [{ label: 'Tend the fields', hint: 'Speed the move to farming' }, { label: 'Keep to the old ways', hint: 'Halt the change for a generation' }] });
+      options: [{ label: 'Tend the fields', hint: 'Speed the move to farming' }, { label: 'Keep to the old ways', hint: vills ? 'Halt the change for a generation; the farming villages go back to camps' : 'Halt the change for a generation' }] });
     if (t.stage === 3) pushEvent(W, { type: 'grain', key: 'g3' + t.id, stage: 3, title: 'A settled people', text: `The ${t.name} have given up wandering and are building permanent villages among their fields. Expect many more children — and shorter, sicker people who are weaker in a fight.`, data: { tribe: t }, options: [{ label: 'So be it' }] });
   }
   function playerYear(W) {
@@ -3476,7 +3479,7 @@
     if (!c.settled && !c.toSettle) A.push({ id: 'movecamp', icon: '⛺', label: c.head === h || !c.head ? 'Move camp' : `Ask ${c.head.name} to move the camp`, hint: `Choose where your clan camps, up to 80 km away: beside the wild grain, a flint source, the shore. The camp stays there until it is moved again${c.head && c.head !== h ? `. ${c.head.name} leads the clan and may say no` : ''}`, ok: ready('movecamp', c.head === h ? 1 : 2),
       why: c.head === h ? 'The clan has only just pitched camp (1 yr)' : `You asked not long ago (${yl('movecamp', 2)})`, targets: [{ pick: { maxKm: 80 }, label: 'Choose the place on the map…', hint: 'Any land you know of within 80 km that your people can reach' }] });
     // move the village to a site of our choosing (fresh fields, a better shore)
-    if (c.settled && c.head === h) A.push({ id: 'movevillage', icon: '🏚', label: `Move ${c.village || 'the village'}`, hint: 'Rebuild on fresh ground within 40 km — new fields, full soil', ok: ready('movevillage', 8), why: `The village was only just built (${yl('movevillage', 8)})`, targets: [{ pick: { maxKm: 40 }, label: 'Choose the new site on the map…', hint: 'Anywhere on land within 40 km. Ground another people holds is theirs: they may demand that you leave' }] });
+    if (c.settled && c.head === h) A.push({ id: 'movevillage', icon: '🏚', label: `Move ${c.village || 'the village'}`, hint: 'Rebuild on fresh ground within 40 km — new fields, full soil', ok: ready('movevillage', 8), why: `The village was only just built (${yl('movevillage', 8)})`, targets: [{ pick: { maxKm: 40 }, label: 'Choose the new site on the map…', hint: (c.live === 'fishing' ? 'On the shore, within 40 km' : 'Anywhere on land within 40 km') + '. Ground another people holds is theirs: they may demand that you leave' }] });
     // found a daughter village: the head of a village, or the leader of the tribe, sends its younger houses to new ground
     { const lead = t.headman === h, mine = c.head === h, grown = h.age >= 16;
       const cl = [...(mine || lead ? [c] : []), ...(lead ? t.clans.filter(o => o !== c && o.alive) : [])].filter(o => o.settled || o === c), good = [], bad = [];
@@ -3647,6 +3650,7 @@
   function doAction0(W, id, k, f, place) {
     const P = W.player, h = P.head, c = h.clan, t = c.tribe, A = (W._acts && W._acts.week === W.week && W._acts.head === h ? W._acts.A : playerActions(W)).find(a => a.id === id); // act on exactly the choices the player saw
     if (!A || !A.ok) return { title: 'Not possible', text: A ? A.why : '' };
+    if (place && (id === 'movevillage' || id === 'movecamp')) { const bad = checkPlace(W, id, place.x, place.y); if (bad) return { title: 'Not possible', text: bad }; }
     const cd = P.cool; cd[id] = W.week;
     // asking the clan's leader: standing and the goodwill between the two houses decide whether they listen
     if ((id === 'movecamp' || id === 'build' || (id === 'rite' && t.headman !== h)) && c.head && c.head !== h) {
@@ -3879,7 +3883,7 @@
     }
     t.home = [d.x, d.y]; t.migrating = t.movedAt = W.week;
     { const L = Math.hypot(d.x - c.x, d.y - c.y); for (let s2 = 0; s2 <= L; s2 += 12000) reveal(W, c.x + (d.x - c.x) * s2 / Math.max(1, L), c.y + (d.y - c.y) * s2 / Math.max(1, L), 14000); reveal(W, d.x, d.y, 30000); }
-    for (const o of t.clans) { const a = W.rand() * 6.283, r = o === c ? 0 : 8000 + W.rand() * 12000; o.tx = clamp(d.x + Math.cos(a) * r, 3000, WORLD - 3000); o.ty = clamp(d.y + Math.sin(a) * r, 3000, WORLD - 3000); if (!W.land[cellAt(o.tx, o.ty)]) { o.tx = d.x; o.ty = d.y; } o.settled = false; o.founding = false; o.toSettle = false; o.atGathering = false; wear(W, o.x, o.y, o.tx, o.ty, o.people.length / 15); }
+    for (const o of t.clans) { const a = W.rand() * 6.283, r = o === c ? 0 : 8000 + W.rand() * 12000; o.tx = clamp(d.x + Math.cos(a) * r, 3000, WORLD - 3000); o.ty = clamp(d.y + Math.sin(a) * r, 3000, WORLD - 3000); if (!W.land[cellAt(o.tx, o.ty)]) { o.tx = d.x; o.ty = d.y; } o.settled = false; o.founding = false; o.toSettle = false; o.holdUntil = 0; o.atGathering = false; wear(W, o.x, o.y, o.tx, o.ty, o.people.length / 15); }
     if (t.stage === 3) for (const o of t.clans) o.live = o.live === 'fishing' ? null : o.live;
     P.renown += t !== old ? 6 : 2;
     const across = W.comp[cellAt(d.x, d.y)] !== W.comp[cellAt(c.x, c.y)];

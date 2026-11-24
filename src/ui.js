@@ -1804,7 +1804,7 @@
     placePick = { id: a.id, k: j, maxKm: a.targets[j].pick.maxKm, x: c.x, y: c.y, mark: MARK_PICKS.includes(a.id), at: null, clan: a.id === 'foundvillage' && a.targets[j].clan || null };
     const b = $('#pickbar'); b.innerHTML = `<div class="pbt"><b>${esc(a.label)}</b><div id="pickMsg" class="muted">${PICK_HELP}</div></div><button id="pickGo" style="display:none">Build here</button><button id="pickCancel">Cancel</button>`; b.style.display = 'flex';
     $('#pickCancel').onclick = ev => { ev.stopPropagation(); endPlacePick(); closeCard(); };
-    $('#pickGo').onclick = ev => { ev.stopPropagation(); const pp = placePick; if (!pp || !pp.at) return; const [x, y] = pp.at; endPlacePick(); showResult(SIM.doAction(W, pp.id, pp.k, 0, { x, y })); };
+    $('#pickGo').onclick = ev => { ev.stopPropagation(); const pp = placePick; if (!pp || !pp.at) return; const [x, y] = pp.at; const bad = SIM.checkPlace(W, pp.id, x, y); if (bad) { pp.at = null; ev.target.style.display = 'none'; $('#pickMsg').innerHTML = `<span style="color:#a83a22">✗ ${esc(bad)}</span>`; return; } endPlacePick(); showResult(SIM.doAction(W, pp.id, pp.k, 0, { x, y })); };
     centerOn(c.x, c.y, Math.min(cam.s, 0.0016));
   }
   function endPlacePick() { placePick = null; hoverPt = null; $('#pickbar').style.display = 'none'; }
