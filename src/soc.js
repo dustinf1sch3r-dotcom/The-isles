@@ -1150,6 +1150,7 @@
     const PW = W.player, mineT = PW && !PW.over && PW.head.alive && PW.head.clan && PW.head.clan.tribe === t, rdT = mineT && t.clans.some(c => c.raidedAt && W.week - c.raidedAt < 52 * 15), joinedUs = PW && !PW.over && PW.head.alive && PW.head.clan && PW.head.clan.tribe === best;
     TSZ.w = -1;
     for (const c of t.clans) { c.tribe = best; best.clans.push(c); }
+    if (!(best.resistUntil && W.week < best.resistUntil)) { const up = Math.min(t.dom, 0.549); if (up > best.dom) { best.dom = up; if (t.stage >= 2 && !best.learnedFrom) best.learnedFrom = t.name; } } // the joined tribe teaches sowing, at most (stage 2); settling for good comes with time; a host that keeps to the old ways learns nothing
     if (t.confed) leaveConfed(W, t, null);
     note(W, best, `The ${t.name} (${tribeSize(t)} people) joined us.`);
     { const P = W.player; if (joinedUs) { houseNote(W, `The ${t.name}, too few to stand alone, joined our people, the ${best.name}.`); notice(W, `The ${t.name} join us`, `The ${t.name} were too few to stand alone. Their clans are now clans of the ${best.name}, with yours.`); } if (mineT) { houseNote(W, `Our people, the ${t.name}, were too few to stand alone${rdT ? ', worn down by raids,' : ''} and joined the ${best.name}.`); notice(W, `We join the ${best.name}`, `The ${t.name} were too few to stand alone${rdT ? ', worn down by raids' : ''}. Your clan is now one of the clans of the ${best.name}: it follows their leader (${best.headman ? best.headman.name : 'chosen by the clans'}) and lives by their ways and speech.`); } }
@@ -1650,6 +1651,10 @@
         if (t.stage === 2) { note(W, t, `Began sowing grain — the first tended fields.`); logEvent(W, `🌾 The ${t.name} begin to sow and tend grain${t.learnedFrom ? `, learned from the ${t.learnedFrom}` : ''} — the first fields.`, t, 'grain'); }
         if (t.stage === 3) { note(W, t, `Settled for good in farming villages.`); logEvent(W, `🏠 The ${t.name} give up the wandering life and settle in permanent farming villages.`, t, 'grain'); }
         if (W.player && W.player.head && W.player.head.clan && W.player.head.clan.tribe === t && t.stage >= 2) pushGrainEvent(W, t);
+      }
+      if (t.stage < 2) for (const c of t.clans) if (c.alive !== false && c.settled && c.live === 'farm') { // a farming village in a tribe that does not sow: the clan gives up the fields and lives as its people do
+        c.settled = false; c.toSettle = false; c.live = null; c.founding = false; const vn = c.village || c.name;
+        note(W, c, `Left the fields of ${vn}: our people do not sow.`); const P = W.player; if (P && !P.over && P.head.clan && P.head.clan.tribe === t) houseNote(W, c === P.head.clan ? `Our clan left the fields of ${vn}: our people do not sow.` : `The ${c.name} left the fields of ${vn}: our people do not sow.`);
       }
       if (t.stage === 3) for (const c of t.clans) {
         if (c.live === 'fishing' || c.founding) continue; // a daughter clan raises its village in foundingMonth
@@ -3367,7 +3372,7 @@
         const { tribe } = ev.data;
         if (ev.stage === 2) {
           if (k === 0) { tribe.dom = Math.min(0.6, tribe.dom + 0.08); houseNote(W, `${h.name} urged the ${tribe.name} to tend the grain fields.`); }
-          else { tribe.resistUntil = W.week + 52 * 25; tribe.dom = Math.max(0.2, tribe.dom - 0.05); houseNote(W, `${h.name} held to the old wandering ways.`); }
+          else { tribe.resistUntil = W.week + 52 * 25; tribe.dom = Math.max(0.2, Math.min(tribe.dom, 0.3) - 0.05); houseNote(W, `${h.name} held to the old wandering ways.`); }
         }
         return;
       }
