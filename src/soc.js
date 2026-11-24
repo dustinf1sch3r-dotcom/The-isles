@@ -3602,24 +3602,28 @@
     return null;
   }
   // How good the ground at (x, y) is for fields, for the player's clan: the site terms of harvest() — the cell's nit through its clamp,
-  // the soil a village would have there (1 after a move or a new village) and the field level after the move (one less than now, as
-  // syncFields does; 0 for a new village). Weather and hands do not depend on the site and are left out: they are the same at either place.
+  // the soil a village would have there (1 after a move or a new village) and the field level it has once it stands there (fieldLvAt:
+  // syncFields' own rule; 0 for a daughter village). Weather and hands do not depend on the site and are left out: they are the same at either place.
   // Returns null where there is nothing to say (a fishing village does not farm). share = the next harvest there over the next harvest at the
-  // present site (a move), or over the richest ground (a new village).
+  // present site (a move), or, for a new village, over the same fields on the richest ground: the land cell with the most nit (clamped as above).
   const nitF = (W, ci) => clamp(W.nit[ci] / 55, 0.4, 1.2);
   const richCache = { W: null, wk: -1, v: 1.2 };
   function richestNitF(W) { if (richCache.W !== W || W.week - richCache.wk >= 26 || W.week < richCache.wk) { let m = 0; for (let i = 0; i < W.nit.length; i++) if (W.land[i] && !W.lake[i] && W.nit[i] > m) m = W.nit[i]; richCache.W = W; richCache.wk = W.week; richCache.v = clamp(m / 55, 0.4, 1.2); } return richCache.v; }
-  const SHARES = [[0.28, 'well under a third of', 'less than a third of'], [0.42, 'about a third of', 'about a third of'], [0.58, 'about half', 'about half'], [0.8, 'about two thirds of', 'about two thirds of'], [1.12, 'about the same as', 'about the same as'], [1.3, 'a little more than', 'a little more than'], [1.75, 'about half as much again as', 'about half as much again as'], [2.4, 'about twice', 'about twice'], [1e9, 'more than twice', 'more than twice']];
-  function shareWord(r, i) { for (const e of SHARES) if (r < e[0] || (e[0] === 1.12 && r <= 1.12)) return e[i]; return SHARES[SHARES.length - 1][i]; }
+  // each word stands for a share; a cut-off lies halfway between the shares of two neighbouring words, so the word is always the nearest one
+  // (third .333, half .5, two thirds .667, a little less .85, the same 1, a little more 1.2, half as much again 1.5, twice 2, more than twice 2.5)
+  const SHARES = [[0.27, 'well under a third of', 'less than a third of'], [0.417, 'about a third of', 'about a third of'], [0.583, 'about half', 'about half'], [0.758, 'about two thirds of', 'about two thirds of'], [0.925, 'a little less than', 'a little less than'], [1.1, 'about the same as', 'about the same as'], [1.35, 'a little more than', 'a little more than'], [1.75, 'about half as much again as', 'about half as much again as'], [2.25, 'about twice', 'about twice'], [1e9, 'more than twice', 'more than twice']];
+  function shareWord(r, i) { for (const e of SHARES) if (r < e[0]) return e[i]; return SHARES[SHARES.length - 1][i]; }
+  // the field level a village has once it stands at cell ci: syncFields' own rule (no plots yet, or the plots already start in this cell: unchanged; else one lower)
+  function fieldLvAt(c, ci) { return !c.plots || !c.plots.length || c.plots[0] === ci ? fieldLv(c) : Math.max(0, fieldLv(c) - 1); }
   function groundAt(W, id, x, y) {
     const P = W.player, c = P && P.head && P.head.clan; if (!c || !(id === 'movevillage' || id === 'settle' || id === 'foundvillage')) return null;
     if (c.live === 'fishing' || !(c.tribe && c.tribe.stage >= 2)) return null;
     const ci = cellAt(x, y); if (!(ci >= 0) || !W.land[ci]) return null;
-    const move = id === 'movevillage' && c.settled, lvNew = move ? Math.max(0, fieldLv(c) - 1) : 0;
+    const move = id === 'movevillage' && c.settled, lvNew = id === 'foundvillage' ? 0 : fieldLvAt(c, ci);
     const q = nitF(W, ci) * (1 + FIELD_CROP * lvNew), word = q >= 1.1 ? 'Rich' : q >= 0.85 ? 'Good' : q >= 0.6 ? 'Fair' : 'Thin';
     let share, text;
     if (move) { share = q / ((c.soil == null ? 1 : c.soil) * nitF(W, cellAt(c.x, c.y)) * (1 + FIELD_CROP * fieldLv(c))); text = `${word} ground: harvests here would be ${shareWord(share, 1)} what your fields give now.`.replace(/ (as|than) what your fields/, ' $1 your fields'); }
-    else { share = q / richestNitF(W); text = share >= 0.93 ? `${word} ground: as good for fields as any the land holds.` : `${word} ground: fields here would give ${shareWord(share, 1)} what the richest ground gives.`.replace(/ (as|than) what the richest/, ' $1 the richest'); }
+    else { share = q / (richestNitF(W) * (1 + FIELD_CROP * lvNew)); text = share >= 0.925 ? `${word} ground: as good for fields as any the land holds.` : `${word} ground: fields here would give ${shareWord(share, 1)} what the richest ground gives.`.replace(/ (as|than) what the richest/, ' $1 the richest'); }
     return { word, quality: q, share, text };
   }
   function doAction(W, id, k, f, place) { const h0 = W.player && W.player.head, R = doAction0(W, id, k, f, place); if (R && R.title !== 'Not possible' && h0 && id !== 'hunt' && id !== 'walk' && id !== 'treasure' && (id !== 'raid' || /succeeds/.test(R.title)) && !/says no|fails|No pact|Not yet|refuse/.test(R.title)) credit(h0, 'p_' + id); return R; }
@@ -3780,7 +3784,7 @@
       note(W, o, `${h.name} sent ${lv.length} people of ${goName(plan, o)} to raise a daughter village ${km} km ${dir}: the ${nc.name} clan.`); note(W, nc, `Sent out from ${from} with the blessing of the ${o.name} clan, to raise a village ${km} km ${dir}.`);
       logEvent(W, `The ${o.name} clan of ${from} sends ${lv.length} people to found a daughter village: the ${nc.name} clan, ${km} km ${dir}.`, nc, 'info');
       houseNote(W, `${h.name} sent ${lv.length} people of ${who} village to raise the ${nc.name} clan's ${fish ? 'fishing ' : ''}village ${km} km ${dir}. ${rest} stay${o === c ? ' with us' : ''}.${bl.length ? ` Of our blood, ${bl.length > 3 ? bl.length + ' went, among them ' + nameList(bl) : nameList(bl) + ' went'}.` : ''}`);
-      return { title: 'A daughter village', text: `${lv.length} people of ${from}, ${goName(plan, o)}, take their share of the stores and set out as the ${nc.name} clan, kin and friends of the ${o.name}. They will walk ${km} km ${dir} and raise a ${fish ? 'fishing ' : ''}village on the ground you chose; it will stand a few weeks after they arrive. ${rest} remain in ${from}${H ? `, under ${H.name}` : ''}.${bl.length ? `<br><br>Of your blood, ${bl.length > 3 ? bl.length + ' go, among them ' + nameList(bl) : nameList(bl) + (bl.length > 1 ? ' go' : ' goes') + ' with them'}.` : ''}${sl.length ? ` ${sl.length === 1 ? sl[0].name + ', a slave of the house, goes' : sl.length + ' slaves of the house go'} too.` : ''}${landWarn(W, t, site[0], site[1]) ? '<br><br>' + landWarn(W, t, site[0], site[1]) : ''}` };
+      return { title: 'A daughter village', text: `${lv.length} people of ${from}, ${goName(plan, o)}, take their share of the stores and set out as the ${nc.name} clan, kin and friends of the ${o.name}. They will walk ${km} km ${dir} and raise a ${fish ? 'fishing ' : ''}village on the ground you chose; it will stand a few weeks after they arrive. ${rest} remain in ${from}${H ? `, under ${H.name}` : ''}.${gd ? '<br><br>' + gd.text : ''}${bl.length ? `<br><br>Of your blood, ${bl.length > 3 ? bl.length + ' go, among them ' + nameList(bl) : nameList(bl) + (bl.length > 1 ? ' go' : ' goes') + ' with them'}.` : ''}${sl.length ? ` ${sl.length === 1 ? sl[0].name + ', a slave of the house, goes' : sl.length + ' slaves of the house go'} too.` : ''}${landWarn(W, t, site[0], site[1]) ? '<br><br>' + landWarn(W, t, site[0], site[1]) : ''}` };
     }
     if (id === 'migrate') {
       const d = place ? { x: place.x, y: place.y, km: Math.round(Math.hypot(place.x - c.x, place.y - c.y) / 1000), dir: compass(place.x - c.x, place.y - c.y), label: 'Chosen' } : A.targets[k] && A.targets[k].ref; if (!d || d.pick) return null;

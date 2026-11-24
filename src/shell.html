@@ -176,6 +176,7 @@
   #pickbar { flex-wrap:wrap; justify-content:flex-end; }
   #pickbar .pbt { flex:1 1 100%; min-width:0; }
   #pickbar button { height:30px; padding:0 10px; white-space:nowrap; }
+  @media (min-width:820px) { #pickbar { left:calc((100vw - 420px) / 2); max-width:calc(100vw - 420px - 24px); } } /* clear of the side panel (410 px wide, 10 px from the edge) */
   @media (max-width:600px) { #pickbar { left:12px; transform:none; width:calc(100vw - 24px - 52px); max-width:none; box-sizing:border-box; } } /* clear of the buttons down the right edge */
 
   /* ---- cards: decisions, deeds, start, help ---- */
