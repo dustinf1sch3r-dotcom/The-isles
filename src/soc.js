@@ -1658,14 +1658,12 @@
         c.settled = false; c.toSettle = false; c.live = null; c.founding = false; const vn = c.village || c.name;
         note(W, c, `Left the fields of ${vn}: our people do not sow.`); const P = W.player; if (P && !P.over && P.head.clan && P.head.clan.tribe === t) houseNote(W, c === P.head.clan ? `Our clan left the fields of ${vn}: our people do not sow.` : `The ${c.name} left the fields of ${vn}: our people do not sow.`);
       }
+      if (t.stage === 2) { const P = W.player, pc = P && !P.over && P.head && P.head.clan; for (const c of t.clans) if (c !== pc && c.alive !== false && c.live !== 'fishing' && !c.founding) buildArrived(W, c); } // a worn-out village of a sowing people rebuilds where it came to; it starts no new ones
       if (t.stage === 3) for (const c of t.clans) {
         if (c.live === 'fishing' || c.founding) continue; // a daughter clan raises its village in foundingMonth
         if (!c.settled && !c.toSettle && t.movedAt && W.week - t.movedAt < 52 * 5 && Math.hypot(c.tx - c.x, c.ty - c.y) > 5000) continue; // still walking to the new lands: it builds where it comes to, not on the road
         if (!c.settled && !c.toSettle && !settleClan(W, c)) walkOn(W, c);
-        if (c.toSettle && Math.hypot(c.tx - c.x, c.ty - c.y) < 1000) {
-          c.toSettle = false; c.holdUntil = 0; c.settled = true; c.live = 'farm'; c.settledAt = c.settledAt || W.week; c.soil = 1; c.village = villageAt(W, c, c.tribe, 'vill');
-          note(W, c, `Built the village of ${c.village}.`);
-        }
+        buildArrived(W, c);
       }
     }
   }
@@ -1677,6 +1675,12 @@
   const FIELD_STEPS = ['the home fields', 'fields out to the first stream', 'fields to the second stream', 'fields to the foot of the hills', 'fields from one side of the valley to the other'];
   const FISH_FIELDS = 0.5; // a fishing village of a sowing people keeps half the fields of a farming village, by the shore
   const FIELD_GAP = 52 * 4, FIELD_WEAR = 0.25, FIELD_CROP = 0.06, FIELD_REACH = 25000;
+  // a clan that walked to its new ground and has come to it raises its village there (the farming loop; playerYear builds the player's own clan, with its notice)
+  function buildArrived(W, c) {
+    if (!c.toSettle || c.settled || c.founding || c.live === 'fishing' || Math.hypot(c.tx - c.x, c.ty - c.y) >= 1000) return false;
+    c.toSettle = false; c.holdUntil = 0; c.settled = true; c.live = 'farm'; c.settledAt = c.settledAt || W.week; c.soil = 1; c.village = villageAt(W, c, c.tribe, 'vill');
+    note(W, c, `Built the village of ${c.village}.`); return true;
+  }
   const fieldLv = c => c.fieldLv || 0;
   const fieldMetal = c => (c.goods && (c.goods.bronze > 0 || c.goods.metal > 0)) ? 1 : 0;
   const fieldCap = c => 1 + Math.floor(freeCount(c) / 25) + fieldMetal(c);
@@ -1728,10 +1732,11 @@
   function canTakeFarming(W, c) { const P = W.player; return !!(P && !P.over && P.head && P.head.alive && c && c === P.head.clan && c.head === P.head && c.settled && c.live === 'fishing' && !c.founding && c.tribe && c.tribe.stage >= 2); }
   // the warning for worn soil, for the deed's hint, its confirm step and its result card. harvest wears a farm village's soil by 0.012 / (1 + FIELD_WEAR * level)
   // each year and moves the village when the soil is then under 0.4: Y harvests after taking up farming. '' while the soil is 0.6 or better.
-  function soilWarn(c) {
-    const s = c.soil == null ? 1 : c.soil; if (s >= 0.6) return '';
-    const y = Math.floor((s - 0.4) / (0.012 / (1 + FIELD_WEAR * fieldLv(c)))) + 1;
-    return `The soil here is worn (${Math.round(s * 100)}%): in ${y === 1 ? 'one year' : 'about ' + y + ' years'} the fields will be worn out and the village must move to fresh ground.`;
+  function soilWarn(c, short) {
+    const s = c.soil == null ? 1 : c.soil, pc = Math.round(s * 100); if (pc >= 60) return '';
+    const y = Math.max(1, Math.floor((s - 0.4) / (0.012 / (1 + FIELD_WEAR * fieldLv(c)))) + 1);
+    if (short) return `The soil here is already worn (${pc}%): that comes ${y === 1 ? 'at the next harvest' : 'in about ' + y + ' years'}`;
+    return `The soil here is worn (${pc}%): ${y === 1 ? 'at the next harvest' : 'in about ' + y + ' years'} the fields will be worn out and the village must move to fresh ground`;
   }
   function fieldWhy(W, c, h) {
     const lv = fieldLv(c), free = freeCount(c), m = fieldMetal(c), cd = W.player && W.player.cool || {}, since = cd.fields != null ? W.week - cd.fields : 1e9;
@@ -3396,7 +3401,7 @@
   function pushGrainEvent(W, t) {
     const P = W.player; if (!P || P.over) return;
     const vills = t.clans.filter(c => c.alive !== false && c.settled && c.live === 'farm').length;
-    if (t.stage === 2) pushEvent(W, { type: 'grain', key: 'g2' + t.id, stage: 2, title: 'The first fields', text: `The ${t.name} have begun to sow the grain they once only gathered. Tending fields means staying in one place — more food that keeps through winter, and more children; but a diet of porridge makes people smaller and sicker, and villages are easy to find for raiders.${P.head.clan && P.head.clan.settled && P.head.clan.live === 'fishing' ? ` If they sow, your fishing village will keep small fields by the shore${canTakeFarming(W, P.head.clan) ? '; Take up farming (under Act) would give it full ones' : ''}.` : ''} Will ${P.head.name} encourage it?`, data: { tribe: t },
+    if (t.stage === 2) pushEvent(W, { type: 'grain', key: 'g2' + t.id, stage: 2, title: 'The first fields', text: `The ${t.name} have begun to sow the grain they once only gathered. Tending fields means staying in one place — more food that keeps through winter, and more children; but a diet of porridge makes people smaller and sicker, and villages are easy to find for raiders.${P.head.clan && P.head.clan.settled && P.head.clan.live === 'fishing' ? ` If they go on sowing, your fishing village will keep small fields by the shore${canTakeFarming(W, P.head.clan) ? '; Take up farming (under Act) would give it full ones' : ''}.` : ''} Will ${P.head.name} encourage it?`, data: { tribe: t },
       options: [{ label: 'Tend the fields', hint: 'Speed the move to farming' }, { label: 'Keep to the old ways', hint: vills ? `Halt the change for a generation; ${vills === 1 ? 'the farming village goes back to a camp' : 'the farming villages go back to camps'}` : 'Halt the change for a generation' }] });
     if (t.stage === 3) pushEvent(W, { type: 'grain', key: 'g3' + t.id, stage: 3, title: 'A settled people', text: `The ${t.name} have given up wandering and are building permanent villages among their fields. Expect many more children — and shorter, sicker people who are weaker in a fight.`, data: { tribe: t }, options: [{ label: 'So be it' }] });
   }
@@ -3504,7 +3509,7 @@
         why: good.length > 0 && (mine || lead) && grown ? '' : !(mine || lead) ? 'Only a clan head or the leader of the tribe can send a clan\'s houses away' : !grown ? 'Your head is still a child' : !c.settled && !lead ? 'Your clan does not live in a village' : nm ? nm.why : 'No clan of the tribe lives in a village' }); }
     // a fishing village of a sowing people may turn to full fields (one way)
     if (c.settled && c.live === 'fishing' && !c.founding && c.head === h && t.stage >= 2)
-      { const sw = soilWarn(c); A.push({ id: 'takefarming', icon: '🌾', label: 'Take up farming', hint: 'Make the village a farming village: full fields give about twice the grain, and you may clear more. The boats still fish while it stands by the shore, but food keeps less well and babies are no longer weaned on fish. It cannot be undone' + (sw ? '. ' + sw : ''), ok: true, why: '', targets: [{ label: 'Turn the village to the plough', hint: 'It cannot be undone' + (sw ? '. ' + sw : '') }] }); }
+      { const sw = soilWarn(c); A.push({ id: 'takefarming', icon: '🌾', label: 'Take up farming', hint: 'Make the village a farming village: full fields give about twice the grain, and you may clear more. The boats still fish while it stands by the shore, but food keeps less well and babies are no longer weaned on fish. It cannot be undone' + (sw ? '. ' + sw : ''), ok: true, why: '', targets: [{ label: 'Turn the village to the plough', hint: 'Full fields from the next harvest' }] }); }
     // clear new fields: push the cleared ground out from the village
     if (t.stage >= 2 || c.settled) { const why = fieldWhy(W, c, h), lv = fieldLv(c), wearNow = Math.round(100 / (1 + FIELD_WEAR * lv)), wearNext = Math.round(100 / (1 + FIELD_WEAR * (lv + 1)));
       A.push({ id: 'fields', icon: '🌾', label: 'Clear new fields', hint: `Break new ground beyond the village: ${fieldStep(lv + 1)}. It eats three weeks of the clan's food and can be done once in four years. The land can lie fallow in turn, so the soil wears at ${wearNext}% of the old rate (now ${wearNow}%), and the crop is ${Math.round(FIELD_CROP * 100)}% bigger for each step. The game leaves the cleared ground, and a great beast whose ground lies near it is driven off`, ok: !why, why }); }
@@ -3770,8 +3775,8 @@
       if (c.live !== 'fishing') return null; const v = c.village || 'the village';
       c.live = 'farm'; if (c.soil === undefined) c.soil = 1; W.farmVer = (W.farmVer || 0) + 1;
       houseNote(W, `${h.name} turned ${v} to full fields.`); note(W, c, `Took up farming at ${v}.`);
-      const sw = soilWarn(c);
-      return { title: 'A farming village', text: `The ${c.name} clan turn ${v} to the plough, with fields of the full size. From now on:<br>• The same ground gives about twice the grain, but the soil wears twice as fast, and when the fields are worn out the village must move to fresh ground.${sw ? ' ' + sw : ''}<br>• You may clear new fields (Act).<br>• The boats still fish while the village stands by the shore. You may also move it inland.<br>• Stored food keeps less well than dried fish.<br>• Women conceive more readily, but babies are no longer weaned on fish.<br>• The village no longer takes furs in good years, and it drives more of the game away.<br>• Fewer people fall to beasts, and the village no longer gives up when the waters fail.<br><br>It cannot be undone.` };
+      const sw = soilWarn(c, true);
+      return { title: 'A farming village', text: `The ${c.name} clan turn ${v} to the plough, with fields of the full size. From now on:<br>• The same ground gives about twice the grain, but the soil wears twice as fast, and when the fields are worn out the village must move to fresh ground.${sw ? ' ' + sw + '.' : ''}<br>• You may clear new fields (Act).<br>• The boats still fish while the village stands by the shore. You may also move it inland.<br>• Stored food keeps less well than dried fish.<br>• Women conceive more readily, but babies are no longer weaned on fish.<br>• The village no longer takes furs in good years, and it drives more of the game away.<br>• Fewer people fall to beasts, and the village no longer gives up when the waters fail.<br><br>It cannot be undone.` };
     }
     if (id === 'fields') {
       const n = clearFields(W, c); if (!n) return { title: 'No ground', text: 'There is no good ground left to clear.' };
