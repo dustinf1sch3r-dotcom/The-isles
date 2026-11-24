@@ -1664,7 +1664,7 @@
   }
   // hover tooltips (mouse)
   cv.addEventListener('pointermove', e => {
-    if (placePick) { hoverPt = toWorld(e.offsetX, e.offsetY); cv.style.cursor = 'crosshair'; $('#tip').style.display = 'none'; return; }
+    if (placePick) { cv.style.cursor = 'crosshair'; $('#tip').style.display = 'none'; if (placePick.mark && placePick.at) return; hoverPt = toWorld(e.offsetX, e.offsetY); if (placePick.mark && e.pointerType === 'mouse') { const m = $('#pickMsg'); if (m) m.innerHTML = pickLine(hoverPt[0], hoverPt[1]); } return; }
     if (e.pointerType !== 'mouse' || e.buttons) { $('#tip').style.display = 'none'; return; }
     const ps = pickAll(e.offsetX, e.offsetY), p = ps[0] || null; hover = p;
     cv.style.cursor = p && !p.area ? 'pointer' : 'grab';
@@ -1796,26 +1796,36 @@
   }
   // ---- choosing a place on the map ----
   let placePick = null;
+  // the village deeds mark a spot first and build on "Build here"; the other picks act on the first tap
+  const MARK_PICKS = ['movevillage', 'settle', 'foundvillage'];
+  const PICK_HELP = 'Tap the map inside the dashed circle, on land your people know.';
   function startPlacePick(a, j) {
     const c = W.player.head.clan; modalEv = null; $('#modal').style.display = 'none';
-    placePick = { id: a.id, k: j, maxKm: a.targets[j].pick.maxKm, x: c.x, y: c.y };
-    const b = $('#pickbar'); b.innerHTML = `<div><b>${esc(a.label)}</b><div id="pickMsg" class="muted">Tap the map inside the dashed circle, on land your people know.</div></div> <button id="pickCancel">Cancel</button>`; b.style.display = 'flex';
+    placePick = { id: a.id, k: j, maxKm: a.targets[j].pick.maxKm, x: c.x, y: c.y, mark: MARK_PICKS.includes(a.id), at: null, clan: a.id === 'foundvillage' && a.targets[j].clan || null };
+    const b = $('#pickbar'); b.innerHTML = `<div class="pbt"><b>${esc(a.label)}</b><div id="pickMsg" class="muted">${PICK_HELP}</div></div><button id="pickGo" style="display:none">Build here</button><button id="pickCancel">Cancel</button>`; b.style.display = 'flex';
     $('#pickCancel').onclick = ev => { ev.stopPropagation(); endPlacePick(); closeCard(); };
+    $('#pickGo').onclick = ev => { ev.stopPropagation(); const pp = placePick; if (!pp || !pp.at) return; const [x, y] = pp.at; endPlacePick(); showResult(SIM.doAction(W, pp.id, pp.k, 0, { x, y })); };
     centerOn(c.x, c.y, Math.min(cam.s, 0.0016));
   }
-  function endPlacePick() { placePick = null; $('#pickbar').style.display = 'none'; }
+  function endPlacePick() { placePick = null; hoverPt = null; $('#pickbar').style.display = 'none'; }
+  // the line shown for a spot: the refusal, or the ground for fields
+  function pickLine(x, y) {
+    const err = SIM.checkPlace(W, placePick.id, x, y); if (err) return `<span style="color:#a83a22">✗ ${esc(err)}</span>`;
+    const g = SIM.groundAt(W, placePick.id, x, y, placePick.clan); return g ? esc(g.text) : placePick.mark ? 'Fit ground for a village.' : PICK_HELP;
+  }
   function placeTap(sx, sy) {
-    const [x, y] = toWorld(sx, sy), err = SIM.checkPlace(W, placePick.id, x, y);
+    const [x, y] = toWorld(sx, sy), err = SIM.checkPlace(W, placePick.id, x, y), m = $('#pickMsg'), go = $('#pickGo');
     hoverPt = [x, y];
-    if (err) { const m = $('#pickMsg'); if (m) { m.innerHTML = `<span style="color:#a83a22">✗ ${esc(err)}</span>`; } return; }
-    const pp = placePick; endPlacePick();
-    showResult(SIM.doAction(W, pp.id, pp.k, 0, { x, y }));
+    if (err) { placePick.at = null; if (go) go.style.display = 'none'; if (m) m.innerHTML = pickLine(x, y); return; }
+    if (!placePick.mark) { const pp = placePick; endPlacePick(); return showResult(SIM.doAction(W, pp.id, pp.k, 0, { x, y })); }
+    placePick.at = [x, y]; if (m) m.innerHTML = pickLine(x, y); if (go) go.style.display = '';
   }
   function drawPlacePick() {
     if (!placePick) return; const [cx, cy] = toScreen(placePick.x, placePick.y), r = placePick.maxKm * 1000 * cam.s;
     ctx.save(); ctx.strokeStyle = 'rgba(255,227,160,0.9)'; ctx.lineWidth = 2; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
     ctx.fillStyle = 'rgba(255,227,160,0.07)'; ctx.fill();
-    if (hoverPt) { const ok = !SIM.checkPlace(W, placePick.id, hoverPt[0], hoverPt[1]); const [hx, hy] = toScreen(hoverPt[0], hoverPt[1]); ctx.strokeStyle = ok ? '#7de07d' : '#e0584a'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(hx - 9, hy); ctx.lineTo(hx + 9, hy); ctx.moveTo(hx, hy - 9); ctx.lineTo(hx, hy + 9); ctx.stroke(); ctx.beginPath(); ctx.arc(hx, hy, 12, 0, Math.PI * 2); ctx.stroke(); }
+    const hp = placePick.mark && placePick.at ? placePick.at : hoverPt;
+    if (hp) { const ok = !SIM.checkPlace(W, placePick.id, hp[0], hp[1]); const [hx, hy] = toScreen(hp[0], hp[1]); ctx.strokeStyle = ok ? '#7de07d' : '#e0584a'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(hx - 9, hy); ctx.lineTo(hx + 9, hy); ctx.moveTo(hx, hy - 9); ctx.lineTo(hx, hy + 9); ctx.stroke(); ctx.beginPath(); ctx.arc(hx, hy, 12, 0, Math.PI * 2); ctx.stroke(); }
     ctx.restore();
   }
   let hoverPt = null;
@@ -1971,5 +1981,5 @@
   try { const pq = new URLSearchParams(location.search); if (pq.has('prof') && pq.get('prof') !== '0') SIM.prof.on = true; } catch (e) {} // ?prof or ?prof=1 times the systems; the summaries go to the console
   STORE.get().then(v => { savedGame = v && v.str ? v : null; }).catch(() => {}).then(() => newWorld(Math.floor(Math.random() * 1e9)));
   requestAnimationFrame(frame);
-  window.__dbg = { get W() { return W; }, get cam() { return cam; }, get show() { return show; }, get grp() { return grpOf; }, get mk() { return mkOf; }, get crowd() { return crowdOn; }, herdsN: () => { herdCache.key = ''; return herds().reduce((n, h) => n + (h.sea || h.sp === 'duck' || h.sp === 'sealion' ? 0 : h.cnt), 0); }, probe: (sx, sy) => { const [x, y] = toWorld(sx, sy), gx = Math.floor(x / CELL), gy = Math.floor(y / CELL), P = W.player; const fx = Math.floor((sx - cam.ox) / cam.s / WORLD * FR), fy = Math.floor((sy - cam.oy) / cam.s / WORLD * FR); return { x, y, gx, gy, known: P.known[gy * N + gx], fogA: fogImg ? fogImg.data[(fy * FR + fx) * 4 + 3] : -1, land: W.land[gy * N + gx], dpr: window.devicePixelRatio, cssW: cv.clientWidth, cvW: cv.width }; }, check: (sx, sy) => { if (!placePick) return false; const [x, y] = toWorld(sx, sy); return !SIM.checkPlace(W, placePick.id, x, y); }, reset: () => { modalEv = null; $('#modal').style.display = 'none'; W.pending = []; running = false; wasRunning = false; $('#play').textContent = '▶'; }, open: e => open(e, true), fit: () => fit(), paint: () => { paint(); }, zoom: (x, y, f) => zoomAt(x, y, f), center: (x, y, s) => { cam.s = s; centerOn(x, y); } };
+  window.__dbg = { get W() { return W; }, scr: (x, y) => toScreen(x, y), get cam() { return cam; }, get show() { return show; }, get grp() { return grpOf; }, get mk() { return mkOf; }, get crowd() { return crowdOn; }, herdsN: () => { herdCache.key = ''; return herds().reduce((n, h) => n + (h.sea || h.sp === 'duck' || h.sp === 'sealion' ? 0 : h.cnt), 0); }, probe: (sx, sy) => { const [x, y] = toWorld(sx, sy), gx = Math.floor(x / CELL), gy = Math.floor(y / CELL), P = W.player; const fx = Math.floor((sx - cam.ox) / cam.s / WORLD * FR), fy = Math.floor((sy - cam.oy) / cam.s / WORLD * FR); return { x, y, gx, gy, known: P.known[gy * N + gx], fogA: fogImg ? fogImg.data[(fy * FR + fx) * 4 + 3] : -1, land: W.land[gy * N + gx], dpr: window.devicePixelRatio, cssW: cv.clientWidth, cvW: cv.width }; }, check: (sx, sy) => { if (!placePick) return false; const [x, y] = toWorld(sx, sy); return !SIM.checkPlace(W, placePick.id, x, y); }, reset: () => { modalEv = null; $('#modal').style.display = 'none'; W.pending = []; running = false; wasRunning = false; $('#play').textContent = '▶'; }, open: e => open(e, true), fit: () => fit(), paint: () => { paint(); }, zoom: (x, y, f) => zoomAt(x, y, f), center: (x, y, s) => { cam.s = s; centerOn(x, y); } };
 })();
