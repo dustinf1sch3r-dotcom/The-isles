@@ -1071,7 +1071,7 @@
         options: lead ? [{ label: 'Lead them there', hint: `${km} km ${dir}` }, { label: 'Stay where we are', hint: 'As leader, you keep the tribe here' }] : [{ label: 'Go with the tribe', hint: `${km} km ${dir}` }, { label: 'Stay behind', hint: t.clans.length > 1 ? `Your clan stays and becomes a people of its own` : 'Your clan stays' }] });
       return true;
     }
-    t.home = dest; t.migrating = W.week;
+    t.home = dest; t.migrating = t.movedAt = W.week;
     for (const c of t.clans) { const a = W.rand() * 6.283, r = 6000 + W.rand() * 22000; let x = clamp(dest[0] + Math.cos(a) * r, 3000, WORLD - 3000), y = clamp(dest[1] + Math.sin(a) * r, 3000, WORLD - 3000); if (!W.land[cellAt(x, y)] || landBlocked(W, t, cellAt(x, y), null)) { x = dest[0]; y = dest[1]; } wear(W, c.x, c.y, x, y, c.people.length / 15); c.tx = x; c.ty = y; c.atGathering = false; }
     const km = Math.round(Math.hypot(dest[0] - from[0], dest[1] - from[1]) / 1000), dir = compass(dest[0] - from[0], dest[1] - from[1]);
     const crossed = t.clans[0] && W.comp[cellAt(dest[0], dest[1])] !== W.comp[cellAt(t.clans[0].x, t.clans[0].y)];
@@ -1586,11 +1586,11 @@
     const i = cellAt(x, y); if (!W.land[i] || W.lake[i] || W.biome[i] === 2) return 0;
     return clamp(W.nit[i] / 60, 0.3, 1.2) * clamp(W.depth[i] / 0.8, 0.3, 1) * (W.slope[i] < 0.1 ? 1 : 0.5) * (W.T0[i] > 7.5 ? 1 : 0.55) * (W.isRiver[i] || W.hand[i] < 5 ? 1.25 : 0.85) * (W.om[i] > 9 ? 0.5 : 1);
   }
-  function villageSite(W, c, rmin, rmax, force, strict) {
+  function villageSite(W, c, rmin, rmax, force, strict, anyHome) {
     let best = null, bs = -Infinity; const memo = new Map();
     for (let k = 0; k < 30; k++) {
       const a = W.rand() * 6.283, r = rmin + W.rand() * (rmax - rmin), x = clamp(c.x + Math.cos(a) * r, 3000, WORLD - 3000), y = clamp(c.y + Math.sin(a) * r, 3000, WORLD - 3000);
-      if (!sameIsland(W, c, x, y) || (c.tribe.home && Math.hypot(x - c.tribe.home[0], y - c.tribe.home[1]) > (c.tribe.homeR || HOME_R) + 25000)) continue;
+      if (!sameIsland(W, c, x, y) || (!anyHome && c.tribe.home && Math.hypot(x - c.tribe.home[0], y - c.tribe.home[1]) > (c.tribe.homeR || HOME_R) + 25000)) continue;
       if (!force && landBlocked(W, c.tribe, cellAt(x, y), memo)) continue; // ground another people holds, unless we are much stronger and at odds with them
       if (landKeepOff(W, c, cellAt(x, y)) || (strict && foreignHeld(W, c.tribe, cellAt(x, y)))) continue; // a clan sent away keeps off the land of those who sent it; the player's elders keep off all held ground
       const sc = villageScore(W, c, x, y);
@@ -1603,6 +1603,18 @@
     const v = villageSite(W, c, 0, 20000, force, strict) || (!force && (landBlocked(W, c.tribe, cellAt(c.x, c.y), null) || landKeepOff(W, c, cellAt(c.x, c.y))) || (strict && foreignHeld(W, c.tribe, cellAt(c.x, c.y))) ? null : [c.x, c.y]);
     if (!v) return; // no ground that is free: the clan stays a camp for now
     c.tx = v[0]; c.ty = v[1]; c.toSettle = true; return true;
+  }
+  // a clan of a tribe that moved lately has come to its new lands and finds the ground held: it walks on to the nearest ground it may take
+  function walkOn(W, c) {
+    const t = c.tribe; if (!t.movedAt || W.week - t.movedAt > 52 * 5 || (c.holdUntil && c.holdUntil > W.week) || Math.hypot(c.tx - c.x, c.ty - c.y) > 5000) return;
+    let v = null; for (const [a, b] of [[20000, 32000], [32000, 46000], [46000, 60000]]) { const s = villageSite(W, c, a, b, false, false, true); if (s && farmSuit(W, s[0], s[1]) > 0) { v = s; break; } } // never onto ground no farmer can use
+    if (!v) return;
+    const O = foreignHeld(W, t, cellAt(c.x, c.y)), dx = v[0] - c.x, dy = v[1] - c.y, home = t.home || tribeCenter(t), km = Math.round(Math.hypot(dx, dy) / 1000), dir = compass(dx, dy);
+    if (Math.hypot(v[0] - home[0], v[1] - home[1]) > (t.homeR || HOME_R) + 25000 && (t.clans.length < 2 || !t.clans.some(o => o.settled) || (t.headman && t.headman.clan === c))) t.home = [v[0], v[1]]; // the tribe's home goes with its clan, but not for one camp of a tribe that has settled
+    const txt = `The land here was ${O ? 'the ' + O.name + "'s" : "another people's"}; walked on ${km} km ${dir} to build.`;
+    note(W, c, txt);
+    const P = W.player; if (P && !P.over && P.head.alive && P.head.clan === c) { houseNote(W, `The ${c.name} clan found the land held, and walked on ${km} km ${dir} to build.`); notice(W, 'The clan walks on', `The land where the clan stopped is held by ${O ? 'the ' + O.name : 'another people'}, so it walks on ${km} km ${dir} to build its village.`); }
+    c.tx = v[0]; c.ty = v[1]; c.toSettle = true;
   }
   const grainDeposits = W => W.deposits.filter(d => d.type === 'grain');
   const GRAIN_TRIP = 50000; // a few days' walk: near enough to go and reap the wild grain each summer
@@ -1641,7 +1653,7 @@
       }
       if (t.stage === 3) for (const c of t.clans) {
         if (c.live === 'fishing' || c.founding) continue; // a daughter clan raises its village in foundingMonth
-        if (!c.settled && !c.toSettle) settleClan(W, c);
+        if (!c.settled && !c.toSettle && !settleClan(W, c)) walkOn(W, c);
         if (c.toSettle && Math.hypot(c.tx - c.x, c.ty - c.y) < 1000) {
           c.toSettle = false; c.settled = true; c.live = 'farm'; c.settledAt = c.settledAt || W.week; c.soil = 1; c.village = villageAt(W, c, c.tribe, 'vill');
           note(W, c, `Built the village of ${c.village}.`);
@@ -3860,7 +3872,7 @@
       t.favored = h; t.headman = h;
       if (!old.clans.length) { W.tribes.splice(W.tribes.indexOf(old), 1); kill(W, old); }
     }
-    t.home = [d.x, d.y]; t.migrating = W.week;
+    t.home = [d.x, d.y]; t.migrating = t.movedAt = W.week;
     { const L = Math.hypot(d.x - c.x, d.y - c.y); for (let s2 = 0; s2 <= L; s2 += 12000) reveal(W, c.x + (d.x - c.x) * s2 / Math.max(1, L), c.y + (d.y - c.y) * s2 / Math.max(1, L), 14000); reveal(W, d.x, d.y, 30000); }
     for (const o of t.clans) { const a = W.rand() * 6.283, r = o === c ? 0 : 8000 + W.rand() * 12000; o.tx = clamp(d.x + Math.cos(a) * r, 3000, WORLD - 3000); o.ty = clamp(d.y + Math.sin(a) * r, 3000, WORLD - 3000); if (!W.land[cellAt(o.tx, o.ty)]) { o.tx = d.x; o.ty = d.y; } o.settled = false; o.founding = false; o.toSettle = false; o.atGathering = false; wear(W, o.x, o.y, o.tx, o.ty, o.people.length / 15); }
     if (t.stage === 3) for (const o of t.clans) o.live = o.live === 'fishing' ? null : o.live;
