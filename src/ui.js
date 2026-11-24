@@ -1142,7 +1142,8 @@
     return `<div class="tiles"><div class="tile" style="grid-column:1/-1"><div class="k">How it is led</div><div class="v">${esc(R.name)}</div><div class="muted">${esc(R.text)}${R.since != null ? ` Since year ${yr(R.since)}.` : ''}</div>${R.heir ? `<div class="muted"><b>Would follow today:</b> ${esc(R.heir.who.name)}, ${esc(R.heir.how)}</div>` : ''}</div></div>`; };
   // the Fields tile: how far the village's cleared ground reaches
   function fieldsTile(c) {
-    if (!c.settled || c.live === 'fishing' || c.tribe.stage < 2) return '';
+    if (!c.settled || c.tribe.stage < 2) return '';
+    if (c.live === 'fishing') return `<div class="tiles"><div class="tile" style="grid-column:1/-1"><div class="k">Fields</div><div class="v">Small fields by the shore</div><div class="muted">half the fields of a farming village · soil ${pct(c.soil == null ? 1 : c.soil)} · Act, Take up farming, lets the village clear more</div></div></div>`;
     const F = SIM.fieldInfo(W, c);
     return `<div class="tiles"><div class="tile" style="grid-column:1/-1"><div class="k">Fields</div><div class="v">${esc(F.step[0].toUpperCase() + F.step.slice(1))}</div><div class="muted">${F.n} stretch${F.n === 1 ? '' : 'es'} of cleared ground · soil ${pct(c.soil)}${F.lv >= F.cap ? ' · too few hands to clear more' : ''}</div></div></div>`;
   }
@@ -1332,12 +1333,12 @@
       const S = sel, cl = (S.clans || []).filter(c => c.alive);
       const g = { flint: 0, amber: 0, axe: 0, ochre: 0, salt: 0, copper: 0, tin: 0, metal: 0, bronze: 0 }; for (const c of cl) for (const k in g) g[k] += c.goods[k];
       const grain = cl.reduce((s, c) => s + c.grain, 0), need = cl.reduce((s, c) => s + SIM.needsWeek(c), 0) / 7 || 1;
-      const farms = cl.filter(c => c.live === 'farm'), soil = farms.length ? farms.reduce((s, c) => s + c.soil, 0) / farms.length : null;
+      const farms = cl.filter(c => c.live === 'farm'), sowFish = cl.filter(c => c.live === 'fishing' && c.tribe.stage >= 2), soilOf = a => a.reduce((s, c) => s + (c.soil == null ? 1 : c.soil), 0) / a.length, soil = farms.length ? soilOf(farms) : null;
       const kindName = S.type === 'fishing' ? 'Fishing village' : S.type === 'mixed' ? 'Farming & fishing village' : 'Farming village';
       html = `<div class="crumbs">${link(S.tribe, 'the ' + S.tribe.name)}</div><div class="ph"><span class="dot" style="background:${S.type === 'fishing' ? '#3e5c70' : '#6e5136'}"></span><b>🏘 ${esc(S.name)}</b><span class="muted">${kindName} · founded year ${yr(S.founded)}${S.abandoned && !cl.length ? ' · abandoned' : ''}</span></div>
         <div class="tiles">
           <div class="tile"><div class="k">People</div><div class="v">${S.pop || 0}</div><div class="muted">peak ${S.peak} · ${cl.length} clan${cl.length === 1 ? '' : 's'}</div></div>
-          <div class="tile"><div class="k">${farms.length ? 'Grain stores' : 'Dried fish'}</div><div class="v">${farms.length ? Math.round(grain / need) + ' days' : Math.round(cl.reduce((s, c) => s + c.store, 0) / need) + ' days'}</div><div class="muted">${farms.length ? `field soil ${pct(soil)}` : 'smoked & dried'}</div></div>
+          <div class="tile"><div class="k">${farms.length ? 'Grain stores' : 'Dried fish'}</div><div class="v">${farms.length ? Math.round(grain / need) + ' days' : Math.round(cl.reduce((s, c) => s + c.store, 0) / need) + ' days'}</div><div class="muted">${farms.length ? `field soil ${pct(soil)}` : `smoked & dried${sowFish.length ? ` · small fields, soil ${pct(soilOf(sowFish))}` : ''}`}</div></div>
           <div class="tile"><div class="k">Crafts</div><div class="v">${S.metal === 2 ? 'Bronze' : S.metal === 1 ? 'Copper' : 'Stone'}</div><div class="muted">${S.metal === 2 ? 'bronze-casting' : S.metal === 1 ? 'copper-smelting' : 'no metalworking yet'}</div></div>
         </div>
         <div class="k sec">Clans living here</div>${cl.map(c => `<div class="row2">${link(c, c.name + ' clan')} <span class="muted">${c.people.length} people · ${c.live === 'fishing' ? 'fishers' : 'farmers'} · fed ${pct(c.cond)}</span></div>`).join('') || '<div class="muted">No one lives here now.</div>'}
