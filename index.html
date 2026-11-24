@@ -2508,7 +2508,7 @@ const SIM = (() => {
       }
       if (t.stage < 2) for (const c of t.clans) if (c.alive !== false && c.settled && c.live === 'farm') { // a farming village in a tribe that does not sow: the clan gives up the fields and lives as its people do
         c.settled = false; c.toSettle = false; c.live = null; c.founding = false; const vn = c.village || c.name;
-        note(W, c, `Left the fields of ${vn}: our people do not sow.`); const P = W.player; if (P && !P.over && P.head.clan && P.head.clan.tribe === t) houseNote(W, `The ${c.name} left the fields of ${vn}: our people do not sow.`);
+        note(W, c, `Left the fields of ${vn}: our people do not sow.`); const P = W.player; if (P && !P.over && P.head.clan && P.head.clan.tribe === t) houseNote(W, c === P.head.clan ? `Our clan left the fields of ${vn}: our people do not sow.` : `The ${c.name} left the fields of ${vn}: our people do not sow.`);
       }
       if (t.stage === 3) for (const c of t.clans) {
         if (c.live === 'fishing' || c.founding) continue; // a daughter clan raises its village in foundingMonth
@@ -4226,7 +4226,7 @@ const SIM = (() => {
         const { tribe } = ev.data;
         if (ev.stage === 2) {
           if (k === 0) { tribe.dom = Math.min(0.6, tribe.dom + 0.08); houseNote(W, `${h.name} urged the ${tribe.name} to tend the grain fields.`); }
-          else { tribe.resistUntil = W.week + 52 * 25; tribe.dom = Math.max(0.2, tribe.dom - 0.05); houseNote(W, `${h.name} held to the old wandering ways.`); }
+          else { tribe.resistUntil = W.week + 52 * 25; tribe.dom = Math.max(0.2, Math.min(tribe.dom, 0.3) - 0.05); houseNote(W, `${h.name} held to the old wandering ways.`); }
         }
         return;
       }
