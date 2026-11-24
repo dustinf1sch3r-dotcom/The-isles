@@ -3227,19 +3227,7 @@
       }
       case 'challenge': {
         const { tribe, rival } = ev.data; if (!tribe.alive || !h.alive || h.clan.tribe !== tribe || !rival || !rival.alive || !rival.clan || rival.clan.tribe !== tribe) return;
-        if (k === 0) {
-          const T = headshipTally(W, tribe, h, rival, true), fr = ruleFactor(tribe), held = T.win && fr < 1 && W.rand() >= fr, txt = tallyHTML(T, h, rival) + (held ? `<br><br>The clans would have chosen ${h.name}, but the ${tribe.name} hold their leader ${ruleOf(tribe) === 1 ? 'for life' : 'in one clan'}, and the old custom held.` : '');
-          if (T.win && !held) {
-            tribe.favored = h; tribe.headman = h; P.renown += 5;
-            if (rival.clan && rival.clan !== c) affect(W, rival.clan, c, -20, `${h.name} took the leadership from ${rival.name}`, 5);
-            houseNote(W, `${h.name} won the leadership of the ${tribe.name} from ${rival.name}: clans with ${T.wa} people stood with us, ${T.wb} against.`); note(W, tribe, `${h.name} of the House of ${P.house} took the leadership from ${rival.name}.`);
-            logEvent(W, `${h.name} of the House of ${P.house} becomes headman of the ${tribe.name}, pushing aside ${rival.name}.`, tribe, 'king');
-            W.lastResult = { title: 'The leadership is yours', text: `The clans of the ${tribe.name} choose ${h.name} over ${rival.name}.<br><br>${txt}` };
-          } else {
-            if (rival.clan && rival.clan !== c) affect(W, rival.clan, c, -15, `${h.name} tried and failed to unseat ${rival.name}`, 15);
-            P.renown -= 3; houseNote(W, `${h.name} challenged ${rival.name} for the leadership and failed: clans with ${T.wb} people stood with ${rival.name}, ${T.wa} with us.`);
-            W.lastResult = { title: 'The challenge fails', text: `The clans of the ${tribe.name} keep ${rival.name}.<br><br>${txt}<br><br><span class="muted">${LOSE_ADVICE}</span>` };
-          }
+        if (k === 0) { W.lastResult = seatChallenge(W, tribe, h, rival).res;
         } else { if (rival.clan && rival.clan !== c) affect(W, rival.clan, c, 10, `${h.name} supported ${rival.name} as headman`); P.renown += 1; houseNote(W, `${h.name} pledged support to ${rival.name} as headman.`); }
         return;
       }
@@ -3356,10 +3344,8 @@
         if (k === 1) { let spent = 0; for (const o of t.clans) if (o !== c) { for (const g of GIFTABLE) if (c.goods[g] > 0) { c.goods[g]--; spent++; break; } affect(W, o, c, 10, `Gifts from ${h.name}`); } c.store *= 0.5; c.grain *= 0.8; P.renown -= 1; houseNote(W, `${h.name} bought the clans' support with gifts.`);
           const T1 = headshipTally(W, t, h, rival.head, false), K1 = Math.round(keepChance(W, t, h, rival.head) * 100), mv = T1.rows.filter((r, i) => r.side !== T0.rows[i].side).map(r => `the ${r.clan.name} clan (${r.n})`);
           gt = `<b>The gifts:</b> before them, ${T0.wa} people stood with ${h.name} and ${T0.wb} with ${rival.head.name}. After them, ${T1.wa} and ${T1.wb}. ${mv.length ? 'Clans that changed sides: ' + mv.join(', ') + '.' : 'No clan changed sides.'} ${K0 === K1 ? `Your chance of keeping the seat stayed at about ${K1}%${T1.rows.every((r, i) => Math.abs(r.pa - T0.rows[i].pa) < 1e-9) ? ': the gifts moved no one' : ''}.` : `Warmer feeling moved your chance of keeping the seat from about ${K0}% to about ${K1}%.`} The clans then chose, and what they chose is below.`; }
-        if (k === 2) { t.favored = rival.head; t.headman = rival.head; affect(W, rival, c, 20, `${h.name} stepped aside for ${rival.head.name}`); P.renown -= 2; houseNote(W, `${h.name} stepped aside; ${rival.head.name} of the ${rival.name} now leads the ${t.name}.`); return; }
-        const T = headshipTally(W, t, h, rival.head, true), fr = ruleFactor(t), kept = T.win || (fr < 1 && W.rand() >= fr), txt = (gt ? gt + '<br><br>' : '') + tallyHTML(T, h, rival.head) + (kept && !T.win ? `<br><br>The clans would have turned to ${rival.head.name}, but the ${t.name} hold their leader ${ruleOf(t) === 1 ? 'for life' : 'in one clan'}, and the old custom held.` : '');
-        if (kept) { affect(W, rival, c, -15, `${rival.head.name} was humbled by ${h.name}`, 5); P.renown += 2; houseNote(W, `${h.name} faced down ${rival.head.name} of the ${rival.name}.`); W.lastResult = { title: 'You still lead', text: `The clans stand with ${h.name}. ${rival.head.name} is humbled, for now.<br><br>${txt}` }; }
-        else { t.favored = rival.head; t.headman = rival.head; P.renown -= 4; houseNote(W, `The clans turned to ${rival.head.name} of the ${rival.name}; ${h.name} no longer leads the ${t.name}.`); W.lastResult = { title: 'The clans choose another', text: `${rival.head.name} of the ${rival.name} now leads the ${t.name}.<br><br>${txt}<br><br><span class="muted">${LOSE_ADVICE}</span>` }; }
+        if (k === 2) { t.favored = rival.head; t.headman = rival.head; affect(W, rival, c, 20, `${h.name} stepped aside for ${rival.head.name}`); P.renown -= 2; houseNote(W, `${h.name} stepped aside; ${rival.head.name} of the ${rival.name} now leads the ${t.name}.`); plotCardDone(W, t, h, rival.head, false); return; }
+        { const r = faceRival(W, t, h, rival, gt); W.lastResult = r.res; plotCardDone(W, t, h, rival.head, r.kept); }
         return;
       }
       case 'tribemove': {
@@ -3466,7 +3452,7 @@
       .map(o => ({ o, wrongd: !!(c.wrong && c.wrong.c === o.id && W.week - c.wrong.w <= 52 * 6), loot: o.store + o.grain + (o.goods.amber + o.goods.bronze + o.goods.metal) * 2e6, w: o.people.filter(q => q.sex === 'M' && !q.slave && q.age >= 16 && q.age < 55).length }))
       .sort((a, b) => (b.wrongd - a.wrongd) || (b.loot - a.loot)).slice(0, 5);
   }
-  function clanChallengeOdds(W, c, h) { const ch = c.head, fams = familiesOf(c); let back = 0; for (const f of fams) if (h.fam && f !== h.fam) back += opinion(f, h.fam) - (ch.fam ? opinion(f, ch.fam) : 0); return clamp(0.4 + (prestige(h) - prestige(ch)) * 0.9 + back / Math.max(1, fams.length) / 100 + (ch.age > 60 ? 0.15 : 0), 0.1, 0.9) * ruleFactor(c); }
+  function clanChallengeOdds(W, c, h) { const ch = c.head, fams = familiesOf(c), won = plotWonFams(W, c, h); let back = 0; for (const f of fams) if (h.fam && f !== h.fam) back += opinion(f, h.fam) - (ch.fam ? opinion(f, ch.fam) : 0) + (won.has(f) ? PLOT_HOUSE : 0); return clamp(0.4 + (prestige(h) - prestige(ch)) * 0.9 + back / Math.max(1, fams.length) / 100 + (ch.age > 60 ? 0.15 : 0), 0.1, 0.9) * ruleFactor(c); }
   const relWordT = o => o > 40 ? 'close friends' : o > 15 ? 'friendly' : o < -40 ? 'enemies' : o < -15 ? 'hostile' : 'neither friend nor foe';
   function playerActions(W) {
     const yl = (k, n) => { const v = left(k, n); return v + (v === 1 ? ' yr' : ' yrs'); };
@@ -3609,6 +3595,7 @@
       A.push({ id: 'challengeClan', icon: '👊', label: `Challenge ${ch ? ch.name : 'for the clan'}`, hint: ch && h.fam ? `Try to become head of the ${c.name} clan. Your chance is about ${Math.round(clanChallengeOdds(W, c, h) * 100)}%: your standing is ${prestige(h).toFixed(2)} against ${ch.name}'s ${prestige(ch).toFixed(2)}, and the households of the clan weigh in. Failing costs renown and makes an enemy of ${ch.name}'s house${ruleOf(c) ? `. The clan keeps its head ${ruleOf(c) === 1 ? 'for life' : 'in one house'}, so your chance is ${ruleOf(c) === 1 ? 'three quarters' : 'half'} of the usual` : ''}` : `Try to become head of the ${c.name} clan — your standing and your kin decide it`, ok: ch && h.sex === leaderSex(t) && h.age >= (leaderSex(t) === 'F' ? 30 : 25) && ready('challengeClan', 6), why: !ch ? '' : h.sex !== leaderSex(t) ? (isMatri(t) ? 'Among the ' + t.name + ', only women lead the clans' : 'Among the ' + t.name + ', only men lead the clans') : h.age < (leaderSex(t) === 'F' ? 30 : 25) ? (leaderSex(t) === 'F' ? `A clan mother must be at least 30 (${h.name} is ${Math.floor(h.age)})` : `A clan head must be at least 25 (${h.name} is ${Math.floor(h.age)})`) : !ready('challengeClan', 6) ? `Wait (${yl('challengeClan', 6)})` : '' }); }
     else if (t.headman !== h) { const hm = t.headman;
       A.push({ id: 'challenge', icon: '👊', label: `Challenge ${hm ? hm.name : 'for the leadership'}`, hint: hm && hm !== h && hm.clan && hm.clan.tribe === t ? `Every clan backs one of you. ${tallyLine(headshipTally(W, t, h, hm, false), hm, challengeChance(W, t, h, hm))} Your chance is about ${Math.round(challengeChance(W, t, h, hm) * 100)}%${ruleOf(t) ? ` (the ${t.name} hold their leader ${ruleOf(t) === 1 ? 'for life' : 'in one clan'}: ${ruleOf(t) === 1 ? 'three quarters' : 'half'} of the usual)` : ''}.` : 'Try to become headman of the tribe', ok: hm && c.head === h && h.age >= 22 && ready('challenge', 8), why: !hm ? 'There is no headman' : c.head !== h ? 'Only a clan head can challenge' : h.age < 22 ? 'Too young' : !ready('challenge', 8) ? `Wait (${yl('challenge', 8)})` : '' }); }
+    for (const d of plotDeeds(W, h, c, t, ready, yl)) A.push(d);
     // how the clan and the tribe are led: the next step along the way, for the one who holds the seat
     for (const d of ruleDeeds(W, h, c, t, ready, yl)) A.push(d);
     // kingship
@@ -3885,12 +3872,8 @@
     if (id === 'walk') { const tg = A.targets[k]; if (!tg) return null; return walkStory(W, tg.ref); }
     if (id === 'hunt') { const tg = A.targets[k]; if (!tg || !tg.ref.alive) return { title: 'Too late', text: 'It is already gone.' }; if (c.shun && c.shun.id === tg.ref.id) c.shun = null; return beastHuntPlayer(W, tg.ref, tg.led, tg.p); }
     if (DEED_RULES[id]) return ruleDeed(W, id, A);
-    if (id === 'challengeClan') {
-      const ch = c.head, p = clanChallengeOdds(W, c, h);
-      if (W.rand() < p) { c.favored = h; c.head = h; P.renown += 3; if (ch.fam && h.fam) affect(W, ch.fam, h.fam, -15, `${h.name} pushed ${ch.name} aside`, 5); note(W, c, `${h.name} of the House of ${P.house} took the headship from ${ch.name}.`); houseNote(W, `${h.name} became head of the ${c.name} clan, pushing aside ${ch.name}.`); return { title: 'Head of the clan', text: `The families of the ${c.name} rally behind ${h.name}. ${ch.name} steps aside, bitterly.` }; }
-      if (ch.fam && h.fam) affect(W, ch.fam, h.fam, -25, `${h.name} tried to unseat ${ch.name}`, 10); P.renown -= 2; houseNote(W, `${h.name} challenged ${ch.name} for the clan and failed.`);
-      { const wy = standingWhy(ch, h); return { title: 'The challenge fails', text: `The families stand by ${ch.name}. ${h.name} is humbled, and ${ch.name}'s household will not forget.<br><br>The chance was about ${Math.round(p * 100)}%: ${ch.name}'s standing is ${prestige(ch).toFixed(2)} against ${h.name}'s ${prestige(h).toFixed(2)}${wy.length ? ' (' + wy.join('; ') + ')' : ''}. Gifts and feasts, children, and friends among the clan's households all raise the odds.` }; }
-    }
+    if (id === 'plot' || id === 'strike' || id === 'court' || id === 'confront') return plotAct(W, id, A, k);
+    if (id === 'challengeClan') return seatClan(W, c, h).res;
     if (id === 'challenge') { const ev = { type: 'challenge', data: { tribe: t, rival: t.headman }, options: [] }; W.pending.push(ev); W.lastResult = null; resolve(W, ev, 0); const R = W.lastResult; W.lastResult = null; return R || { title: 'Nothing came of it', text: '' }; }
     if (id === 'crown') { const f = A.data; newConfed(W, t, h, f); P.renown += 15; houseNote(W, `${h.name} united ${[t, ...f].map(o => 'the ' + o.name).join(', ')} and was raised as high chief.`); return { title: 'The tribes are united', text: `${h.name} is raised as high chief of ${t.confed.name}. At first the tribes follow you and not the seat, so the confederacy would end with you. After five years you can try to bind them to the seat.` }; }
     if (id === 'bindseat' || id === 'bloodseat' || id === 'kingdom' || id === 'leaverealm') return realmDeed(W, id, h, t, A);
@@ -4519,17 +4502,279 @@
         // envy of the rich and the many
         const wa = wealth(a), wb = wealth(b); if (wb > wa * 1.6 && wb - wa > 3) affect(W, a, b, -1.2 * (b === pc ? 1.3 : 1), `Envy of the ${b.name}'s wealth`);
       }
-      // a rival clan head may contest the house's hold on the tribe
-      if (pc && pc.tribe === t && t.headman === P.head && !(t.confed && t.confed.king === P.head) && t.clans.length >= 3 && W.week - (P.lastRivalAsk || -1e9) > 52 * 6) {
-        let sup = 0, n = 0; for (const o of t.clans) if (o !== pc) { sup += opinion(o, pc); n++; } sup = n ? sup / n : 0;
-        const rival = t.clans.filter(o => o !== pc && o.head && o.head.sex === leaderSex(t)).sort((x, y) => prestige(y.head) * (1 + y.people.length / 40) - prestige(x.head) * (1 + x.people.length / 40))[0];
-        if (rival && (sup < 10 || prestige(rival.head) > prestige(P.head) * 0.9) && W.rand() < 0.35) {
-          P.lastRivalAsk = W.week;
-          pushEvent(W, { type: 'rivalry', key: rival.id, title: `${rival.head.name} wants to lead the ${t.name}`, text: `${rival.head.name} of the ${rival.name} clan (${freeCount(rival)} people) says the House of ${P.house} has grown too proud.<br><br>${tallyLine(headshipTally(W, t, P.head, rival.head, false), rival.head, keepChance(W, t, P.head, rival.head))}${keepLine(W, t, P.head, rival.head)}`, data: { rival, t },
-            options: [{ label: 'Face the challenge', hint: 'Every clan backs one of you: friendship, standing and kin decide' }, { label: 'Buy their support', hint: 'Gifts to every clan first (valuables and half your food), then the clans choose' }, { label: 'Step aside', hint: `${rival.head.name} leads; peace among the clans` }] });
-        }
+      // a rival clan head contesting the house's hold on the tribe is a plot now (worldPlotsYear): the card comes when it strikes
+    }
+  }
+
+  // =====================================================================
+  //  PLOTS FOR THE SEAT: quiet talk with the clans, the strike, the world's own plots, the Seat list (issue #35)
+  //  A plot is {kind 'clan'|'tribe', cand, target, won: [clans or households], start, found, ...}.
+  //  The player's is P.plot; the world's are W.plots (one to a tribe). Won clans count for their man in headshipTally,
+  //  won households in clanChallengeOdds, so the chance shown is always the chance rolled.
+  // =====================================================================
+  const PLOT_TALK = 12, PLOT_HOUSE = 40, PLOT_YEARS = 5, PLOT_GRACE = 26;
+  const plotStat = (W, k) => { const s = W.plotStat || (W.plotStat = {}); s[k] = (s[k] || 0) + 1; };
+  const plotMonths = (W, p) => Math.floor((W.week - p.start) / 4);
+  const hisHer = heHer;
+  // the clans that talk has won for x (the player's plot and the world's), counted in the tribe's tally
+  function plotWon(W, x) {
+    const s = new Set(), P = W.player; if (P && P.plot && P.plot.kind === 'tribe' && P.plot.cand === x) for (const o of P.plot.won) s.add(o);
+    if (W.plots) for (const p of W.plots) if (p.cand === x) for (const o of p.won) s.add(o);
+    return s;
+  }
+  // the households of the clan that the player's plot has won for h
+  function plotWonFams(W, c, h) { const P = W.player; return P && P.plot && P.plot.kind === 'clan' && P.plot.cand === h && P.plot.clan === c ? new Set(P.plot.won) : new Set(); }
+  function seatTribeRoll(W, tribe, a, b) {
+    const T = headshipTally(W, tribe, a, b, true), fr = ruleFactor(tribe), held = T.win && fr < 1 && W.rand() >= fr;
+    return { T, held, win: T.win && !held, txt: tallyHTML(T, a, b) + (held ? `<br><br>The clans would have chosen ${a.name}, but the ${tribe.name} hold their leader ${ruleOf(tribe) === 1 ? 'for life' : 'in one clan'}, and the old custom held.` : '') };
+  }
+  // a challenge for the tribe's seat, rolled and carried out (the deed, a plot's strike and the card all come here)
+  function seatChallenge(W, tribe, h, rival) {
+    const P = W.player, c = h.clan, R = seatTribeRoll(W, tribe, h, rival), T = R.T, txt = R.txt; let res;
+    if (R.win) {
+      tribe.favored = h; tribe.headman = h; P.renown += 5;
+      if (rival.clan && rival.clan !== c) affect(W, rival.clan, c, -20, `${h.name} took the leadership from ${rival.name}`, 5);
+      houseNote(W, `${h.name} won the leadership of the ${tribe.name} from ${rival.name}: clans with ${T.wa} people stood with us, ${T.wb} against.`); note(W, tribe, `${h.name} of the House of ${P.house} took the leadership from ${rival.name}.`);
+      logEvent(W, `${h.name} of the House of ${P.house} becomes headman of the ${tribe.name}, pushing aside ${rival.name}.`, tribe, 'king');
+      res = { title: 'The leadership is yours', text: `The clans of the ${tribe.name} choose ${h.name} over ${rival.name}.<br><br>${txt}` };
+    } else {
+      if (rival.clan && rival.clan !== c) affect(W, rival.clan, c, -15, `${h.name} tried and failed to unseat ${rival.name}`, 15);
+      P.renown -= 3; houseNote(W, `${h.name} challenged ${rival.name} for the leadership and failed: clans with ${T.wb} people stood with ${rival.name}, ${T.wa} with us.`);
+      res = { title: 'The challenge fails', text: `The clans of the ${tribe.name} keep ${rival.name}.<br><br>${txt}<br><br><span class="muted">${LOSE_ADVICE}</span>` };
+    }
+    return { win: R.win, res };
+  }
+  // a challenge for the clan's seat, rolled and carried out, with cand at the head if it succeeds (the house head never moves)
+  function seatClan(W, c, cand) {
+    const P = W.player, ch = c.head, p = clanChallengeOdds(W, c, cand), self = cand === P.head;
+    if (W.rand() < p) {
+      c.favored = cand; c.head = cand; P.renown += 3; if (ch.fam && cand.fam) affect(W, ch.fam, cand.fam, -15, `${cand.name} pushed ${ch.name} aside`, 5);
+      note(W, c, `${cand.name} of the House of ${P.house} took the headship from ${ch.name}.`); houseNote(W, `${cand.name} became head of the ${c.name} clan, pushing aside ${ch.name}.`);
+      return { win: true, p, res: { title: 'Head of the clan', text: `The families of the ${c.name} rally behind ${cand.name}. ${ch.name} steps aside, bitterly.` } };
+    }
+    if (ch.fam && cand.fam) affect(W, ch.fam, cand.fam, -25, `${cand.name} tried to unseat ${ch.name}`, 10); P.renown -= 2;
+    houseNote(W, self ? `${cand.name} challenged ${ch.name} for the clan and failed.` : `${cand.name} was put forward for the clan against ${ch.name}, and failed.`);
+    const wy = standingWhy(ch, cand);
+    return { win: false, p, res: { title: 'The challenge fails', text: `The families stand by ${ch.name}. ${cand.name} is humbled, and ${ch.name}'s household will not forget.<br><br>The chance was about ${Math.round(p * 100)}%: ${ch.name}'s standing is ${prestige(ch).toFixed(2)} against ${cand.name}'s ${prestige(cand).toFixed(2)}${wy.length ? ' (' + wy.join('; ') + ')' : ''}. Gifts and feasts, children, and friends among the clan's households all raise the odds.` } };
+  }
+  // the rival's challenge faced: the clans choose between the house's head and the rival (the card's 'face' and the deed 'confront')
+  function faceRival(W, t, h, rival, gt) {
+    const P = W.player, c = h.clan, T = headshipTally(W, t, h, rival.head, true), fr = ruleFactor(t), kept = T.win || (fr < 1 && W.rand() >= fr), txt = (gt ? gt + '<br><br>' : '') + tallyHTML(T, h, rival.head) + (kept && !T.win ? `<br><br>The clans would have turned to ${rival.head.name}, but the ${t.name} hold their leader ${ruleOf(t) === 1 ? 'for life' : 'in one clan'}, and the old custom held.` : '');
+    if (kept) { affect(W, rival, c, -15, `${rival.head.name} was humbled by ${h.name}`, 5); P.renown += 2; houseNote(W, `${h.name} faced down ${rival.head.name} of the ${rival.name}.`); return { kept, res: { title: 'You still lead', text: `The clans stand with ${h.name}. ${rival.head.name} is humbled, for now.<br><br>${txt}` } }; }
+    t.favored = rival.head; t.headman = rival.head; P.renown -= 4; houseNote(W, `The clans turned to ${rival.head.name} of the ${rival.name}; ${h.name} no longer leads the ${t.name}.`);
+    return { kept, res: { title: 'The clans choose another', text: `${rival.head.name} of the ${rival.name} now leads the ${t.name}.<br><br>${txt}<br><br><span class="muted">${LOSE_ADVICE}</span>` } };
+  }
+
+  // ---------- the player's plot ----------
+  // whom the house could plot for: {kind, cand, target}
+  function plotCandidates(W) {
+    const P = W.player, h = P.head, c = h.clan, t = c.tribe, out = [], ls = leaderSex(t), la = ls === 'F' ? 30 : 25, ch = c.head;
+    const grown = q => q.alive && !q.slave && q.clan === c && q.sex === ls && q.age >= la;
+    if (ch && ch !== h) {
+      if (grown(h)) out.push({ kind: 'clan', cand: h, target: ch });
+      for (const q of c.people) if (q.dyn && q !== h && q !== ch && grown(q)) out.push({ kind: 'clan', cand: q, target: ch });
+    } else if (ch === h && t.headman && t.headman !== h && t.headman.alive && t.headman.clan && t.headman.clan.tribe === t && h.age >= 22 && !(t.confed && t.confed.capital === t && t.confed.king === t.headman)) out.push({ kind: 'tribe', cand: h, target: t.headman });
+    return out;
+  }
+  const plotChance = (W, p) => p.kind === 'clan' ? clanChallengeOdds(W, p.clan, p.cand) : challengeChance(W, p.tribe, p.cand, p.target);
+  // '' while the plot can go on, else the plain reason it is over
+  function plotGone(W, p) {
+    const P = W.player, h = P.head, c = p.clan;
+    if (p.head !== h) return `The talk died with ${p.head.name}.`;
+    if (!p.cand.alive) return `${p.cand.name} is dead, and the plot with ${himHer(p.cand)}.`;
+    if (p.cand.clan !== c) return `${p.cand.name} has left the ${c.name} clan, and the plot ends.`;
+    if (c.tribe !== p.tribe) return `The ${c.name} clan has left the ${p.tribe.name}, and the plot ends.`;
+    if (p.kind === 'clan') { if (c.head !== p.target) return c.head === p.cand ? `${p.cand.name} now leads the ${c.name} clan.` : `${p.target.name} no longer leads the ${c.name} clan, and the plot ends.`; }
+    else { if (c.head !== h) return `${h.name} no longer leads the ${c.name} clan, and the plot ends.`; if (p.tribe.headman !== p.target) return p.tribe.headman === p.cand ? `${p.cand.name} now leads the ${p.tribe.name}.` : `${p.target.name} no longer leads the ${p.tribe.name}, and the plot ends.`; }
+    if (W.week - p.start >= 52 * PLOT_YEARS) return 'The talk died down.';
+    if (p.found != null && W.week - p.found >= PLOT_GRACE) return 'The plot is known to all, and no one will listen now.';
+    return '';
+  }
+  function endPlot(W, text) { const P = W.player; P.plot = null; W._seat = null; if (text) houseNote(W, text); }
+  function startPlot(W, tg) {
+    const P = W.player, h = P.head, c = h.clan, t = c.tribe;
+    P.plot = { kind: tg.kind, cand: tg.cand, target: tg.target, clan: c, tribe: t, head: h, won: [], start: W.week, found: null }; W._seat = null;
+    const tx = tg.kind === 'clan' ? `the headship of the ${c.name} clan, for ${tg.cand.name}` : `the leadership of the ${t.name}`;
+    houseNote(W, `${h.name} began quiet talk against ${tg.target.name}, for ${tx}.`);
+    return { title: 'The talk begins', text: `You say nothing to ${tg.target.name}. At the fires you speak ${tg.kind === 'clan' ? 'with the households of the clan' : 'with the other clans'}, one at a time, and what you say is that ${tg.target.name} has led long enough. Each month you may win one more over. It costs you nothing, but if ${tg.target.name} hears of it, ${hisHer(tg.target)} house will not forget. When the chance looks good, strike.` };
+  }
+  // one more clan or household won over by talk
+  function plotWin(W, p, o, mine) {
+    const x = p.cand, tg = p.target, cx = p.kind === 'clan' ? x.fam : x.clan, ct = p.kind === 'clan' ? tg.fam : tg.clan;
+    p.won.push(o); affect(W, o, cx, 8, `Won over by talk against ${tg.name}`); if (ct) affect(W, o, ct, -4, `Won over by talk against ${tg.name}`);
+    const P = W.player;
+    if (mine) houseNote(W, p.kind === 'clan' ? `The household of ${o.name} has been won over.` : `The ${o.name} clan has been won over.`);
+    else if (P && !P.over && P.head.alive && P.head.clan === o && P.head !== tg) houseNote(W, `${x.name} has won over our clan's elders.`);
+  }
+  function playerPlotMonth(W) {
+    const P = W.player; if (!P || P.over || !P.plot) return; const p = P.plot, x = p.cand;
+    const why = plotGone(W, p); if (why) return endPlot(W, why);
+    const clan = p.kind === 'clan', months = plotMonths(W, p);
+    // win over one more: the most open of those not yet won
+    let best = null, bo = -1e9;
+    const pool = clan ? familiesOf(p.clan).filter(f => f !== x.fam && f !== p.target.fam && f.head && !p.won.includes(f)) : p.tribe.clans.filter(o => o !== p.clan && o !== p.target.clan && o.alive && !p.won.includes(o));
+    for (const o of pool) { const op = x.fam || !clan ? opinion(o, clan ? x.fam : p.clan) : 0; if (op > bo) { bo = op; best = o; } }
+    if (best) {
+      const fr = P.cast && P.cast.friend && P.cast.friend.alive && (clan ? P.cast.friend.fam === best : P.cast.friend.clan === best);
+      const kin = clan ? Math.min(6, best.alive !== false ? p.clan.people.filter(q => q.fam === best && q !== x && closeKin(x, q)).length : 0) : kinIn(x, best);
+      const pr = clamp(0.25 + (fr ? 0.15 : 0) + 0.05 * kin + bo / 200, 0.1, 0.6);
+      if (W.rand() < pr) { plotWin(W, p, best, true); W._seat = null; }
+    }
+    // the talk may be heard
+    if (p.found == null && W.rand() < 0.01 + 0.006 * p.won.length + 0.002 * months) {
+      p.found = W.week; W._seat = null; const tg = p.target, h = P.head;
+      if (tg.fam && h.fam) affect(W, tg.fam, h.fam, -30, `${h.name} plotted against ${tg.name}`, 15);
+      if (!clan && tg.clan && tg.clan !== h.clan) affect(W, tg.clan, h.clan, -10, `${h.name} plotted against ${tg.name}`);
+      houseNote(W, `The talk against ${tg.name} is known.`);
+      notice(W, 'The plot is known', `${tg.name} of the ${tg.clan.name} clan has heard what is said at the fires, and who says it. ${hisHer(tg)[0].toUpperCase() + hisHer(tg).slice(1)} house will not forget. The talk still serves for about six months, no longer: strike while you can.`);
+    }
+  }
+  // the deeds under Act: plot, strike, court, confront
+  function courtCost(c) { for (let i = GIFTABLE.length - 1; i >= 0; i--) if (c.goods[GIFTABLE[i]] > 0) return { good: GIFTABLE[i] }; return needsWeek(c) * 2 <= c.store ? { food: true } : null; }
+  function plotDeeds(W, h, c, t, ready, yl) {
+    const P = W.player, out = [], pl = P.plot;
+    if (!pl) {
+      const cs = plotCandidates(W);
+      if (cs.length) {
+        const clan = cs[0].kind === 'clan', gate = clan ? ['challengeClan', 6] : ['challenge', 8], cool = !ready(gate[0], gate[1]) ? `Wait (${yl(gate[0], gate[1])})` : !ready('plot', 1) ? `Wait (${yl('plot', 1)})` : '';
+        out.push({ id: 'plot', icon: '🗣', label: 'Plot for a seat', hint: clan ? 'Win the households of the clan over by quiet talk, one by one, then put your man forward. It costs nothing, but it may be heard' : 'Win the clans over by quiet talk, one by one, then strike. It costs nothing, but it may be heard', ok: !cool, why: cool,
+          targets: cs.map(g => { const pc = plotChance(W, { kind: g.kind, clan: c, tribe: t, cand: g.cand, target: g.target }), nm = g.kind === 'clan' ? (g.cand === h ? '' : ` (${relWord(g.cand, h)})`) : ''; return { ref: g.cand, kind: g.kind, cand: g.cand, target: g.target, label: g.kind === 'clan' ? `The clan's seat, for ${g.cand.name}` : `The tribe's seat, for ${g.cand.name}`, hint: `Against ${g.target.name}. Your chance today is about ${Math.round(pc * 100)}%${nm}` }; }) });
+      }
+    } else {
+      const why = plotGone(W, pl), pc = why ? 0 : plotChance(W, pl), clan = pl.kind === 'clan', n = pl.won.length;
+      out.push({ id: 'strike', icon: '⚡', label: `Strike: put ${pl.cand.name} at the head of the ${clan ? c.name + ' clan' : t.name}`,
+        hint: why ? why : (clan ? `${n} household${n === 1 ? '' : 's'} won over against ${pl.target.name}.` : tallyLine(headshipTally(W, t, h, pl.target, false), pl.target, pc)) + ` Your chance is about ${Math.round(pc * 100)}%${ruleOf(clan ? c : t) ? ` (${clan ? 'the clan' : 'the ' + t.name} keeps its head ${ruleOf(clan ? c : t) === 1 ? 'for life' : 'in one house'}: ${ruleOf(clan ? c : t) === 1 ? 'three quarters' : 'half'} of the usual)` : ''}`, ok: !why, why });
+    }
+    const wp = (W.plots || []).find(q => q.target === h && q.tribe === t && q.found != null);
+    if (wp && h.alive && wp.cand.alive && wp.cand.clan && t.headman === h) out.push({ id: 'confront', icon: '🤺', label: `Make ${wp.cand.name} show ${hisHer(wp.cand)} hand`, hint: `The clans choose now, as they would if ${wp.cand.name} struck. Your chance of keeping the seat is about ${Math.round(keepChance(W, t, h, wp.cand) * 100)}%`, ok: true, why: '' });
+    const others = t.clans.filter(o => o !== c && o.alive), cost = courtCost(c), cr = P.courted || {}, fresh = o => cr[o.id] == null || W.week - cr[o.id] >= 52;
+    if (others.length) {
+      const si = seatInfo(W), lean = o => { const r = si && si.rows.find(x => x.clan === o); return r ? r.leanWord : 'unknown'; }, what = cost ? (cost.good ? `a gift of ${GOOD_NAMES[cost.good].toLowerCase()}` : 'two weeks of the clan\'s food') : '';
+      out.push({ id: 'court', icon: '🎁', label: 'Court a clan', hint: `Gifts and fair words, one clan at a time, once a year for each. They think better of your clan (+10). It costs ${cost ? what : 'a gift or two weeks of food'}`, ok: !!cost && others.some(fresh), why: !cost ? 'You have nothing to give, and too little food to spare' : 'You have courted every clan this year',
+        targets: others.map(o => ({ ref: o, label: `Court the ${o.name} clan`, hint: fresh(o) ? `${lean(o)[0].toUpperCase() + lean(o).slice(1)} today. ${cost ? 'Costs ' + what : 'You cannot pay'}` : 'You courted them this year' })) });
+    }
+    return out;
+  }
+  function plotAct(W, id, A, k) {
+    const P = W.player, h = P.head, c = h.clan, t = c.tribe;
+    if (id === 'plot') { const tg = A.targets[k]; if (!tg || P.plot) return null; return startPlot(W, tg); }
+    if (id === 'strike') {
+      const pl = P.plot; if (!pl) return null; const why = plotGone(W, pl); if (why) { endPlot(W, why); return { title: 'Too late', text: why }; }
+      const P0 = P.cool; if (pl.kind === 'clan') P0.challengeClan = W.week; else P0.challenge = W.week;
+      const target = pl.target, r = pl.kind === 'clan' ? seatClan(W, c, pl.cand) : seatChallenge(W, t, h, target);
+      if (!r.win && target.fam && h.fam) affect(W, target.fam, h.fam, -30, `${h.name} plotted against ${target.name}, and failed`, 15);
+      P.plot = null; W._seat = null; return r.res;
+    }
+    if (id === 'court') {
+      const o = A.targets[k] && A.targets[k].ref; if (!o || !o.alive || o.tribe !== t) return null; const cr = P.courted || (P.courted = {});
+      if (cr[o.id] != null && W.week - cr[o.id] < 52) return { title: 'Not possible', text: `You courted the ${o.name} clan not long ago. They will take no more gifts this year.` };
+      const cost = courtCost(c); if (!cost) return { title: 'Not possible', text: 'You have nothing to give, and too little food to spare.' };
+      let gift; if (cost.good) { c.goods[cost.good]--; gift = GOOD_NAMES[cost.good].toLowerCase(); } else { eatStore(c, needsWeek(c) * 2); gift = 'two weeks of food'; }
+      affect(W, o, c, 10, `Gifts from ${h.name}`); cr[o.id] = W.week; W._seat = null; houseNote(W, `${h.name} courted the ${o.name} clan with ${gift}.`);
+      return { title: `The ${o.name} are courted`, text: `${gift[0].toUpperCase() + gift.slice(1)} goes to ${o.head ? o.head.name : 'the elders'} of the ${o.name} clan, with fair words. They think better of your clan (+10).` };
+    }
+    if (id === 'confront') {
+      const wp = (W.plots || []).find(q => q.target === h && q.tribe === t && q.found != null); if (!wp || t.headman !== h) return null; const rv = wp.cand.clan;
+      const r = faceRival(W, t, h, rv, ''); plotStat(W, 'struck'); plotStat(W, r.kept ? 'lost' : 'won'); dropWorldPlot(W, wp);
+      if (r.kept && wp.cand.fam && h.fam) { affect(W, wp.cand.fam, h.fam, -30, `${wp.cand.name} plotted against ${h.name}, and failed`, 15); }
+      W._seat = null; return r.res;
+    }
+    return null;
+  }
+
+  // ---------- the world's plots ----------
+  function dropWorldPlot(W, p) { const i = W.plots ? W.plots.indexOf(p) : -1; if (i >= 0) W.plots.splice(i, 1); W._seat = null; }
+  function worldPlotsYear(W) {
+    const P = W.player, mine = P && !P.over && P.head.alive ? P.head : null;
+    for (const t of W.tribes) {
+      if (!t.alive || t.clans.length < 3) continue;
+      const hm = t.headman; if (!hm || !hm.alive || !hm.clan || hm.clan.tribe !== t || hm.clan.head !== hm) continue;
+      if (t.confed && t.confed.capital === t && t.confed.king === hm) continue; // a high chief's seat is not the tribe's to give
+      if ((W.plots && W.plots.some(p => p.tribe === t)) || (P && P.plot && P.plot.tribe === t)) continue;
+      const ls = leaderSex(t), ph = prestige(hm);
+      for (const o of t.clans) {
+        const x = o.head; if (o === hm.clan || !x || !x.alive || x.sex !== ls || x.age < 25 || x === mine) continue;
+        const px = prestige(x); if (!(px >= 0.85 * ph && (opinion(o, hm.clan) < 10 || px >= ph))) continue;
+        if (W.rand() < 0.08) { (W.plots || (W.plots = [])).push({ kind: 'tribe', tribe: t, cand: x, target: hm, won: [], start: W.week, found: null, struck: null }); plotStat(W, 'start'); if (hm === mine) plotStat(W, 'vsplayer'); note(W, t, `${x.name} of the ${o.name} clan began to talk against ${hm.name}.`); break; }
       }
     }
+  }
+  function worldPlotsMonth(W) {
+    if (!W.plots || !W.plots.length) return;
+    const P = W.player, mine = P && !P.over && P.head.alive ? P.head : null;
+    for (const p of W.plots.slice()) {
+      const t = p.tribe, x = p.cand, hm = p.target;
+      if (!t.alive || !x.alive || !hm.alive || !x.clan || x.clan.tribe !== t || x.clan.head !== x || t.headman !== hm || !hm.clan || hm.clan.tribe !== t) { plotStat(W, 'void'); dropWorldPlot(W, p); continue; }
+      if (p.struck != null) { if (W.week - p.struck > 52 && !W.pending.some(e => e.type === 'rivalry')) { plotStat(W, 'void'); dropWorldPlot(W, p); } continue; }
+      const months = plotMonths(W, p), vs = mine && hm === mine;
+      // win over the most open clan not yet won
+      let best = null, bo = -1e9; for (const o of t.clans) if (o !== x.clan && o !== hm.clan && o.alive && !p.won.includes(o)) { const op = opinion(o, x.clan); if (op > bo) { bo = op; best = o; } }
+      if (best && W.rand() < clamp(0.2 + bo / 200 + 0.1 * kinIn(x, best) - opinion(best, hm.clan) / 300, 0.05, 0.5)) { plotWin(W, p, best, false); W._seat = null; }
+      // heard of
+      if (p.found == null && W.rand() < 0.02 + 0.008 * p.won.length) {
+        p.found = W.week; plotStat(W, 'found'); W._seat = null;
+        if (vs) {
+          if (hm.fam && x.fam) { affect(W, hm.fam, x.fam, -30, `${x.name} plotted against ${hm.name}`, 15); affect(W, x.fam, hm.fam, -30, `${hm.name} stood in ${x.name}'s way`, 15); }
+          houseNote(W, `${x.name} of the ${x.clan.name} clan is talking against us; ${p.won.length} clan${p.won.length === 1 ? '' : 's'} stand${p.won.length === 1 ? 's' : ''} with ${himHer(x)}.`);
+          notice(W, 'Talk against you', `${x.name} of the ${x.clan.name} clan has been talking to the other clans against ${hm.name}. ${p.won.length} clan${p.won.length === 1 ? '' : 's'} stand${p.won.length === 1 ? 's' : ''} with ${himHer(x)} already. Court the clans, or make ${himHer(x)} show ${hisHer(x)} hand.`);
+        } else if (W.rand() < 0.3) { worldStrike(W, p); continue; }
+      }
+      // the strike
+      const ch = challengeChance(W, t, x, hm);
+      if ((months >= 12 && ch >= 0.55) || (months >= 36 && ch >= 0.4)) {
+        if (vs) {
+          p.struck = W.week; plotStat(W, 'struck'); const n = p.won.length;
+          pushEvent(W, { type: 'rivalry', key: x.clan.id, title: `${x.name} wants to lead the ${t.name}`, text: `${x.name} of the ${x.clan.name} clan (${freeCount(x.clan)} people) says the House of ${P.house} has grown too proud.${n ? ` ${n} clan${n === 1 ? ' was' : 's were'} won over by ${hisHer(x)} talk.` : ''}<br><br>${tallyLine(headshipTally(W, t, mine, x, false), x, keepChance(W, t, mine, x))}${keepLine(W, t, mine, x)}`, data: { rival: x.clan, t },
+            options: [{ label: 'Face the challenge', hint: 'Every clan backs one of you: friendship, standing and kin decide' }, { label: 'Buy their support', hint: 'Gifts to every clan first (valuables and half your food), then the clans choose' }, { label: 'Step aside', hint: `${x.name} leads; peace among the clans` }] });
+          continue;
+        }
+        worldStrike(W, p); continue;
+      }
+      if (months >= 60) { plotStat(W, 'gaveup'); note(W, t, `${x.name} gave up the talk against ${hm.name}.`); if (vs && p.found != null) houseNote(W, `The talk against us has died away.`); dropWorldPlot(W, p); }
+    }
+  }
+  function worldStrike(W, p) {
+    const t = p.tribe, x = p.cand, hm = p.target, R = seatTribeRoll(W, t, x, hm), P = W.player; plotStat(W, 'struck');
+    if (R.win) {
+      t.favored = x; t.headman = x; plotStat(W, 'won'); const tx = `${x.name} of the ${x.clan.name} clan talked the clans round and took the lead of the ${t.name} from ${hm.name}.`;
+      logEvent(W, tx, t, 'king'); note(W, t, tx);
+      if (P && !P.over && P.head.alive && P.head.clan && P.head.clan.tribe === t && P.head !== x && P.head !== hm) { houseNote(W, tx); notice(W, `${x.name} takes the lead`, `${tx}`); }
+    } else {
+      plotStat(W, 'lost'); affect(W, hm.clan, x.clan, -20, `${x.name} plotted against ${hm.name}`, 10); x.giftPrestige = (x.giftPrestige || 0) - 0.06;
+      note(W, t, `${x.name} of the ${x.clan.name} clan talked against ${hm.name} and was beaten.`);
+    }
+    dropWorldPlot(W, p);
+  }
+  // an answered card ends the plot that raised it
+  function plotCardDone(W, t, h, rivalHead, kept) {
+    const p = (W.plots || []).find(q => q.tribe === t && q.target === h && q.cand === rivalHead); if (!p) return;
+    plotStat(W, kept ? 'lost' : 'won'); dropWorldPlot(W, p);
+    if (kept && rivalHead.fam && h.fam) affect(W, rivalHead.fam, h.fam, -30, `${rivalHead.name} plotted against ${h.name}, and failed`, 15);
+  }
+  function plotsMonth(W) { playerPlotMonth(W); worldPlotsMonth(W); }
+
+  // ---------- the Seat list ----------
+  // who would stand with whom for the seat that matters to the house today; kept for the week
+  function seatInfo(W) {
+    const P = W.player; if (!P || P.over || !P.head.alive || !P.head.clan) return null;
+    if (W._seat && W._seat.week === W.week && W._seat.head === P.head) return W._seat.info;
+    const h = P.head, c = h.clan, t = c.tribe, hm = t.headman, mineHm = hm === h, info = { title: 'The seat', line: '', pct: null, rows: [], rumour: null, plot: null };
+    const wp = (W.plots || []).find(q => q.tribe === t && q.target === h && q.found != null);
+    let a = null, b = null;
+    if (mineHm) { b = wp ? wp.cand : (t.clans.filter(o => o !== c && o.head && o.head.alive && o.head.clan === o).sort((x, y) => leadWeight(y.head) - leadWeight(x.head))[0] || {}).head || null; a = h; }
+    else if (hm && hm.alive) { a = c.head === h ? h : c.head; b = a === hm ? ((t.clans.filter(o => o !== c && o.head && o.head.alive).sort((x, y) => leadWeight(y.head) - leadWeight(x.head))[0] || {}).head || null) : hm; }
+    if (mineHm) info.line = b ? '' : `You lead the ${t.name}.`; else info.line = hm ? `${hm.name} leads the ${t.name}.` : `The ${t.name} have no headman.`;
+    if (a && b && a.clan && b.clan && a !== b) {
+      const T = headshipTally(W, t, a, b, false), pct = mineHm ? keepChance(W, t, a, b) : challengeChance(W, t, a, b), won = P.plot && P.plot.kind === 'tribe' ? P.plot.won : [], wonX = wp ? wp.won : [];
+      if (mineHm) { info.pct = Math.round(pct * 100); info.line = `You lead the ${t.name}; your seat is safe at about ${info.pct}%.`; }
+      else if (c.head === h) { info.pct = Math.round(pct * 100); info.line = `${hm.name} leads the ${t.name}; your chance against ${himHer(hm)} today is about ${info.pct}%.`; }
+      const bn = b.name;
+      for (const r of T.rows) { const lean = r.clan === a.clan ? 'you' : r.clan === b.clan ? 'them' : r.pa >= 0.65 ? 'leans you' : r.pa <= 0.35 ? 'leans them' : 'undecided';
+        info.rows.push({ clan: r.clan, people: r.n, lean, leanWord: { you: 'with you', 'leans you': 'leans to you', undecided: 'undecided', 'leans them': `leans to ${bn}`, them: `with ${bn}` }[lean], reason: r.why, wonBy: won.includes(r.clan) ? 'you' : wonX.includes(r.clan) ? wp.cand.name : null }); }
+    }
+    if (wp) info.rumour = `${wp.cand.name} is talking against you; ${wp.won.length} clan${wp.won.length === 1 ? '' : 's'} stand${wp.won.length === 1 ? 's' : ''} with ${himHer(wp.cand)}.`;
+    if (P.plot && !plotGone(W, P.plot)) { const pl = P.plot, n = pl.won.length, clan = pl.kind === 'clan'; info.plot = `Your plot for the ${clan ? "clan's" : "tribe's"} seat: ${n} ${clan ? 'household' : 'clan'}${n === 1 ? '' : 's'} won, ${pl.found != null ? 'known' : 'still secret'}, strike now: about ${Math.round(plotChance(W, pl) * 100)}%.`; }
+    W._seat = { week: W.week, head: P.head, info }; return info;
   }
 
   // =====================================================================
@@ -4599,11 +4844,13 @@
   //  DEALINGS — standing orders. The house says once how it answers a killing, a sworn vengeance, raiders,
   //  and who may share its sources; the game then acts on that by itself and reports what happened.
   // =====================================================================
-  function pol(W) { const P = W.player; if (!P.pol) P.pol = { blood: 'comp', threat: 'guard', raid: 'ask', quarrel: 'ask', deal: {} }; if (!P.pol.quarrel) P.pol.quarrel = 'ask'; for (const k of ROUTINE_KEYS) if (!P.pol[k]) P.pol[k] = 'ask'; return P.pol; }
-  const AUTOKEY = { blood: 'blood', vengeance: 'threat', raided: 'raid', quarrel: 'quarrel', gathering: 'gather', omen: 'omen', toobig: 'split', friendneed: 'friend', sickness: 'sick', exiles: 'exiles', oath: 'oath', foundling: 'found' }, AUTOIX = { blood: { revenge: 0, comp: 1, forgive: 2 }, threat: { comp: 0, guard: 1, ignore: 2 }, raid: { fight: 0, pay: 1, flee: 2 }, quarrel: { peace: 0, stand: 1, fight: 2 },
-    gather: { gifts: 0, trade: 1, keep: 2 }, omen: { offer: 0, quiet: 1, sign: 2 }, split: { letgo: 0, hold: 1 }, friend: { give: 0, send: 1 }, sick: { scatter: 0, tend: 1 }, exiles: { place: 0, feed: 1, turn: 2 }, oath: { swear: 0, friendship: 1, refuse: 2 }, found: { take: 0, other: 1, refuse: 2 } };
+  function pol(W) { const P = W.player; if (!P.pol) P.pol = { blood: 'comp', threat: 'guard', raid: 'ask', quarrel: 'ask', deal: {} }; if (!P.pol.quarrel) P.pol.quarrel = 'ask'; for (const k of ROUTINE_KEYS) if (!P.pol[k]) P.pol[k] = 'ask'; for (const k of ORDER_KEYS) if (!P.pol[k]) P.pol[k] = 'ask'; return P.pol; }
+  const AUTOKEY = { blood: 'blood', vengeance: 'threat', raided: 'raid', quarrel: 'quarrel', gathering: 'gather', omen: 'omen', toobig: 'split', friendneed: 'friend', sickness: 'sick', exiles: 'exiles', oath: 'oath', foundling: 'found', rivalry: 'seat', slight: 'slight', oathback: 'oathback', exilesback: 'exback', foundback: 'foundback' }, AUTOIX = { blood: { revenge: 0, comp: 1, forgive: 2 }, threat: { comp: 0, guard: 1, ignore: 2 }, raid: { fight: 0, pay: 1, flee: 2 }, quarrel: { peace: 0, stand: 1, fight: 2 },
+    gather: { gifts: 0, trade: 1, keep: 2 }, omen: { offer: 0, quiet: 1, sign: 2 }, split: { letgo: 0, hold: 1 }, friend: { give: 0, send: 1 }, sick: { scatter: 0, tend: 1 }, exiles: { place: 0, feed: 1, turn: 2 }, oath: { swear: 0, friendship: 1, refuse: 2 }, found: { take: 0, other: 1, refuse: 2 },
+    seat: { face: 0, buy: 1, step: 2 }, slight: { gift: 0, kind: 1, pass: 2 }, oathback: { keep: 0, food: 1, break: 2 }, exback: { refuse: 0, pay: 1, hand: 2 }, foundback: { choose: 0, send: 1, keep: 2 } };
+  const ORDER_KEYS = ['seat', 'slight', 'oathback', 'exback', 'foundback'];
   // routine matters the house may answer by standing order; they are answered quietly (a house note, no notice) so skipping ahead runs on
-  const ROUTINE_KEYS = ['gather', 'omen', 'split', 'friend', 'sick', 'exiles', 'oath', 'found'], ROUTINE = new Set(['gathering', 'omen', 'toobig', 'friendneed', 'sickness', 'exiles', 'oath', 'foundling']);
+  const ROUTINE_KEYS = ['gather', 'omen', 'split', 'friend', 'sick', 'exiles', 'oath', 'found'], ROUTINE = new Set(['gathering', 'omen', 'toobig', 'friendneed', 'sickness', 'exiles', 'oath', 'foundling', 'slight']);
   function notice(W, title, text) { (W.notices = W.notices || []).push({ title, text }); if (W.notices.length > 5) W.notices.shift(); }
   // sharing: an explicit choice for a clan, or automatic — own tribe, allies and anyone not hostile may share
   function dealWith(W, o) {
@@ -4964,17 +5211,17 @@
   const kinIn = (q, o) => { let n = 0; for (const x of o.people) if (x !== q && closeKin(q, x)) n++; return Math.min(6, n); };
   // every clan of the tribe backs one of the two: its own head, old friendships and grudges, the greater standing, kin
   function headshipTally(W, t, a, b, roll) {
-    const ca = a.clan, cb = b.clan, sa = prestige(a), sb = prestige(b), rows = []; let wa = 0, wb = 0;
+    const ca = a.clan, cb = b.clan, sa = prestige(a), sb = prestige(b), rows = [], wonA = plotWon(W, a), wonB = plotWon(W, b); let wa = 0, wb = 0;
     for (const o of t.clans) {
       const n = freeCount(o); let side, why, s0 = 0;
       if (o === ca && o === cb) { side = sa >= sb ? 'a' : 'b'; why = 'their own clan, split between the two, went with the greater standing'; }
       else if (o === ca) { side = 'a'; why = `${a.name}'s own clan`; }
       else if (o === cb) { side = 'b'; why = `${b.name}'s own clan`; }
       else {
-        const oa = opinion(o, ca), ob = opinion(o, cb), op = oa - ob, st = (sa - sb) * 40 + (hasTrait(a, 'silver') ? 12 : 0) - (hasTrait(b, 'silver') ? 12 : 0), kin = (kinIn(a, o) - kinIn(b, o)) * 4, s = op + st + kin + (roll ? (W.rand() - 0.5) * 16 : 0);
-        s0 = op + st + kin; side = s >= 0 ? 'a' : 'b'; const sg = side === 'a' ? 1 : -1;
+        const oa = opinion(o, ca), ob = opinion(o, cb), op = oa - ob, st = (sa - sb) * 40 + (hasTrait(a, 'silver') ? 12 : 0) - (hasTrait(b, 'silver') ? 12 : 0), kin = (kinIn(a, o) - kinIn(b, o)) * 4, pl = (wonA.has(o) ? PLOT_TALK : 0) - (wonB.has(o) ? PLOT_TALK : 0), s = op + st + kin + pl + (roll ? (W.rand() - 0.5) * 16 : 0);
+        s0 = op + st + kin + pl; side = s >= 0 ? 'a' : 'b'; const sg = side === 'a' ? 1 : -1;
         const terms = [[op * sg, sg > 0 ? (ob < -10 ? `they bear the ${cb.name} clan ill will` : `they are better friends with the ${ca.name} clan`) : (oa < -10 ? `they bear the ${ca.name} clan ill will` : `they are better friends with the ${cb.name} clan`)],
-          [st * sg, `${sg > 0 ? a.name : b.name} has the greater standing`], [kin * sg, `${sg > 0 ? a.name : b.name} has close kin among them`]].sort((x, y) => y[0] - x[0]);
+          [st * sg, `${sg > 0 ? a.name : b.name} has the greater standing`], [kin * sg, `${sg > 0 ? a.name : b.name} has close kin among them`], [pl * sg, `${sg > 0 ? a.name : b.name}'s talk has won them over`]].sort((x, y) => y[0] - x[0]);
         why = terms[0][0] > 0 ? terms[0][1] : 'it was a near thing';
       }
       rows.push({ clan: o, n, side, why, pa: o === ca && o === cb ? (sa >= sb ? 1 : 0) : o === ca ? 1 : o === cb ? 0 : clamp((s0 + 8) / 16, 0, 1) }); if (side === 'a') wa += n; else wb += n;
@@ -5178,6 +5425,11 @@
     const A = playerActions(W), can = id => { const a = A.find(x => x.id === id); return a && a.ok ? a : null; }, g = grainInfo(W, c);
     if (!c.people.some(q => q.dyn && q !== h && !q.slave)) return can('recall') ? { text: 'No one of your blood lives in your clan. Call one of the blood home before the house ends with its head.', deed: 'recall' } : can('adopt') ? { text: 'No one of your blood lives in your clan. Adopt a child of the clan as your heir.', deed: 'adopt' } : { text: 'No one of your blood lives in your clan: the house would end with its head. Marry, and keep your children near.' };
     if (c.cond < 0.8 && !c.settled && can('movecamp')) return { text: `The clan is going hungry (${fd} days of food). Move camp to richer ground: the shore, a river mouth, or the wild grain.`, deed: 'movecamp' };
+    { // the seat: a plot ripe, a plot against the house, a rumour
+      const pl = P.plot, st = pl && can('strike') ? plotChance(W, pl) : 0; if (st >= 0.5) return { text: `The clans lean our way. Strike now, while they do (about ${Math.round(st * 100)}%).`, deed: 'strike' };
+      const wp = (W.plots || []).find(q => q.tribe === t && q.target === h);
+      if (wp && wp.found != null && can('confront')) return { text: `${wp.cand.name} is talking to the clans; ${wp.won.length} stand with ${himHer(wp.cand)}. Court them, or make ${himHer(wp.cand)} show ${hisHer(wp.cand)} hand.`, deed: 'confront' };
+      if (wp && wp.found == null && wp.won.length >= 2) return { text: `Something is said at the ${wp.won[0].name} fires that is not said to us.` }; }
     const fw = c.people.filter(q => q.sex === 'F' && !q.slave && q.age >= 16 && q.age < 45).length;
     if (fw <= 2 && freeCount(c) < 30 && can('invite')) return { text: `Only ${fw} wom${fw === 1 ? 'a' : 'e'}n of childbearing age in the clan. Invite a household to join you.`, deed: 'invite' };
     if (can('settle')) return { text: t.stage >= 2 ? 'Your people sow grain. Found a village: it stores food, has more children and can grow far larger than a camp.' : 'These waters could feed a village. Founding one lets the clan grow well past the size of a camp.', deed: 'settle' };
@@ -5982,7 +6234,7 @@
     cultureYear(W);
     kultYear(W);
     craftsYear(W);
-    rivalryYear(W);
+    rivalryYear(W); worldPlotsYear(W);
     metalYear(W);
     roadsYear(W);
     W.history.push({ year: W.week / 52, pop: tot, bands: W.clans.length, tribes: W.tribes.length, allies, confeds: W.confeds.length, game: sum(W.game) / W.landIdx.length });
@@ -6021,7 +6273,7 @@
         if (!t.alive) continue; updateLeaders(W, t); if (P) pm('updateLeaders'); marriages(W, t); if (P) pm('marriages'); seekSpouses(W, t); if (P) pm('seekSpouses'); households(W, t); if (P) pm('households'); disputes(W, t); if (P) pm('disputes'); sharing(W, t); if (P) pm('sharing');
         if (t.clans.length > 1) { const a = pick(t.clans, W.rand), b = pick(t.clans, W.rand); if (a !== b && Math.hypot(a.x - b.x, a.y - b.y) < 60000) exchange(W, a, b); if (P) pm('exchange'); }
       }
-      revenge(W); if (P) pm('revenge'); interTribe(W); if (P) pm('interTribe');
+      plotsMonth(W); revenge(W); if (P) pm('revenge'); interTribe(W); if (P) pm('interTribe');
       for (const t of [...W.tribes]) { if (!t.alive) continue; clanFission(W, t); if (P) pm('clanFission'); clanMerge(W, t); if (P) pm('clanMerge'); }
       for (const t of [...W.tribes]) { if (t.alive) { tribeFission(W, t); if (P) pm('tribeFission'); } }
       for (const t of [...W.tribes]) { if (t.alive) { tribeMerge(W, t); if (P) pm('tribeMerge'); } }
@@ -6035,7 +6287,7 @@
     if (P) { PROF.win.ticks++; if (PROF.win.ticks >= PROF.every) profFlush(W); }
   }
 
-  return { canTakeFarming, soilWarn, groundAt, bondWord, tribeKnown, liveSigns, walkWord, SIGN_R, N, CELL, WORLD, HA, FORAGE_R, TRIBE_MAX, tribeMax, BIOMES, GROVES, DEPOSITS, GOOD_NAMES, createWorld, seedFirstPop, step, clanSize, tribeSize, battleOdds, warSides, warBegin, realmWarcall, familiesOf, famMembers, needsWeek, opinion, prestige, isAllied, sameConfed, tribeCenter, roadLevel, pactRoute, playerActions, doAction, dealings, settleFeud, policy: W => pol(W), setPolicy: (W, k, v) => { const p = pol(W); if (k === 'deal' || !(k in p) || (v !== 'ask' && !(AUTOIX[k] && v in AUTOIX[k]))) return; p[k] = v; }, setDeal: (W, id, v) => { if (v === 'auto') delete pol(W).deal[id]; else pol(W).deal[id] = v; }, dealMode: (W, o) => dealWith(W, o), clanHeir, FAITHS, isMatri, faithOf, cultureName, MON, checkPlace, und, speechWord, kultInfo, grainInfo, clanFlow, HOME_R, CREATION, claimsYear, foreignHeld, landLive, landScan, landYear, driveOutOdds, leaveOdds, landTargets, ring, ringSay, BEASTS, beastNm, beastTale, beastOdds, beastWhere, beastToll, beastNear, saveGame, loadGame, saveInfo, ruleInfo, advice, legacy, legacyHTML, TRAITS, epithet, hasTrait, leadWeight, standingWhy, villageInfo, RANKS, SOCIETY, societyOf, rankOf, WORKS, JOBS, walls, canBuild, releaseClaim: (W, i) => { const P = W.player; if (P && P.claims && P.claims[i]) { houseNote(W, `The house gave up its claim to the ${DEPOSITS[P.claims[i].d.type].name.toLowerCase()}.`); P.claims.splice(i, 1); } }, weaponsName, houseSlaves, slaveCount, freeCount, knows, knowsTribe, foodDays, GIFTABLE, STAGES, BOAT_STAGES, METAL_STAGES, boatStage, metalStage, arms, canReach, houseCandidates, choosePlayer, resolve, dynMembers, bloodCount, titlesOf, relWord, vigor, tribeVigor, statureCm, farmSuit, fieldInfo, potential, cellFood, foodBreakdown, kingshipBid, warriors, tribeWealth, confedTribes, confedPeople, newConfed, joinConfed, leaveConfed, formAlliance, kinOf, rulerWord, realmWord, realmInfo, realmHeir, realmRisk, realmPutDown, realmWarList, realmRiseOdds, realmStay, realmNext, realmKingdomNeeds, succession, confedYear,
+  return { canTakeFarming, soilWarn, groundAt, bondWord, tribeKnown, liveSigns, walkWord, SIGN_R, N, CELL, WORLD, HA, FORAGE_R, TRIBE_MAX, tribeMax, BIOMES, GROVES, DEPOSITS, GOOD_NAMES, createWorld, seedFirstPop, step, clanSize, tribeSize, battleOdds, warSides, warBegin, realmWarcall, familiesOf, famMembers, needsWeek, opinion, prestige, isAllied, sameConfed, tribeCenter, roadLevel, pactRoute, playerActions, doAction, seatInfo, dealings, settleFeud, policy: W => pol(W), setPolicy: (W, k, v) => { const p = pol(W); if (k === 'deal' || !(k in p) || (v !== 'ask' && !(AUTOIX[k] && v in AUTOIX[k]))) return; p[k] = v; }, setDeal: (W, id, v) => { if (v === 'auto') delete pol(W).deal[id]; else pol(W).deal[id] = v; }, dealMode: (W, o) => dealWith(W, o), clanHeir, FAITHS, isMatri, faithOf, cultureName, MON, checkPlace, und, speechWord, kultInfo, grainInfo, clanFlow, HOME_R, CREATION, claimsYear, foreignHeld, landLive, landScan, landYear, driveOutOdds, leaveOdds, landTargets, ring, ringSay, BEASTS, beastNm, beastTale, beastOdds, beastWhere, beastToll, beastNear, saveGame, loadGame, saveInfo, ruleInfo, advice, legacy, legacyHTML, TRAITS, epithet, hasTrait, leadWeight, standingWhy, villageInfo, RANKS, SOCIETY, societyOf, rankOf, WORKS, JOBS, walls, canBuild, releaseClaim: (W, i) => { const P = W.player; if (P && P.claims && P.claims[i]) { houseNote(W, `The house gave up its claim to the ${DEPOSITS[P.claims[i].d.type].name.toLowerCase()}.`); P.claims.splice(i, 1); } }, weaponsName, houseSlaves, slaveCount, freeCount, knows, knowsTribe, foodDays, GIFTABLE, STAGES, BOAT_STAGES, METAL_STAGES, boatStage, metalStage, arms, canReach, houseCandidates, choosePlayer, resolve, dynMembers, bloodCount, titlesOf, relWord, vigor, tribeVigor, statureCm, farmSuit, fieldInfo, potential, cellFood, foodBreakdown, kingshipBid, warriors, tribeWealth, confedTribes, confedPeople, newConfed, joinConfed, leaveConfed, formAlliance, kinOf, rulerWord, realmWord, realmInfo, realmHeir, realmRisk, realmPutDown, realmWarList, realmRiseOdds, realmStay, realmNext, realmKingdomNeeds, succession, confedYear,
     seasonOf, seasonName, tempOffset, cellAt, lifeStage, siler, fecund, makePerson, stepPop, prof: PROF };
 })();
 if (typeof module !== 'undefined') module.exports = SIM;
