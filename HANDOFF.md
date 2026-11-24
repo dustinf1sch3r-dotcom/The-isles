@@ -108,10 +108,44 @@ Lines are very long, often a whole function on one line. Do not print whole file
 - **Villages, camps and fires (#15):** drawn like the map's own trees: small houses, tents and hearths in the map's ink and wash, part of the map and not stickers on it. Colour stays with the borders. Names on the map carry no head counts (a tap shows them). Palisade, ditch and hall stay visible: the palisade is a ring of posts standing round the houses (back half behind them, front half in front, a gate), the ditch and bank is hatched like the hills. Zoomed out and zoomed in get equal care. Dustin chose this look from three drafts shown side by side (dark plan blocks, pale plan roofs, pictures like the trees); a first try in plan view read as a heap of logs and was dropped.
 - **People:** the population levels off where the land puts it (about 4x the year-300 world, different in each world), by hunting-ground pressure and crowding sickness; no crash (#24).
 - **Speed (#26):** make the game faster without changing who marries whom: the same chances, proven, not just similar figures.
+- **Tribute (#31):** a head chief receives tribute in food and goods from every tribe of the confederacy. A free member pays a third of a subject's share, at a little goodwill cost, and the same rule holds for everyone, the player paying and receiving alike.
 - **Way of working:** Dustin likes the strongest model to plan and check, with cheaper agents building and play-testing, and every claim checked before it is reported.
 
-## Where things stand (20 November 2026)
-Latest fix (issue #28): on the owner's iPhone the date, food and grain stopped changing after moving the village, while the game ran on (the pause button showed ❚❚ and the map moved), and the "A new site" card never showed.
+## Where things stand (24 November 2026), read this first
+Main and the live site carry everything up to the tribute for the high chief (#31, below). Two pieces of work are in progress on the session branch, not on main: **issue #30** (four farming fixes) and **issue #32** (fishing villages that sow).
+
+### Shipped: issue #31, tribute to the high chief from the whole confederacy
+The owner asked that a head chief receive tribute in food and goods from the tribes of the confederacy. Before, only subjects paid (and, in a kingdom, every tribe sent part of a week's food). The owner chose: a third of a subject's weight, a little goodwill cost, and the same rule for everyone, the player both paying and receiving.
+- **The rule** (`realmShare`, called from `confedYear` right after the +3 "Feasting under the high chief"): every member that is not a subject, other than the ruler's own tribe (`cf.capital`), pays every year at every stage of the realm.
+  - A tribe whose clans' mean condition is below 0.85 (`tribeHungry`, also used by `realmTribute`) sends nothing.
+  - Otherwise one clan, drawn by lot, gives the ruler's clan a twentieth (`REALM_ALLY` 0.05) of its store and of its grain.
+  - Each of amber, axes, salt, ochre and flint it holds goes, one piece, at one chance in six (`REALM_ALLY_GOOD`).
+  - Goodwill toward the ruler's tribe falls by 1, only when something was sent.
+- **Subjects** (`realmPay`) now give 15% of their grain as well as their store (half when lightly bound), so the ally's twentieth is truly a third of a subject's share. Before, a farming ally would have paid far more food than a farming subject, because the subject's share left grain alone.
+- **Goods cap:** a ruling clan that already holds ten of a good takes no more of it; the piece stays with the payer. Before, a clan holding more than ten (from trade or raids) was cut down to ten.
+- **Notes:** one house note a year. The head chief hears from subjects and free tribes together (the kingdom's food, `REALM_SENT`, is folded into the same note); a paying member hears what it sent, and nothing in a year it sent nothing. Texts changed: the ally invitation card (with a kingdom line), the join hint and result, the subject's joining note, the realm panel and the House Realm tab ("sends a light tribute" / "pays tribute"), the leave hint, the kingdom deed hint and the help.
+- **Checked:**
+  - Notes against what moved: an instrumented copy of the sim recorded every clan's store, grain and goods around each tribute call, in seven player scenarios on the year-300 save (head chief with and without a kingdom, a farming ally, a founding member, an ally in a kingdom, a subject). 0 mismatches, and the food the ruler gained always equalled what the payers lost.
+  - Year-300 save over 100 years, old build against new, four luck shifts each:
+    - World population at year 400: 25,973 to 27,330 new, 25,737 to 26,803 old.
+    - Subjects' mean condition: the same.
+    - Subjects leaving per run: 91 to 114 new, 61 to 100 old. The new runs also ended with more subjects.
+    - Nothing beyond chance.
+  - Balance on both seed sets: byte-identical, since those games never reach a confederacy.
+  - The invitation card at 390 px.
+- **Not done:** no notice when the player's tribe becomes a paying founding member because the seat moved away (the yearly note tells it).
+
+### In progress: issues #30 and #32, farming fixes and fishing villages that sow
+On the session branch `claude/nifty-albattani-8d4o7z` (merged there after #31 shipped), from local branch `feat/farming`. The four #30 fixes were each built, reviewed and given one fix round, then joined; a second round and #32 are being built and reviewed.
+- **merge:** a joining farming tribe teaches the host to sow (host `dom` rises to at most 0.549, so the "first fields" card comes first); not while the host keeps to the old ways; "Keep to the old ways" always takes the tribe back below stage 2; a farm village in a tribe below stage 2 becomes a camp. Review found the merge rule makes the year-300 world far more settled after 100 years (122 tribes at stage 3 against 30); the owner should hear this.
+- **ground:** while placing a village (move, settle, daughter village), a tap marks the spot and shows how good the ground is (Rich, Good, Fair, Thin, and an honest share against the present fields or the richest ground); "Build here" builds.
+- **shore:** the shore and coast tests read `W.inland` (the land's distance from the coast) instead of `W.seaDist` (0 on every land cell); the move deed keeps a fishing village on the shore. The 25% growth on two fresh seeds was luck: three more luck shifts each put both builds in the same spread. The real effect is small: inland tribes learn boats slowly, river tribes stop at dugouts.
+- **migrate:** a clan led to new lands that finds the ground held walks on 20 to 60 km to free ground a farmer can use (`walkOn`).
+- **#32 (owner's choice: both):** fishing villages of a sowing people keep small fields by the shore (half a farming village's) and keep their catch, everywhere in the world; and a deed "Take up farming" turns the player's fishing village into a farming village, with its real trade stated.
+- **Known follow-ups:** the world's tribe migrations carry settled fishing villages inland (about 30% of fishing villages stand more than one cell from the coast, in old and new builds alike); `settleClan` can pick tundra within 20 km (the cause of the last food lows after a long migration).
+
+### Shipped: issue #28, PR #29, live on the site
+On the owner's iPhone the date, food and grain stopped changing after moving the village, while the game ran on (the pause button showed ❚❚ and the map moved), and the "A new site" card never showed.
 - **Cause:** `frame()` in `src/ui.js` refreshed the top bar (`updateTop`, which writes the date and food) and the side panel only while a flag said no finger was on the panel. A touch on the panel set it; only a lift or leave on the panel cleared it. A phone may send neither after a scroll (it sends a cancel), so the flag could stay set for good. Chromium sends a leave after the cancel, so headless tests never froze.
 - **Fix:** the top bar always refreshes. The panel waits only until 2 s after the last press, move or scroll on it (`panelTouchAt`), so nothing can hold it longer.
 - **Also fixed:** on a touchscreen, the click that follows the tap placing the village landed on the new result card's backdrop and closed it at once. A card now ignores a backdrop click in its first 0.6 s (`cardAt`).
@@ -119,12 +153,6 @@ Latest fix (issue #28): on the owner's iPhone the date, food and grain stopped c
   - With a finger left on the panel (no lift or leave sent), the old page showed 2 dates in 143 weeks of play and the new one 9.
   - The move's result card stayed up on the new page and vanished within 0.1 s on the old.
   - While the panel was scrolled, it was not redrawn on the new page; the old one redrew it mid-scroll.
-- **Found while looking (open, not fixed; see the issues):**
-  - **A merge stops farming:** a tribe of 35 or fewer that joins a neighbour takes the host's farming stage (`tribeMerge`). A settled farming village that joins a tribe below stage 2 never harvests again (`harvest` needs stage 2). Moving a village near a weaker tribe can bring this on.
-  - **Poor ground:** the move deed lets a village move onto poor ground with no warning. The crop goes with the new cell's `W.nit`, so it can fall to a third.
-  - **`W.seaDist` is 0 on every land cell:** it is the sea's distance from land. The land tests that use it (the shore rule for fishing villages, the coastal counts in `soc.js` at about lines 1840 and 3515, and the fishing check in the land expulsion) never do what they say. `W.inland` is the land's distance from the coast.
-  - **Migrate onto claimed land:** "Lead your clan to new lands" can leave the clan camped for months on ground its old tribe still claims, at a third of its harvest.
-
 ## Earlier round (19 November 2026, faster marriage matching)
 Latest round (issue #26): marriage matching is about five times cheaper once the people reach their ceiling, with the same matches and the same chances.
 - **What changed:**
