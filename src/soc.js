@@ -3607,17 +3607,17 @@
   // Returns null where there is nothing to say (a fishing village does not farm). share = the next harvest there over the next harvest at the
   // present site (a move), or, for a new village, over the same fields on the richest ground: the land cell with the most nit (clamped as above).
   const nitF = (W, ci) => clamp(W.nit[ci] / 55, 0.4, 1.2);
-  const richCache = { W: null, wk: -1, v: 1.2 };
-  function richestNitF(W) { if (richCache.W !== W || W.week - richCache.wk >= 26 || W.week < richCache.wk) { let m = 0; for (let i = 0; i < W.nit.length; i++) if (W.land[i] && !W.lake[i] && W.nit[i] > m) m = W.nit[i]; richCache.W = W; richCache.wk = W.week; richCache.v = clamp(m / 55, 0.4, 1.2); } return richCache.v; }
+  const richCache = new WeakMap(); // per world, so an old world is not kept alive
+  function richestNitF(W) { let rc = richCache.get(W); if (!rc || W.week - rc.wk >= 26 || W.week < rc.wk) { rc = { wk: W.week, v: 1.2 }; richCache.set(W, rc); let m = 0; for (let i = 0; i < W.nit.length; i++) if (W.land[i] && !W.lake[i] && W.nit[i] > m) m = W.nit[i]; rc.v = clamp(m / 55, 0.4, 1.2); } return rc.v; }
   // each word stands for a share; a cut-off lies halfway between the shares of two neighbouring words, so the word is always the nearest one
   // (third .333, half .5, two thirds .667, a little less .85, the same 1, a little more 1.2, half as much again 1.5, twice 2, more than twice 2.5)
   const SHARES = [[0.27, 'well under a third of', 'less than a third of'], [0.417, 'about a third of', 'about a third of'], [0.583, 'about half', 'about half'], [0.758, 'about two thirds of', 'about two thirds of'], [0.925, 'a little less than', 'a little less than'], [1.1, 'about the same as', 'about the same as'], [1.35, 'a little more than', 'a little more than'], [1.75, 'about half as much again as', 'about half as much again as'], [2.25, 'about twice', 'about twice'], [1e9, 'more than twice', 'more than twice']];
   function shareWord(r, i) { for (const e of SHARES) if (r < e[0]) return e[i]; return SHARES[SHARES.length - 1][i]; }
   // the field level a village has once it stands at cell ci: syncFields' own rule (no plots yet, or the plots already start in this cell: unchanged; else one lower)
   function fieldLvAt(c, ci) { return !c.plots || !c.plots.length || c.plots[0] === ci ? fieldLv(c) : Math.max(0, fieldLv(c) - 1); }
-  function groundAt(W, id, x, y) {
-    const P = W.player, c = P && P.head && P.head.clan; if (!c || !(id === 'movevillage' || id === 'settle' || id === 'foundvillage')) return null;
-    if (c.live === 'fishing' || !(c.tribe && c.tribe.stage >= 2)) return null;
+  function groundAt(W, id, x, y, clan) { // clan: the clan that would farm there (a daughter village is sent by the clan chosen, not always the player's)
+    const P = W.player, c = clan || (P && P.head && P.head.clan); if (!c || !(id === 'movevillage' || id === 'settle' || id === 'foundvillage')) return null;
+    if ((c.live === 'fishing' && id !== 'settle') || !(c.tribe && c.tribe.stage >= 2)) return null; // settle at stage 2+ makes a farming village
     const ci = cellAt(x, y); if (!(ci >= 0) || !W.land[ci]) return null;
     const move = id === 'movevillage' && c.settled, lvNew = id === 'foundvillage' ? 0 : fieldLvAt(c, ci);
     const q = nitF(W, ci) * (1 + FIELD_CROP * lvNew), word = q >= 1.1 ? 'Rich' : q >= 0.85 ? 'Good' : q >= 0.6 ? 'Fair' : 'Thin';
@@ -3778,7 +3778,7 @@
       const err = siteWhy(W, o, site[0], site[1], true); if (err) { delete cd[id]; return { title: 'Not there', text: err }; }
       const lv = plan.leavers, big = new Map(); for (const q of lv) if (q.fam) big.set(q.fam, (big.get(q.fam) || 0) + 1);
       const B = [...plan.leave].sort((a, b) => (big.get(b) || 0) - (big.get(a) || 0))[0], H = o.head, bl = lv.filter(q => q.dyn && !q.slave), sl = lv.filter(q => q.slave && q.owner && q.owner.dyn);
-      const nc = foundDaughter(W, o, plan.leave, site, B.name), km = Math.round(Math.hypot(site[0] - o.x, site[1] - o.y) / 1000), dir = compass(site[0] - o.x, site[1] - o.y), fish = o.live === 'fishing';
+      const gd = groundAt(W, id, site[0], site[1], o), nc = foundDaughter(W, o, plan.leave, site, B.name), km = Math.round(Math.hypot(site[0] - o.x, site[1] - o.y) / 1000), dir = compass(site[0] - o.x, site[1] - o.y), fish = o.live === 'fishing';
       affect(W, nc, o, 20, `Founded with the blessing of the ${o.name} clan`, 0); o.foundAt = o.letSplit = o.splitDone = W.week;
       const from = o.village || `the ${o.name} clan`, rest = o.people.length, who = o === c ? 'our' : `the ${o.name} clan's`;
       note(W, o, `${h.name} sent ${lv.length} people of ${goName(plan, o)} to raise a daughter village ${km} km ${dir}: the ${nc.name} clan.`); note(W, nc, `Sent out from ${from} with the blessing of the ${o.name} clan, to raise a village ${km} km ${dir}.`);

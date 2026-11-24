@@ -1801,7 +1801,7 @@
   const PICK_HELP = 'Tap the map inside the dashed circle, on land your people know.';
   function startPlacePick(a, j) {
     const c = W.player.head.clan; modalEv = null; $('#modal').style.display = 'none';
-    placePick = { id: a.id, k: j, maxKm: a.targets[j].pick.maxKm, x: c.x, y: c.y, mark: MARK_PICKS.includes(a.id), at: null };
+    placePick = { id: a.id, k: j, maxKm: a.targets[j].pick.maxKm, x: c.x, y: c.y, mark: MARK_PICKS.includes(a.id), at: null, clan: a.id === 'foundvillage' && a.targets[j].clan || null };
     const b = $('#pickbar'); b.innerHTML = `<div class="pbt"><b>${esc(a.label)}</b><div id="pickMsg" class="muted">${PICK_HELP}</div></div><button id="pickGo" style="display:none">Build here</button><button id="pickCancel">Cancel</button>`; b.style.display = 'flex';
     $('#pickCancel').onclick = ev => { ev.stopPropagation(); endPlacePick(); closeCard(); };
     $('#pickGo').onclick = ev => { ev.stopPropagation(); const pp = placePick; if (!pp || !pp.at) return; const [x, y] = pp.at; endPlacePick(); showResult(SIM.doAction(W, pp.id, pp.k, 0, { x, y })); };
@@ -1811,7 +1811,7 @@
   // the line shown for a spot: the refusal, or the ground for fields
   function pickLine(x, y) {
     const err = SIM.checkPlace(W, placePick.id, x, y); if (err) return `<span style="color:#a83a22">✗ ${esc(err)}</span>`;
-    const g = SIM.groundAt(W, placePick.id, x, y); return g ? esc(g.text) : placePick.mark ? 'Fit ground for a village.' : PICK_HELP;
+    const g = SIM.groundAt(W, placePick.id, x, y, placePick.clan); return g ? esc(g.text) : placePick.mark ? 'Fit ground for a village.' : PICK_HELP;
   }
   function placeTap(sx, sy) {
     const [x, y] = toWorld(sx, sy), err = SIM.checkPlace(W, placePick.id, x, y), m = $('#pickMsg'), go = $('#pickGo');
