@@ -1872,7 +1872,7 @@
     rite: 'Faith and lore', walk: 'Faith and lore',
     movecamp: 'Land and villages', movevillage: 'Land and villages', foundvillage: 'Land and villages', settle: 'Land and villages', takefarming: 'Land and villages', fields: 'Land and villages', build: 'Land and villages', migrate: 'Land and villages', canoes: 'Land and villages', monument: 'Land and villages',
   };
-  const deedGroup = id => DEED_GROUP[id] || 'Your house';
+  const deedGroup = id => id === 'strike' && W.player && W.player.plot && W.player.plot.kind === 'clan' ? 'Your clan' : DEED_GROUP[id] || 'Your house'; // a strike for the clan's seat is a clan matter
   // a long list of peoples in a deed's text shows its first three; the rest wait behind "and N more"
   const FOLD_MARK = ['Peoples you know of but cannot raid: ', 'Known peoples: '];
   function foldHint(h) {

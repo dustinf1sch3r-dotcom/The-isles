@@ -137,7 +137,7 @@ Code: the section "PLOTS FOR THE SEAT" in `soc.js` (search `PLOT_TALK`), `seatBl
   - A plot against the house strikes at a plotter's chance of 0.55 (0.4 after three years), so the card usually comes at a keep chance under 45%. Lever: the strike thresholds in `worldPlotsMonth`.
   - The old 'challenge' card from `updateLeaders` still works its chance out when pushed, mid-step; it can differ by a point or two from the roll at the answer, as the rivalry card did before `freshCard`. Give it the same treatment.
   - World clans do not court and do not plot for clan seats. A headman who won his seat by plot holds it for life where the tribe keeps no custom (about 15% of tribes of 3+ clans at any time, against 4.5% before).
-  - The Act sheet's advisor link opens the deed list, not always the deed itself.
+  - A plot for the clan's seat has no Seat view of its own: the Seat list and the clan cards' lean lines are for the tribe's seat; the clan plot shows as one plot line (chance and households won), and the Clan tab's household cards keep only the feeling bar.
 
 ### Shipped: issue #36, the phone layout
 Code: the `max-width:819px` block in `shell.html`, and in `ui.js` `setSpeed`, `toast`/`NOTE_LOG`/`clearNotes`, `foodState`/`houseStrip`, the sheet stops (`setSheet`: peek, half, mid 62vh, full), `GROUPS`/`DEED_GROUP`, `ROUTINE_CARDS`; `SIM.foodWhy` and `SIM.foodLimits` in `soc.js` (read state only, no `W.rand`).
