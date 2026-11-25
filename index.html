@@ -5476,6 +5476,8 @@ const SIM = (() => {
     p.won.push(o); affect(W, o, cx, 8, `Won over by talk against ${tg.name}`); if (ct) affect(W, o, ct, -4, `Won over by talk against ${tg.name}`);
     const P = W.player;
     if (mine) houseNote(W, p.kind === 'clan' ? `The household of ${o.name} has been won over.` : `The ${o.name} clan has been won over.`);
+    else if (p.kind === 'tribe') note(W, o, `${x.name} of the ${x.clan.name} clan won the ${o.name} clan over, against ${tg.name}.`);
+    if (mine) { /* the house's own plot is told in the house notes only */ }
     else if (P && !P.over && P.head.alive && P.head.clan === o && P.head !== tg) houseNote(W, `${x.name} has won over our clan's elders.`);
   }
   function playerPlotMonth(W) {
@@ -6300,7 +6302,7 @@ const SIM = (() => {
     { // the seat: a plot ripe, a plot against the house, a rumour
       const pl = P.plot, st = pl && can('strike') ? plotChance(W, pl) : 0; if (st >= 0.5) return { text: `The clans lean our way. Strike now, while they do (about ${Math.round(st * 100)}%).`, deed: 'strike' };
       const wp = (W.plots || []).find(q => q.tribe === t && q.target === h);
-      if (wp && wp.found != null && can('confront')) return { text: `${wp.cand.name} is talking to the clans; ${wp.won.length} stand with ${himHer(wp.cand)}. Court them, or make ${himHer(wp.cand)} show ${hisHer(wp.cand)} hand.`, deed: 'confront' };
+      if (wp && wp.found != null && can('confront')) return { text: `${wp.cand.name} is talking to the clans; ${wp.won.length === 1 ? 'one stands' : wp.won.length + ' stand'} with ${himHer(wp.cand)}. Court them, or make ${himHer(wp.cand)} show ${hisHer(wp.cand)} hand.`, deed: 'confront' };
       if (wp && wp.found == null && wp.won.length >= 2) return { text: `Something is said at the ${wp.won[0].name} fires that is not said to us.` }; }
     const fw = c.people.filter(q => q.sex === 'F' && !q.slave && q.age >= 16 && q.age < 45).length;
     if (fw <= 2 && freeCount(c) < 30 && can('invite')) return { text: `Only ${fw} wom${fw === 1 ? 'a' : 'e'}n of childbearing age in the clan. Invite a household to join you.`, deed: 'invite' };
