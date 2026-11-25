@@ -112,6 +112,8 @@
   .alert { font-size:12.5px; padding:5px 10px; border-radius:9px; background:rgba(216,102,78,0.16); color:#7a2414; border-left:3px solid var(--blood); }
   .alert.warn { background:rgba(124,47,30,0.13); color:#5e4310; border-left-color:var(--amber); }
   .alert.ok { background:rgba(143,184,124,0.13); color:#33501c; border-left-color:var(--lichen); }
+  .alert.flash, .opt.hl { animation:flashA 1.6s ease-out; }
+  @keyframes flashA { 0%,55% { box-shadow:0 0 0 3px var(--amber); } 100% { box-shadow:0 0 0 3px transparent; } }
   .actbig { width:100%; margin:2px 0 10px; height:44px; border-radius:12px; background:var(--amber); border-color:var(--amber); color:var(--amber-ink); font-weight:700; font-size:14.5px; }
   .setline { display:flex; gap:8px; align-items:flex-start; margin:10px 0 2px; font-size:12.5px; color:var(--dust); }
   .tabs2 { display:flex; gap:2px; margin:0 0 8px; border-bottom:1px solid var(--rule); overflow-x:auto; scrollbar-width:none; }
@@ -270,7 +272,9 @@
     .ctl #play, .ctl #speed, .ctl #skipBtn { position:fixed; bottom:calc(var(--sheet) + 14px); width:48px; height:48px; min-width:48px; border-radius:24px; padding:0; z-index:5; box-shadow:0 6px 20px rgba(54,36,14,0.35); transition:bottom .22s ease; font-size:15px; }
     .ctl #play { left:var(--gl); letter-spacing:-1px; } .ctl #speed { left:calc(var(--gl) + 56px); } .ctl #skipBtn { left:calc(var(--gl) + 112px); font-size:24px; padding-bottom:3px; }
     .ctl #actBtn { right:var(--gr); transition:bottom .22s ease; }
-    body.expanded .ctl #play, body.expanded .ctl #speed, body.expanded .ctl #skipBtn, body.expanded #speedRow { display:none !important; }
+    body.expanded .ctl #speed, body.expanded .ctl #skipBtn, body.expanded #speedRow { display:none !important; }
+    /* with the panel full, play comes up into the top bar beside the notices button, so the game can be paused while reading */
+    body.expanded .ctl #play { position:static; width:44px; height:44px; min-width:44px; border-radius:22px; box-shadow:none; flex:none; }
     #speedRow { position:fixed; left:var(--gl); bottom:calc(var(--sheet) + 14px + 48px + 8px); z-index:7; gap:6px; padding:6px; border:1px solid var(--frame); border-radius:28px; background:var(--hide); background-image:var(--paper); box-shadow:0 8px 24px rgba(54,36,14,0.35); transition:bottom .22s ease; }
     #speedRow.open { display:flex; }
     #speedRow button { width:44px; height:44px; min-width:44px; padding:0; border-radius:22px; font-size:15px; }
@@ -295,7 +299,7 @@
     button.lnk { position:relative; } button.lnk::before { content:''; position:absolute; left:-4px; right:-4px; top:-8px; bottom:-8px; }
     .seg button, .seg.sm button { height:44px; min-width:44px; font-size:13.5px; padding:0 14px; }
     .seg, .seg.sm { gap:6px; }
-    .ev, .pp { min-height:44px; padding:12px 0; } .row2:has(a[data-e]), .rel:has(a[data-e]), [data-go] { min-height:44px; } [data-go] { cursor:pointer; }
+    .ev, .pp { min-height:44px; padding:12px 0; } .row2:has(a[data-e]) { min-height:44px; } .rel:has(a[data-e]) { min-height:44px; } [data-go] { min-height:44px; cursor:pointer; }
     a[data-e], a[data-release] { display:inline-block; padding:14px 3px; margin:-14px -3px; }
     #menu button { height:44px; } #menu { padding:6px; }
     #picker .pick { min-height:44px; padding:12px 9px; display:block; }
@@ -339,9 +343,10 @@
     #layers button, .togs button { height:44px; min-width:44px; border-radius:22px; font-size:14px; padding:0 14px; flex:none; }
     #moreBtn { display:block; flex:none; height:44px; min-width:64px; border-radius:22px; font-size:14px; padding:0 14px; font-weight:650; }
     #mapMore > h4:first-child { margin-top:0; }
-    #mapMore { display:none; order:1; max-height:max(120px,min(52vh,430px,calc(100vh - var(--sheet) - 128px - var(--topb) - 20px))); overflow-y:auto; margin:0 0 8px; padding:0 4px; }
+    #mapMore { display:none; order:1; max-height:max(44px,min(52vh,430px,calc(100vh - var(--sheet) - 148px - var(--topb)))); overflow-y:auto; margin:0 0 8px; padding:0 4px; }
     #mapMenu.more #mapMore { display:block; }
-    #mapMenu.more { right:calc(max(8px,var(--sar)) + 52px); }
+    #mapMenu.more { right:calc(max(8px,var(--sar)) + 52px); } body.sheet-mid #mapMenu.more { right:calc(max(8px,var(--sar)) + 108px); }
+    @media (max-height:720px) { body.sheet-mid #mapMenu { right:calc(max(8px,var(--sar)) + 108px); } } /* a short screen: the strip would reach the second row of the 2x2 tools */
     #mapMenu.more #moreBtn { background-color:var(--amber); color:var(--amber-ink); border-color:var(--amber); }
     #legend { font-size:13px; }
     /* act: groups under sticky headings */
@@ -482,7 +487,7 @@
     <li><b>House panel:</b> anything that needs your attention is listed at the top (hunger, no heir, blood owed, rivals at your sources). The tabs below cover your stores and standing, your dealings, your family, clan and tribe, and the story of the house.</li>
     <li><b>The Realm tab:</b> once your tribe is in a confederacy or kingdom, the House panel gains a Realm tab: the ruler, the tribes and whether each would stay, and how the realm is held. At first the tribes only follow the high chief and scatter when he dies; later they choose among themselves, and last it passes by blood. A confederacy held by blood may become a kingdom.</li>
     <li><b>Dealings:</b> give standing orders once and the game follows them without stopping: what to do when one of your blood is killed (revenge, compensation, or let it go), when a clan swears vengeance on you (pay them, post guards, or do nothing), and when raiders come. Below, each clan you deal with has its own setting for whether it may share the sources your house has claimed. On automatic, your house shares with its own tribe and anyone who is not an enemy. You can also pay compensation to end a clan's grudge, or forgive one you hold. Each time an order is carried out, a short note appears and it is written in the house chronicle. Choose Ask me for anything you want to decide each time.</li>
-    <li><b>On a phone:</b> drag the handle or the tab row of the bottom sheet to make it taller or tuck it away; it rests at four heights. Play, the speed (tap it to pick one of four) and skip sit at the bottom left, the Act button at the bottom right. Notices appear as short chips above them: tap one to read it whole, swipe it away, or open the bell at the top for the last thirty.</li>
+    <li><b>On a phone:</b> drag the handle or the tab row of the bottom sheet to make it taller or tuck it away; it rests at four heights. Play, the speed (tap it to pick one of four) and skip sit at the bottom left, the Act button at the bottom right. Notices appear as short chips above them: tap one to read it whole, swipe it away, or open the notices at the top right for the last thirty. When the panel is full, play moves up beside the notices.</li>
     <li><b>Other buttons:</b> the star takes you home, the corners show the whole of the isles, and the menu has this guide and a new world.</li>
   </ul>
   <ul>

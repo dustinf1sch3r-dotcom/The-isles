@@ -112,6 +112,8 @@
   .alert { font-size:12.5px; padding:5px 10px; border-radius:9px; background:rgba(216,102,78,0.16); color:#7a2414; border-left:3px solid var(--blood); }
   .alert.warn { background:rgba(124,47,30,0.13); color:#5e4310; border-left-color:var(--amber); }
   .alert.ok { background:rgba(143,184,124,0.13); color:#33501c; border-left-color:var(--lichen); }
+  .alert.flash, .opt.hl { animation:flashA 1.6s ease-out; }
+  @keyframes flashA { 0%,55% { box-shadow:0 0 0 3px var(--amber); } 100% { box-shadow:0 0 0 3px transparent; } }
   .actbig { width:100%; margin:2px 0 10px; height:44px; border-radius:12px; background:var(--amber); border-color:var(--amber); color:var(--amber-ink); font-weight:700; font-size:14.5px; }
   .setline { display:flex; gap:8px; align-items:flex-start; margin:10px 0 2px; font-size:12.5px; color:var(--dust); }
   .tabs2 { display:flex; gap:2px; margin:0 0 8px; border-bottom:1px solid var(--rule); overflow-x:auto; scrollbar-width:none; }
@@ -270,7 +272,9 @@
     .ctl #play, .ctl #speed, .ctl #skipBtn { position:fixed; bottom:calc(var(--sheet) + 14px); width:48px; height:48px; min-width:48px; border-radius:24px; padding:0; z-index:5; box-shadow:0 6px 20px rgba(54,36,14,0.35); transition:bottom .22s ease; font-size:15px; }
     .ctl #play { left:var(--gl); letter-spacing:-1px; } .ctl #speed { left:calc(var(--gl) + 56px); } .ctl #skipBtn { left:calc(var(--gl) + 112px); font-size:24px; padding-bottom:3px; }
     .ctl #actBtn { right:var(--gr); transition:bottom .22s ease; }
-    body.expanded .ctl #play, body.expanded .ctl #speed, body.expanded .ctl #skipBtn, body.expanded #speedRow { display:none !important; }
+    body.expanded .ctl #speed, body.expanded .ctl #skipBtn, body.expanded #speedRow { display:none !important; }
+    /* with the panel full, play comes up into the top bar beside the notices button, so the game can be paused while reading */
+    body.expanded .ctl #play { position:static; width:44px; height:44px; min-width:44px; border-radius:22px; box-shadow:none; flex:none; }
     #speedRow { position:fixed; left:var(--gl); bottom:calc(var(--sheet) + 14px + 48px + 8px); z-index:7; gap:6px; padding:6px; border:1px solid var(--frame); border-radius:28px; background:var(--hide); background-image:var(--paper); box-shadow:0 8px 24px rgba(54,36,14,0.35); transition:bottom .22s ease; }
     #speedRow.open { display:flex; }
     #speedRow button { width:44px; height:44px; min-width:44px; padding:0; border-radius:22px; font-size:15px; }
@@ -295,7 +299,7 @@
     button.lnk { position:relative; } button.lnk::before { content:''; position:absolute; left:-4px; right:-4px; top:-8px; bottom:-8px; }
     .seg button, .seg.sm button { height:44px; min-width:44px; font-size:13.5px; padding:0 14px; }
     .seg, .seg.sm { gap:6px; }
-    .ev, .pp { min-height:44px; padding:12px 0; } .row2:has(a[data-e]), .rel:has(a[data-e]), [data-go] { min-height:44px; } [data-go] { cursor:pointer; }
+    .ev, .pp { min-height:44px; padding:12px 0; } .row2:has(a[data-e]) { min-height:44px; } .rel:has(a[data-e]) { min-height:44px; } [data-go] { min-height:44px; cursor:pointer; }
     a[data-e], a[data-release] { display:inline-block; padding:14px 3px; margin:-14px -3px; }
     #menu button { height:44px; } #menu { padding:6px; }
     #picker .pick { min-height:44px; padding:12px 9px; display:block; }
@@ -339,9 +343,10 @@
     #layers button, .togs button { height:44px; min-width:44px; border-radius:22px; font-size:14px; padding:0 14px; flex:none; }
     #moreBtn { display:block; flex:none; height:44px; min-width:64px; border-radius:22px; font-size:14px; padding:0 14px; font-weight:650; }
     #mapMore > h4:first-child { margin-top:0; }
-    #mapMore { display:none; order:1; max-height:max(120px,min(52vh,430px,calc(100vh - var(--sheet) - 128px - var(--topb) - 20px))); overflow-y:auto; margin:0 0 8px; padding:0 4px; }
+    #mapMore { display:none; order:1; max-height:max(44px,min(52vh,430px,calc(100vh - var(--sheet) - 148px - var(--topb)))); overflow-y:auto; margin:0 0 8px; padding:0 4px; }
     #mapMenu.more #mapMore { display:block; }
-    #mapMenu.more { right:calc(max(8px,var(--sar)) + 52px); }
+    #mapMenu.more { right:calc(max(8px,var(--sar)) + 52px); } body.sheet-mid #mapMenu.more { right:calc(max(8px,var(--sar)) + 108px); }
+    @media (max-height:720px) { body.sheet-mid #mapMenu { right:calc(max(8px,var(--sar)) + 108px); } } /* a short screen: the strip would reach the second row of the 2x2 tools */
     #mapMenu.more #moreBtn { background-color:var(--amber); color:var(--amber-ink); border-color:var(--amber); }
     #legend { font-size:13px; }
     /* act: groups under sticky headings */
@@ -482,7 +487,7 @@
     <li><b>House panel:</b> anything that needs your attention is listed at the top (hunger, no heir, blood owed, rivals at your sources). The tabs below cover your stores and standing, your dealings, your family, clan and tribe, and the story of the house.</li>
     <li><b>The Realm tab:</b> once your tribe is in a confederacy or kingdom, the House panel gains a Realm tab: the ruler, the tribes and whether each would stay, and how the realm is held. At first the tribes only follow the high chief and scatter when he dies; later they choose among themselves, and last it passes by blood. A confederacy held by blood may become a kingdom.</li>
     <li><b>Dealings:</b> give standing orders once and the game follows them without stopping: what to do when one of your blood is killed (revenge, compensation, or let it go), when a clan swears vengeance on you (pay them, post guards, or do nothing), and when raiders come. Below, each clan you deal with has its own setting for whether it may share the sources your house has claimed. On automatic, your house shares with its own tribe and anyone who is not an enemy. You can also pay compensation to end a clan's grudge, or forgive one you hold. Each time an order is carried out, a short note appears and it is written in the house chronicle. Choose Ask me for anything you want to decide each time.</li>
-    <li><b>On a phone:</b> drag the handle or the tab row of the bottom sheet to make it taller or tuck it away; it rests at four heights. Play, the speed (tap it to pick one of four) and skip sit at the bottom left, the Act button at the bottom right. Notices appear as short chips above them: tap one to read it whole, swipe it away, or open the bell at the top for the last thirty.</li>
+    <li><b>On a phone:</b> drag the handle or the tab row of the bottom sheet to make it taller or tuck it away; it rests at four heights. Play, the speed (tap it to pick one of four) and skip sit at the bottom left, the Act button at the bottom right. Notices appear as short chips above them: tap one to read it whole, swipe it away, or open the notices at the top right for the last thirty. When the panel is full, play moves up beside the notices.</li>
     <li><b>Other buttons:</b> the star takes you home, the corners show the whole of the isles, and the menu has this guide and a new world.</li>
   </ul>
   <ul>
@@ -2414,12 +2419,22 @@ const SIM = (() => {
   const GOOD_NAMES = { flint: 'Flint', axe: 'Polished greenstone axes', amber: 'Amber', ochre: 'Red ochre', salt: 'Salt', furs: 'Furs', shells: 'Shell beads', copper: 'Copper ore', tin: 'Tin', metal: 'Copper tools & ornaments', bronze: 'Bronze', clay: 'Potter\'s clay', pots: 'Pottery', leather: 'Leather', art: 'Carvings & ornaments' };
   const GIFTABLE = ['bronze', 'metal', 'amber', 'art', 'axe', 'salt', 'ochre', 'furs', 'shells', 'pots', 'leather'], TRADEABLE = ['flint', 'amber', 'salt', 'ochre', 'furs', 'shells', 'axe', 'metal', 'pots', 'leather', 'art', 'clay'];
   const foodDays = c => Math.round((c.store + c.grain) / Math.max(1, needsWeek(c) / 7));
-  // why a clan's food is short, in a few words, from its own numbers: the season, what the range yields against the need (c.supply), the grain left, and hunger. Reads state only.
+  // what limits a clan's food, with the same quantities stepPop uses for its take: the range now (P), the hands (labour x LABOR_KCAL) and the grain in weeks of need. Reads state only.
+  function foodLimits(W, c) {
+    const need = Math.max(1, needsWeek(c)), FLs = forageList(W, c); let P = 0;
+    for (let k = 0; k < FLs.idx.length; k++) P += cellFood(W, FLs.idx[k], FLs.ev[k], c.tool, c.tribe.boats);
+    const hands = labor(c) * LABOR_KCAL, m = Math.min(P, hands), bind = [];
+    if (P < need * 1.3 && P <= m * 1.1) bind.push('range'); if (hands < need * 1.3 && hands <= m * 1.1) bind.push('hands'); // the store spoils a tenth a week or so, so a take under about 1.3 of the need does not hold a clan fed
+    return { need, P, hands, range: P / need, handsN: hands / need, grainWk: (c.grain || 0) / need, bind };
+  }
+  // why a clan's food is short, in a few words: the limit that binds now (the hands, the range, the winter), the grain left, and hunger that has not yet eased
   function foodWhy(W, c) {
-    const sn = seasonName(W.week).toLowerCase(), s = c.supply || 0, need = Math.max(1, needsWeek(c)), parts = [sn];
-    parts.push(s >= 1.1 ? 'the range feeds us' : s < 0.05 ? 'the range gives almost nothing' : `the range feeds ${s.toFixed(1)} of us`);
-    if (c.live === 'farm' || c.tribe.stage >= 2 || (c.grain || 0) > 0 || (c.cereal || 0) > 0.02) { const wk = (c.grain || 0) / need; parts.push(wk < 0.5 ? 'no grain left' : wk < 1.5 ? 'grain for a week' : `grain for ${Math.round(wk)} weeks`); }
-    if (c.cond < 0.7) parts.push('going hungry');
+    const L = foodLimits(W, c), parts = [], fx = x => (Math.round(x * 10) / 10).toFixed(1);
+    if (seasonName(W.week).toLowerCase() === 'winter') parts.push('winter');
+    if (L.bind.includes('hands')) parts.push(L.handsN < 0.95 ? `too few hands: they gather for ${fx(L.handsN)} of us` : `hands barely enough: they gather for ${fx(L.handsN)} of us`);
+    if (L.bind.includes('range')) parts.push(L.range < 0.05 ? 'the range gives almost nothing' : `the range feeds ${fx(L.range)} of us`);
+    if (c.live === 'farm' || c.tribe.stage >= 2 || (c.grain || 0) > 0 || (c.cereal || 0) > 0.02) { const wk = Math.round(L.grainWk); parts.push(wk < 1 ? 'no grain left' : wk === 1 ? 'grain for 1 week' : `grain for ${wk} weeks`); }
+    if (!L.bind.length && c.cond < 0.9) parts.push('still weak from hunger');
     return parts.join(', ');
   }
   function acquireGoods(W, c) {
@@ -7070,7 +7085,7 @@ const SIM = (() => {
   }
 
   return { canTakeFarming, soilWarn, groundAt, bondWord, tribeKnown, liveSigns, walkWord, SIGN_R, N, CELL, WORLD, HA, FORAGE_R, TRIBE_MAX, tribeMax, BIOMES, GROVES, DEPOSITS, GOOD_NAMES, createWorld, seedFirstPop, step, clanSize, tribeSize, battleOdds, warSides, warBegin, realmWarcall, familiesOf, famMembers, needsWeek, opinion, prestige, isAllied, sameConfed, tribeCenter, roadLevel, pactRoute, playerActions, doAction, dealings, settleFeud, policy: W => pol(W), setPolicy: (W, k, v) => { const p = pol(W); if (k === 'deal' || !(k in p) || (v !== 'ask' && !(AUTOIX[k] && v in AUTOIX[k]))) return; p[k] = v; }, setDeal: (W, id, v) => { if (v === 'auto') delete pol(W).deal[id]; else pol(W).deal[id] = v; }, dealMode: (W, o) => dealWith(W, o), clanHeir, FAITHS, isMatri, faithOf, cultureName, MON, checkPlace, und, speechWord, kultInfo, grainInfo, clanFlow, HOME_R, CREATION, claimsYear, foreignHeld, landLive, landScan, landYear, driveOutOdds, leaveOdds, landTargets, ring, ringSay, BEASTS, beastNm, beastTale, beastOdds, beastWhere, beastToll, beastNear, saveGame, loadGame, saveInfo, ruleInfo, advice, legacy, legacyHTML, TRAITS, epithet, hasTrait, leadWeight, standingWhy, villageInfo, RANKS, SOCIETY, societyOf, rankOf, WORKS, JOBS, walls, canBuild, releaseClaim: (W, i) => { const P = W.player; if (P && P.claims && P.claims[i]) { houseNote(W, `The house gave up its claim to the ${DEPOSITS[P.claims[i].d.type].name.toLowerCase()}.`); P.claims.splice(i, 1); } }, weaponsName, houseSlaves, slaveCount, freeCount, knows, knowsTribe, foodDays, GIFTABLE, STAGES, BOAT_STAGES, METAL_STAGES, boatStage, metalStage, arms, canReach, houseCandidates, choosePlayer, resolve, dynMembers, bloodCount, titlesOf, relWord, vigor, tribeVigor, statureCm, farmSuit, fieldInfo, potential, cellFood, foodBreakdown, kingshipBid, warriors, tribeWealth, confedTribes, confedPeople, newConfed, joinConfed, leaveConfed, formAlliance, kinOf, rulerWord, realmWord, realmInfo, realmHeir, realmRisk, realmPutDown, realmWarList, realmRiseOdds, realmStay, realmNext, realmKingdomNeeds, succession, confedYear,
-    foodWhy,
+    foodWhy, foodLimits,
     seasonOf, seasonName, tempOffset, cellAt, lifeStage, siler, fecund, makePerson, stepPop, prof: PROF };
 })();
 if (typeof module !== 'undefined') module.exports = SIM;
@@ -8477,23 +8492,22 @@ const ART = (() => {
   const iconize = (s, size = 15) => String(s).replace(GLYPH_RE, m => ART.img(GLYPH[m], size));
   const depIc = (k, size = 16) => ART.img(k === 'whale' ? 'whale' : k, size);
   const faithIc = (t, size = 16) => ART.img(SIM.faithOf(t), size);
-  // the food of a clan as the top bar and the house strip tell it: days in the store, days of grain (it is eaten up to 80% of the diet, as stepPop does), and how worried to be
+  // the food of a clan as the top bar, the strip, the Stores tile and the alerts tell it: SIM.foodDays (the store and the grain together). The colour is the old top-bar rule (how well fed the clan is).
+  // A camp with nothing in store whose range feeds it, and which is well fed, says "from the land" instead of "0 days".
   function foodState(c) {
-    const wk = Math.max(1, SIM.needsWeek(c)), day = wk / 7, store = Math.round(c.store / day), grain = (c.grain || 0) > 0 ? Math.round(c.grain / (wk * 0.8 / 7)) : 0, both = SIM.foodDays(c), sup = c.supply || 0;
-    // a camp that forages eats the week's food as it comes, so an empty store is not a worry while the range feeds it; the days of store and grain together decide the rest
-    const cls = c.cond < 0.7 ? 'bad' : c.cond < 0.85 ? 'warn' : sup >= 1.1 ? 'good' : both < 3 ? 'bad' : both < 10 ? 'warn' : 'good';
-    return { store, grain, both, cls };
+    const days = SIM.foodDays(c), land = days < 1 && c.cond >= 0.85 && (c.supply || 0) >= 1.1;
+    return { days, land, cls: c.cond < 0.7 ? 'bad' : c.cond < 0.85 ? 'warn' : 'good' };
   }
+  const dayWord = n => `${n} day${n === 1 ? '' : 's'}`, foodWords = fs => fs.land ? 'from the land' : dayWord(fs.days);
   let advOpen = false, tabsKey = '', tabsX = 0;
-  // the house at a glance, two lines at most on the phone: the food (and why it is short), the heir, the seat, and the first warning
-  function houseStrip(h, c, t, heir, al, alTx, foodLow) {
-    const fs = foodState(c), warn = alTx.length ? String(alTx[0]).replace(/<[^>]*>/g, '').split(/(?<=[.!?])\s/)[0] : '';
-    let seat = ''; try { const si = SIM.seatInfo ? SIM.seatInfo(W) : null; if (si && si.line) seat = `${si.line}${si.pct != null ? ' ' + Math.round(si.pct * (si.pct <= 1 ? 100 : 1)) + '%' : ''}`; } catch (e) { seat = ''; }
+  // the house at a glance, two lines at most on the phone: the food (and why it is short), the heir, the seat, and the first sentence of the top warning (the whole alert stays in the list below; a tap goes to it)
+  function houseStrip(h, c, t, heir, alTx, foodLow) {
+    const fs = foodState(c), first = alTx.length ? String(alTx[0]).replace(/<[^>]*>/g, '').match(/^[^.!?]*[.!?]?/)[0].trim() : '';
+    let seat = ''; try { const si = typeof SIM.seatInfo === 'function' ? SIM.seatInfo(W) : null; if (si && si.pct != null) seat = `${t.headman === h ? 'Keeping the seat' : 'Chance at the seat'}: about ${si.pct}%`; } catch (e) { seat = ''; }
     if (!seat) seat = t.headman === h ? 'Leads the tribe' : c.head === h ? (SIM.isMatri(t) ? 'Clan mother' : 'Head of the clan') : `Not the head of the ${c.name} clan`;
-    return `<div class="glance"><div class="gl1"><span class="gf ${fs.cls}">Food <b>${dayWord(fs.store)}</b>${fs.grain ? `, grain <b>${dayWord(fs.grain)}</b>` : ''}</span><span class="gh">${heir ? `Heir <b>${esc(heir.name)}</b>, ${Math.floor(heir.age)}` : '<b>No heir</b>'}</span></div>` +
-      (foodLow ? `<div class="gl2"><span class="gw ${fs.cls}">${esc(SIM.foodWhy(W, c))}</span></div>` : `<div class="gl2"><span class="gs">${esc(seat)}</span>${warn ? `<span class="gw">${esc(warn)}</span>` : ''}</div>`) + `</div>`;
+    return `<div class="glance"><div class="gl1"><span class="gf ${fs.cls}">Food <b>${foodWords(fs)}</b></span><span class="gh">${heir ? `Heir <b>${esc(heir.name)}</b>, ${Math.floor(heir.age)}` : '<b>No heir</b>'}</span></div>` +
+      (foodLow ? `<div class="gl2"><span class="gw ${fs.cls}" data-warn>${esc(SIM.foodWhy(W, c))}</span></div>` : `<div class="gl2"><span class="gs">${esc(seat)}</span>${first ? `<span class="gw" data-warn>${esc(first)}</span>` : ''}</div>`) + `</div>`;
   }
-  const dayWord = n => `${n.toLocaleString()} day${n === 1 ? '' : 's'}`;
   function updateTop() {
     let tot = 0; for (const c of W.clans) tot += c.people.length;
     const P = W.player, playing = P && !P.over && P.head.alive && P.head.clan;
@@ -8502,7 +8516,7 @@ const ART = (() => {
     let hud;
     if (playing) { const c = P.head.clan;
       const fs = foodState(c);
-      hud = `<span class="${fs.cls}"><i>Food</i><b>${dayWord(fs.store)}</b></span>${fs.grain ? `<span class="${fs.cls}"><i>Grain</i><b>${dayWord(fs.grain)}</b></span>` : ''}<span><i>Clan</i><b>${SIM.freeCount(c)}</b></span><span><i>Spears</i><b>${SIM.warriors({ clans: [c] })}</b></span><span class="r"><i>Renown</i><b>${Math.round(P.renown)}</b></span>`; }
+      hud = `<span class="${fs.cls}"><i>Food</i><b>${foodWords(fs)}</b></span><span><i>Clan</i><b>${SIM.freeCount(c)}</b></span><span><i>Spears</i><b>${SIM.warriors({ clans: [c] })}</b></span><span class="r"><i>Renown</i><b>${Math.round(P.renown)}</b></span>`; }
     else hud = `<span><i>${P && P.over ? `The House of ${esc(P.house)} has ended` : 'Watching the isles'}</i></span>`;
     $('#hud').innerHTML = hud;
     if (P && P.hist.length !== tideN) { if (tideN >= 0 && P.hist.length > tideN && playing) { tide = P.hist[P.hist.length - 1].t; tideAt = performance.now(); } tideN = P.hist.length; }
@@ -8739,7 +8753,7 @@ const ART = (() => {
         </div>`; })()}
         ${t.myths && t.myths.length ? `<div class="k sec">Stories they tell</div><div class="muted" style="margin-bottom:4px">None of it need be true. All of it is believed, and acted on.</div>${t.myths.slice().reverse().map(m => `<div class="myth"><b>${esc(m.title)}</b>${m.kind === 'hero' && m.dyn && W.player && !W.player.over && W.player.head.clan && W.player.head.clan.tribe === t ? ' <span class="badge">of your house</span>' : ''}${m.kind === 'beast' ? (b => ` <span class="badge">${b && b.alive ? 'still out there' : b && b.slain ? 'slain, year ' + b.slain.y : 'not seen for years'}</span>`)((W.beasts || []).find(b => b.id === m.beast)) : ''}<div class="muted">${esc(m.text)}</div></div>`).join('')}` : ''}
         <div class="k sec">Custom and belief</div><div class="tiles">
-          ${tile('Customs & faith', `${faithIc(t, 18)}${SIM.FAITHS[SIM.faithOf(t)].name}`, `${SIM.isMatri(t) ? 'matrilineal — clan mothers lead; husbands join the wife\'s clan' : 'patrilineal — men lead; wives join the husband\'s clan'} · ${SIM.FAITHS[SIM.faithOf(t)].short.toLowerCase()}${t.blessing && t.blessing.until > W.week ? ' · <b>blessed</b>' : ''}`, `<div class="scale"><i style="left:calc(${Math.round(((t.culture && t.culture.patri) ?? 0.5) * 100)}% - 2px)"></i></div><div class="muted" style="display:flex;justify-content:space-between;font-size:10.5px"><span>mothers lead</span><span>fathers lead</span></div>`).replace('class="tile"', 'class="tile" style="grid-column:1/-1"')}
+          ${tile('Customs & faith', `${faithIc(t, 18)}${SIM.FAITHS[SIM.faithOf(t)].name}`, `${SIM.isMatri(t) ? 'matrilineal — clan mothers lead; husbands join the wife\'s clan' : 'patrilineal — men lead; wives join the husband\'s clan'} · ${SIM.FAITHS[SIM.faithOf(t)].short.toLowerCase()}${t.blessing && t.blessing.until > W.week ? ' · <b>blessed</b>' : ''}`, `<div class="scale"><i style="left:calc(${Math.round(((t.culture && t.culture.patri) ?? 0.5) * 100)}% - 2px)"></i></div><div class="muted" style="display:flex;justify-content:space-between;font-size:12px"><span>mothers lead</span><span>fathers lead</span></div>`).replace('class="tile"', 'class="tile" style="grid-column:1/-1"')}
         </div>
         <div class="k sec">Population over time</div><canvas id="spark" width="600" height="90"></canvas>
         <div class="k sec">Leadership</div>
@@ -8811,7 +8825,7 @@ const ART = (() => {
           for (const b of W.beasts || []) if (b.alive && (b.name || b.kills) && Math.hypot(b.x - c.x, b.y - c.y) < (SIM.BEASTS[b.kind].sea ? 75000 : 45000)) { const nm = SIM.beastNm(b); alert(b.kills ? 'warn' : '', `${esc(nm[0].toUpperCase() + nm.slice(1))}${b.name ? ', ' + SIM.BEASTS[b.kind].a + ',' : ''} is ${Math.round(Math.hypot(b.x - c.x, b.y - c.y) / 1000)} km from your ${c.settled ? 'village' : 'camp'}${b.kills ? ` and has killed ${b.kills}` : ''}. Under Act you can hunt it${c.shun && c.shun.id === b.id && c.shun.until > W.week ? '; its ground is forbidden to the clan for now' : ''}.`); }
           if (t.blessing && t.blessing.until > W.week) alert('ok', `The tribe is blessed: ${esc(F.boon.split(':')[0].toLowerCase())}.`);
           const strip = !wide() && houseTab === 'overview'; // on the phone the Overview opens with a strip that carries the top warning, and lists the rest below it
-          const foodLow = foodState(c).cls !== 'good';
+          const foodLow = foodState(c).cls !== 'good'; // under 0.85 fed: the same line as the alert
           if (!strip) html += al.length ? `<div class="alerts">${al.join('')}</div>` : '';
           if (!P.over && wide()) html += `<button class="actbig" data-act>Choose a deed</button>`;
           const tabs = [['overview', 'Overview'], ['deal', 'Dealings'], ['family', 'Family'], ['clan', `Clan ${SIM.freeCount(c)}`], ['tribe', `Tribe ${SIM.tribeSize(t)}`], ['story', 'Story']];
@@ -8820,9 +8834,9 @@ const ART = (() => {
           html += `<div class="tabs2">${tabs.map(([k, l]) => `<button data-htab="${k}" class="${k === houseTab ? 'on' : ''}">${l}</button>`).join('')}</div>`;
           if (houseTab === 'overview') {
             const ch = c.head, hm = t.headman;
-            if (strip) html += houseStrip(h, c, t, heir, al, alTx, foodLow) + (al.length > 1 || (foodLow && al.length) ? `<div class="alerts">${(foodLow ? al : al.slice(1)).join('')}</div>` : '');
-            { const adv = SIM.advice(W); if (adv) { const rg = SIM.ring(W), sp = rg.find(r => r.role === 'lore') || rg[0], sents = adv.text.split(/(?<=[.!?])\s+/), first = sents[0], rest = adv.text.slice(first.length);
-              html += sp ? `<div class="says adv${advOpen ? ' open' : ''}" data-adv>${ART.faceImg(sp.q, c.tribe.hue, phone() ? 44 : 64)}<div class="bubble"><span class="who">${esc(sp.q.name)}</span>${esc(first)}<span class="a2">${esc(rest)}${adv.deed ? ` <button class="lnk" data-act>Open deeds</button>` : ''}</span></div></div>` : `<div class="counsel"><span class="k">Counsel</span>${esc(adv.text)}${adv.deed ? ` <button class="lnk" data-act>Open deeds</button>` : ''}</div>`; }
+            if (strip) html += houseStrip(h, c, t, heir, alTx, foodLow) + (al.length ? `<div class="alerts">${al.join('')}</div>` : '');
+            { const adv = SIM.advice(W); if (adv) { const rg = SIM.ring(W), sp = rg.find(r => r.role === 'lore') || rg[0], first = adv.text.match(/^[^.!?]*[.!?]?/)[0], rest = adv.text.slice(first.length), dl = adv.deed ? ` <button class="lnk" data-act="${esc(String(adv.deed))}">Open deeds</button>` : '';
+              html += sp ? `<div class="says adv${advOpen ? ' open' : ''}" data-adv>${ART.faceImg(sp.q, c.tribe.hue, phone() ? 44 : 64)}<div class="bubble"><span class="who">${esc(sp.q.name)}</span>${iconize(esc(first))}<span class="a2">${iconize(esc(rest))}${dl}</span></div></div>` : `<div class="counsel"><span class="k">Counsel</span>${iconize(esc(adv.text))}${dl}</div>`; }
               const am = (P.amb || []).filter(a => !a.done), done = (P.amb || []).filter(a => a.done).slice(-2), tr = (h.traits || []).map(k => SIM.TRAITS[k]);
               html += `<div class="k sec" style="margin-top:4px">${esc(h.name)}${tr.length ? ' ' + esc(tr[0].name) : ''}</div>${tr.length ? `<div class="muted" style="margin:-2px 0 6px">${tr.map(x => esc(x.does)).join('. ')}.${P.lineage ? ` Of the line of ${esc((P.lineageOf || []).join(' and '))}, told of at the fires: standing +${P.lineage.toFixed(2)} for all of the blood.` : ''}</div>` : ''}` +
                 am.map(a => `<div class="row2"><span class="amb"></span>${esc(a.text)} <span class="muted" style="margin-left:auto">+${a.r} renown</span></div>`).join('') + done.map(a => `<div class="row2 muted"><span class="amb done"></span>${esc(a.text)} <span style="margin-left:auto">done by ${esc(a.by)}</span></div>`).join(''); }
@@ -8976,10 +8990,11 @@ const ART = (() => {
     el.innerHTML = html;
     for (const [id, k] of [['houseBtn', 'house'], ['logBtn', 'log'], ['tribesBtn', 'tribes'], ['chartBtn', 'chart']]) $('#' + id).classList.toggle('on', panel === k);
     el.querySelectorAll('[data-back]').forEach(b => b.onclick = () => closeSel());
-    el.querySelectorAll('[data-act]').forEach(ab => ab.onclick = ev => { ev.stopPropagation(); showActions(); });
+    el.querySelectorAll('[data-act]').forEach(ab => ab.onclick = ev => { ev.stopPropagation(); showActions(null, ab.dataset.act || null); });
+    el.querySelectorAll('[data-warn]').forEach(w => w.onclick = () => { const a = el.querySelector('.alerts .alert'); if (!a) return; a.scrollIntoView({ block: 'center', behavior: 'smooth' }); a.classList.remove('flash'); void a.offsetWidth; a.classList.add('flash'); });
     el.querySelectorAll('[data-adv]').forEach(a => a.onclick = () => { advOpen = !advOpen; a.classList.toggle('open', advOpen); });
     // a name that heads a row is a target the width of the row
-    el.querySelectorAll('.row2, .rel, .pp').forEach(r => { const a = r.querySelector('a[data-e]'); if (!a || r.classList.contains('pp') || r.querySelectorAll('a[data-e]').length > 1) return; const f = [...r.childNodes].find(n => n.nodeType === 1 ? !n.matches('img, .amb') : n.textContent.trim()); if (f === a || (f && f.contains && f.contains(a) && f.firstElementChild === a)) { r.dataset.go = a.dataset.e; r.onclick = ev => { if (ev.target.closest('a, button, input, label')) return; const e = W.ents.get(+r.dataset.go); if (e) open(e, true); }; } });
+    if (phone()) el.querySelectorAll('.row2, .rel, .pp').forEach(r => { const a = r.querySelector('a[data-e]'); if (!a || r.classList.contains('pp') || r.querySelectorAll('a[data-e]').length > 1) return; const f = [...r.childNodes].find(n => n.nodeType === 1 ? !n.matches('img, .amb') : n.textContent.trim()); if (f === a || (f && f.contains && f.contains(a) && f.firstElementChild === a)) { r.dataset.go = a.dataset.e; r.onclick = ev => { if (ev.target.closest('a, button, input, label')) return; const e = W.ents.get(+r.dataset.go); if (e) open(e, true); }; } });
     if (pyr) drawPyramid(pyr);
     if (panel === 'chart') drawChart();
     el.querySelectorAll('[data-e]').forEach(a => a.onclick = ev => { ev.stopPropagation(); const e = W.ents.get(+a.dataset.e); if (e) open(e, true); });
@@ -9025,7 +9040,7 @@ const ART = (() => {
     const line = (f, col, wd) => { g.strokeStyle = col; g.lineWidth = wd; g.beginPath(); H.forEach((d, k) => k ? g.lineTo(X(k), Y(f(d))) : g.moveTo(X(k), Y(f(d)))); g.stroke(); };
     line(d => d.tribes / mt, '#2c6a8a', 2); line(d => (d.allies || 0) / mt, '#a8801a', 2); line(d => (d.confeds || 0) * 4 / mt, '#a83a22', 2); line(d => d.pop / mp, '#2f2218', 3);
     g.fillStyle = '#6c563c'; g.font = '16px Georgia, serif'; g.textAlign = 'right'; [0, 0.5, 1].forEach(t => g.fillText(Math.round(mp * t).toLocaleString(), L - 6, Y(t) + 5));
-    g.textAlign = 'center'; g.fillText(`year ${Math.round(H[0].year)}`, X(0) + 24, h - 4); g.fillText(`year ${Math.round(H.at(-1).year)}`, X(H.length - 1) - 34, h - 4);
+    g.textAlign = 'center'; g.fillText(`year ${Math.round(H[0].year)}`, X(0) + 24, h - 4); g.fillText(`year ${Math.round(H[H.length - 1].year)}`, X(H.length - 1) - 34, h - 4);
   }
   function open(e, focus) {
     sel = e; selCell = null; panel = e.kind; renderPanel(); $('#panelBody').scrollTop = 0; if (sheet === 'peek') setSheet('half');
@@ -9148,7 +9163,8 @@ const ART = (() => {
   // The map moves with it: the panel grows by so much, the map is panned by half of that, and the point at the middle of the visible map stays there.
   let lastPanelH = null, panelWatch = 0;
   const panelH = () => $('.panel').getBoundingClientRect().height;
-  const STOPS = ['peek', 'half', 'mid', 'full'], stopPx = s => s === 'peek' ? 80 + (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sab')) || safeBottom()) : innerHeight * ({ half: 0.42, mid: 0.62, full: 0.82 }[s]);
+  const STOPS = ['peek', 'half', 'mid', 'full'], stopPx = s => s === 'peek' ? 80 + sabPx() : innerHeight * ({ half: 0.42, mid: 0.62, full: 0.82 }[s]);
+  const sabPx = () => { const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sab')); return isNaN(v) ? safeBottom() : v; };
   function safeBottom() { const d = document.createElement('div'); d.style.cssText = 'position:fixed;visibility:hidden;padding-bottom:env(safe-area-inset-bottom,0px)'; document.body.appendChild(d); const v = parseFloat(getComputedStyle(d).paddingBottom) || 0; d.remove(); return v; }
   function setSheet(s) { if (phone()) { lastPanelH = panelH(); panelWatch = performance.now() + 700; } sheet = s; expanded = s === 'full'; document.body.classList.toggle('sheet-peek', s === 'peek'); document.body.classList.toggle('sheet-mid', s === 'mid'); document.body.classList.toggle('expanded', s === 'full'); }
   function followPanel(t) { if (t > panelWatch) { lastPanelH = null; return; } if (phone() && lastPanelH != null) { const H = panelH(); cam.oy -= (H - lastPanelH) / 2; lastPanelH = H; } }
@@ -9169,10 +9185,11 @@ const ART = (() => {
   // popovers: map view and menu. Anything opened closes when you tap outside it.
   const closePops = () => { for (const p of document.querySelectorAll('.pop.open')) p.classList.remove('open'); $('#mapMenu').classList.remove('more'); $('#moreBtn').setAttribute('aria-expanded', 'false'); $('#speedRow').classList.remove('open'); for (const b of ['#mapBtn', '#menuBtn', '#noteBtn']) $(b).classList.remove('on'); };
   const togglePop = (id, btn) => { const p = $(id), was = p.classList.contains('open'); closePops(); if (!was) { p.classList.add('open'); $(btn).classList.add('on'); } };
-  $('#mapBtn').onclick = () => { buildLegend(); togglePop('#mapMenu', '#mapBtn'); };
+  const sheetToHalf = () => { if (phone() && sheet === 'full') setSheet('half'); }; // the map menu sits above the controls, which a full panel pushes off the screen: bring the panel down first
+  $('#mapBtn').onclick = () => { if (!$('#mapMenu').classList.contains('open')) sheetToHalf(); buildLegend(); togglePop('#mapMenu', '#mapBtn'); };
   $('#menuBtn').onclick = () => togglePop('#menu', '#menuBtn');
   $('#noteBtn').onclick = () => { const was = $('#noteList').classList.contains('open'); closePops(); if (!was) { noteList(); $('#noteList').classList.add('open'); $('#noteBtn').classList.add('on'); } };
-  $('#moreBtn').onclick = () => { const m = $('#mapMenu').classList.toggle('more'); $('#moreBtn').setAttribute('aria-expanded', m ? 'true' : 'false'); if (m) buildLegend(); };
+  $('#moreBtn').onclick = () => { sheetToHalf(); const m = $('#mapMenu').classList.toggle('more'); $('#moreBtn').setAttribute('aria-expanded', m ? 'true' : 'false'); if (m) buildLegend(); };
   document.addEventListener('pointerdown', e => { if (!e.target.closest('.pop, .tools, #noteBtn, #speedRow, #speed')) closePops(); if (!e.target.closest('#picker')) hidePicker(); }, true);
   // the help opens with a contents list made from its headings as they stand now, so a new section shows in it by itself
   function openHelp() {
@@ -9263,6 +9280,7 @@ const ART = (() => {
   const DEED_GROUP = {
     adopt: 'Your house', recall: 'Your house', claim: 'Your house', treasure: 'Your house', free: 'Your house',
     invite: 'Your clan', challengeClan: 'Your clan', feast: 'Your clan', expedition: 'Your clan', hunt: 'Your clan',
+    clanlife: 'Your clan', clanblood: 'Your clan', tribelife: 'Your tribe', tribeblood: 'Your tribe', bindseat: 'Your tribe',
     challenge: 'Your tribe', crown: 'Your tribe', kingdom: 'Your tribe', leaverealm: 'Your tribe', bloodseat: 'Your tribe', plot: 'Your tribe', strike: 'Your tribe', court: 'Your tribe', confront: 'Your tribe',
     raid: 'Other peoples', landask: 'Other peoples', landdrive: 'Other peoples', explore: 'Other peoples', voyage: 'Other peoples', trader: 'Other peoples', ally: 'Other peoples', pact: 'Other peoples', tribute: 'Other peoples', peace: 'Other peoples', gifts: 'Other peoples', war: 'Other peoples', endwar: 'Other peoples',
     rite: 'Faith and lore', walk: 'Faith and lore',
@@ -9287,7 +9305,7 @@ const ART = (() => {
       const ix = opts.map((o, k) => [o, k]); body = '';
       for (const g of GROUPS) { const it = ix.filter(([o]) => !o.off && (o.group || 'Your house') === g); if (it.length) body += `<div class="ghead">${g}</div>` + it.map(([o, k]) => optHtml(o, k)).join(''); }
       const off = ix.filter(([o]) => o.off);
-      if (off.length) body += `<button class="notnow" data-notnow aria-expanded="false"><span>Not now (${off.length})</span><span>▾</span></button><div class="notnowbox">${off.map(([o, k]) => optHtml(o, k)).join('')}</div>`;
+      if (off.length) body += `<button class="notnow" data-notnow aria-expanded="false"><span>Not now (${off.length})</span><span>▾</span></button><div class="notnowbox"><div class="ghead">Not now</div>${off.map(([o, k]) => optHtml(o, k)).join('')}</div>`;
     } else body = opts.map(optHtml).join('');
     const hd = ph ? `<div class="ahead"><h2>${esc(title)}</h2><button class="xbtn" data-x title="Close (Esc)" aria-label="Close">✕</button></div><div class="evhead">${head || (P ? `House of ${esc(P.house)}, year ${yr(W.week)}` : '')}</div>`
       : `<button class="xbtn" data-x title="Close (Esc)">✕</button><div class="evhead">${head || (P ? `House of ${esc(P.house)}, year ${yr(W.week)}` : '')}</div><h2>${esc(title)}</h2>`;
@@ -9305,6 +9323,7 @@ const ART = (() => {
   // Every notice, whichever way it is shown, also goes into a log of the last 30, with its date; the bell in the top bar counts the ones not yet looked at.
   const NOTE_LOG = []; let noteUnread = 0;
   const noteDate = () => W ? `${SIM.seasonName(W.week)}, year ${yr(W.week)}` : '';
+  function clearNotes() { NOTE_LOG.length = 0; noteUnread = 0; noteBadge(); $('#toasts').innerHTML = ''; if ($('#noteList').classList.contains('open')) noteList(); } // a new world or a loaded game starts with no notices
   function noteBadge() { const b = $('#noteBtn'), n = $('#noteN'); if (!b) return; n.textContent = noteUnread > 99 ? '99+' : String(noteUnread); b.classList.toggle('has', noteUnread > 0); b.setAttribute('aria-label', noteUnread ? `Notices, ${noteUnread} new` : 'Notices'); }
   function noteList() {
     const el = $('#noteList'), n = noteUnread;
@@ -9315,7 +9334,9 @@ const ART = (() => {
   function toast(r) {
     NOTE_LOG.unshift({ title: r.title, text: r.text, date: noteDate() }); if (NOTE_LOG.length > 30) NOTE_LOG.pop();
     if ($('#noteList').classList.contains('open')) { noteList(); } else { noteUnread++; noteBadge(); }
-    const box = $('#toasts'); while (box.children.length > 2) box.firstChild.remove();
+    const box = $('#toasts');
+    if (!phone()) while (box.children.length > 2) box.firstChild.remove();
+    else { let live = [...box.children].filter(x => !x.classList.contains('gone')); while (live.length > 2) { const old = live.find(x => !x.classList.contains('open')); if (!old) break; old.remove(); live = live.filter(x => x !== old); } } // a fourth notice puts out the oldest chip that is not open; one being read stays
     const el = document.createElement('div');
     if (!phone()) {
       el.className = 'toast'; el.innerHTML = `<b>${esc(r.title)}</b><br>${iconize(r.text)}`;
@@ -9325,7 +9346,7 @@ const ART = (() => {
     el.className = 'toast'; el.innerHTML = `<div class="tc"><b>${esc(r.title)}</b><div class="tx">${iconize(r.text)}</div></div><button class="tx-x" aria-label="Dismiss">✕</button>`;
     box.appendChild(el);
     let t1 = setTimeout(() => el.classList.add('out'), 7000), t2 = setTimeout(() => el.remove(), 7800), x0 = null, dx = 0, moved = false;
-    const gone = dir => { clearTimeout(t1); clearTimeout(t2); el.style.transform = `translateX(${dir * 420}px)`; el.style.opacity = '0'; setTimeout(() => el.remove(), 220); };
+    const gone = dir => { el.classList.add('gone'); clearTimeout(t1); clearTimeout(t2); el.style.transform = `translateX(${dir * 420}px)`; el.style.opacity = '0'; setTimeout(() => el.remove(), 220); };
     el.querySelector('.tx-x').onclick = ev => { ev.stopPropagation(); gone(1); };
     el.querySelector('.tc').onclick = () => { if (moved) { moved = false; return; } const o = el.classList.toggle('open'); clearTimeout(t1); clearTimeout(t2); el.classList.remove('out'); if (!o) { t1 = setTimeout(() => el.classList.add('out'), 7000); t2 = setTimeout(() => el.remove(), 7800); } }; // read whole it stays until it is dismissed
     el.addEventListener('pointerdown', e => { if (e.target.closest('.tx-x')) return; x0 = e.clientX; dx = 0; moved = false; });
@@ -9371,7 +9392,7 @@ const ART = (() => {
     ctx.restore();
   }
   let hoverPt = null;
-  function showActions(openId) {
+  function showActions(openId, focusId) {
     const P = W.player; if (!P || P.over || modalEv || picking) return;
     const A = SIM.playerActions(W); if (!A.length) return;
     const h = P.head;
@@ -9397,6 +9418,10 @@ const ART = (() => {
         } else showResult(SIM.doAction(W, a.id, 0));
       }, { groups: true });
     if (direct) modalEv.pick(-1);
+    else if (focusId) { // open at the deed an advice line named: its box opened if it sits in Not now, the sheet scrolled to it, the deed marked for a moment
+      const k = sorted.findIndex(a => a.id === focusId), m = $('#modal'), b = k >= 0 ? m.querySelector(`.opt[data-k="${k}"]`) : null;
+      if (b) { const nn = b.closest('.notnowbox'); if (nn && !nn.classList.contains('open')) { const tg = nn.previousElementSibling; if (tg) tg.click(); } b.scrollIntoView({ block: 'center' }); b.classList.add('hl'); setTimeout(() => b.classList.remove('hl'), 1800); }
+    }
   }
   function choose(k) {
     const ev = modalEv; if (!ev) return;
@@ -9411,7 +9436,7 @@ const ART = (() => {
     if (panel === 'house') renderPanel(); updateTop();
   }
   window.addEventListener('keydown', e => { if (placePick && e.key === 'Escape') { endPlacePick(); closeCard(); return; }
-    if (e.key === 'Escape') { if (document.querySelector('.pop.open')) return closePops(); if ($('#help').style.display === 'flex') { $('#help').style.display = 'none'; return; } if ($('#picker').style.display === 'block') return hidePicker(); if ($('#modal').style.display === 'flex') { if (modalDismiss) modalDismiss(); return; } if (sel || panel === 'cell') return closeSel(); return; } if (modalEv && /^[1-9]$/.test(e.key)) choose(+e.key - 1); if (!modalEv && (e.key === 'a' || e.key === 'A') && e.target === document.body) showActions(); if (e.key === ' ' && !modalEv && !picking && e.target === document.body) { e.preventDefault(); $('#play').click(); } });
+    if (e.key === 'Escape') { if (document.querySelector('.pop.open') || $('#speedRow').classList.contains('open')) return closePops(); if ($('#help').style.display === 'flex') { $('#help').style.display = 'none'; return; } if ($('#picker').style.display === 'block') return hidePicker(); if ($('#modal').style.display === 'flex') { if (modalDismiss) modalDismiss(); return; } if (sel || panel === 'cell') return closeSel(); return; } if (modalEv && /^[1-9]$/.test(e.key)) choose(+e.key - 1); if (!modalEv && (e.key === 'a' || e.key === 'A') && e.target === document.body) showActions(); if (e.key === ' ' && !modalEv && !picking && e.target === document.body) { e.preventDefault(); $('#play').click(); } });
   function centerOnHouse() { const P = W.player; if (P && P.head && P.head.clan) centerOn(P.head.clan.x, P.head.clan.y, 0.0016); }
 
   const STORE = {
@@ -9445,7 +9470,7 @@ const ART = (() => {
     $('#loading').style.display = 'flex'; $('#modal').style.display = 'none';
     setTimeout(() => {
       try { W = SIM.loadGame(str); } catch (e) { $('#loading').style.display = 'none'; toast({ title: 'That save could not be read', text: esc(String(e && e.message || e)) }); return showStart(); }
-      prep(); detail = null; modalEv = null; wasRunning = false; picking = false; running = false; $('#play').textContent = '▶'; lastSaveWeek = W.week;
+      prep(); clearNotes(); detail = null; modalEv = null; wasRunning = false; picking = false; running = false; $('#play').textContent = '▶'; lastSaveWeek = W.week;
       sel = null; panel = W.player ? 'house' : 'log'; selCell = null; dirty = true; renderPanel(); updateTop(); if (W.player && !W.player.over) centerOnHouse(); else fit();
       $('#loading').style.display = 'none'; toast({ title: 'Welcome back', text: W.player ? `The House of ${esc(W.player.house)}, year ${yr(W.week)}. The game is paused: press play when you are ready.` : `Year ${yr(W.week)}.` });
     }, 40);
@@ -9458,7 +9483,7 @@ const ART = (() => {
   function newWorld(seed) {
     $('#loading').style.display = 'flex';
     setTimeout(() => {
-      W = SIM.createWorld(seed); SIM.seedFirstPop(W, 4); prep(); detail = null; modalEv = null; wasRunning = false;
+      W = SIM.createWorld(seed); SIM.seedFirstPop(W, 4); prep(); clearNotes(); detail = null; modalEv = null; wasRunning = false;
       sel = null; panel = 'log'; selCell = null; dirty = true; renderPanel(); updateTop(); fit();
       $('#loading').style.display = 'none'; showStart();
     }, 40);

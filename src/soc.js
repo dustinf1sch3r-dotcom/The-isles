@@ -1388,12 +1388,22 @@
   const GOOD_NAMES = { flint: 'Flint', axe: 'Polished greenstone axes', amber: 'Amber', ochre: 'Red ochre', salt: 'Salt', furs: 'Furs', shells: 'Shell beads', copper: 'Copper ore', tin: 'Tin', metal: 'Copper tools & ornaments', bronze: 'Bronze', clay: 'Potter\'s clay', pots: 'Pottery', leather: 'Leather', art: 'Carvings & ornaments' };
   const GIFTABLE = ['bronze', 'metal', 'amber', 'art', 'axe', 'salt', 'ochre', 'furs', 'shells', 'pots', 'leather'], TRADEABLE = ['flint', 'amber', 'salt', 'ochre', 'furs', 'shells', 'axe', 'metal', 'pots', 'leather', 'art', 'clay'];
   const foodDays = c => Math.round((c.store + c.grain) / Math.max(1, needsWeek(c) / 7));
-  // why a clan's food is short, in a few words, from its own numbers: the season, what the range yields against the need (c.supply), the grain left, and hunger. Reads state only.
+  // what limits a clan's food, with the same quantities stepPop uses for its take: the range now (P), the hands (labour x LABOR_KCAL) and the grain in weeks of need. Reads state only.
+  function foodLimits(W, c) {
+    const need = Math.max(1, needsWeek(c)), FLs = forageList(W, c); let P = 0;
+    for (let k = 0; k < FLs.idx.length; k++) P += cellFood(W, FLs.idx[k], FLs.ev[k], c.tool, c.tribe.boats);
+    const hands = labor(c) * LABOR_KCAL, m = Math.min(P, hands), bind = [];
+    if (P < need * 1.3 && P <= m * 1.1) bind.push('range'); if (hands < need * 1.3 && hands <= m * 1.1) bind.push('hands'); // the store spoils a tenth a week or so, so a take under about 1.3 of the need does not hold a clan fed
+    return { need, P, hands, range: P / need, handsN: hands / need, grainWk: (c.grain || 0) / need, bind };
+  }
+  // why a clan's food is short, in a few words: the limit that binds now (the hands, the range, the winter), the grain left, and hunger that has not yet eased
   function foodWhy(W, c) {
-    const sn = seasonName(W.week).toLowerCase(), s = c.supply || 0, need = Math.max(1, needsWeek(c)), parts = [sn];
-    parts.push(s >= 1.1 ? 'the range feeds us' : s < 0.05 ? 'the range gives almost nothing' : `the range feeds ${s.toFixed(1)} of us`);
-    if (c.live === 'farm' || c.tribe.stage >= 2 || (c.grain || 0) > 0 || (c.cereal || 0) > 0.02) { const wk = (c.grain || 0) / need; parts.push(wk < 0.5 ? 'no grain left' : wk < 1.5 ? 'grain for a week' : `grain for ${Math.round(wk)} weeks`); }
-    if (c.cond < 0.7) parts.push('going hungry');
+    const L = foodLimits(W, c), parts = [], fx = x => (Math.round(x * 10) / 10).toFixed(1);
+    if (seasonName(W.week).toLowerCase() === 'winter') parts.push('winter');
+    if (L.bind.includes('hands')) parts.push(L.handsN < 0.95 ? `too few hands: they gather for ${fx(L.handsN)} of us` : `hands barely enough: they gather for ${fx(L.handsN)} of us`);
+    if (L.bind.includes('range')) parts.push(L.range < 0.05 ? 'the range gives almost nothing' : `the range feeds ${fx(L.range)} of us`);
+    if (c.live === 'farm' || c.tribe.stage >= 2 || (c.grain || 0) > 0 || (c.cereal || 0) > 0.02) { const wk = Math.round(L.grainWk); parts.push(wk < 1 ? 'no grain left' : wk === 1 ? 'grain for 1 week' : `grain for ${wk} weeks`); }
+    if (!L.bind.length && c.cond < 0.9) parts.push('still weak from hunger');
     return parts.join(', ');
   }
   function acquireGoods(W, c) {
@@ -6044,7 +6054,7 @@
   }
 
   return { canTakeFarming, soilWarn, groundAt, bondWord, tribeKnown, liveSigns, walkWord, SIGN_R, N, CELL, WORLD, HA, FORAGE_R, TRIBE_MAX, tribeMax, BIOMES, GROVES, DEPOSITS, GOOD_NAMES, createWorld, seedFirstPop, step, clanSize, tribeSize, battleOdds, warSides, warBegin, realmWarcall, familiesOf, famMembers, needsWeek, opinion, prestige, isAllied, sameConfed, tribeCenter, roadLevel, pactRoute, playerActions, doAction, dealings, settleFeud, policy: W => pol(W), setPolicy: (W, k, v) => { const p = pol(W); if (k === 'deal' || !(k in p) || (v !== 'ask' && !(AUTOIX[k] && v in AUTOIX[k]))) return; p[k] = v; }, setDeal: (W, id, v) => { if (v === 'auto') delete pol(W).deal[id]; else pol(W).deal[id] = v; }, dealMode: (W, o) => dealWith(W, o), clanHeir, FAITHS, isMatri, faithOf, cultureName, MON, checkPlace, und, speechWord, kultInfo, grainInfo, clanFlow, HOME_R, CREATION, claimsYear, foreignHeld, landLive, landScan, landYear, driveOutOdds, leaveOdds, landTargets, ring, ringSay, BEASTS, beastNm, beastTale, beastOdds, beastWhere, beastToll, beastNear, saveGame, loadGame, saveInfo, ruleInfo, advice, legacy, legacyHTML, TRAITS, epithet, hasTrait, leadWeight, standingWhy, villageInfo, RANKS, SOCIETY, societyOf, rankOf, WORKS, JOBS, walls, canBuild, releaseClaim: (W, i) => { const P = W.player; if (P && P.claims && P.claims[i]) { houseNote(W, `The house gave up its claim to the ${DEPOSITS[P.claims[i].d.type].name.toLowerCase()}.`); P.claims.splice(i, 1); } }, weaponsName, houseSlaves, slaveCount, freeCount, knows, knowsTribe, foodDays, GIFTABLE, STAGES, BOAT_STAGES, METAL_STAGES, boatStage, metalStage, arms, canReach, houseCandidates, choosePlayer, resolve, dynMembers, bloodCount, titlesOf, relWord, vigor, tribeVigor, statureCm, farmSuit, fieldInfo, potential, cellFood, foodBreakdown, kingshipBid, warriors, tribeWealth, confedTribes, confedPeople, newConfed, joinConfed, leaveConfed, formAlliance, kinOf, rulerWord, realmWord, realmInfo, realmHeir, realmRisk, realmPutDown, realmWarList, realmRiseOdds, realmStay, realmNext, realmKingdomNeeds, succession, confedYear,
-    foodWhy,
+    foodWhy, foodLimits,
     seasonOf, seasonName, tempOffset, cellAt, lifeStage, siler, fecund, makePerson, stepPop, prof: PROF };
 })();
 if (typeof module !== 'undefined') module.exports = SIM;
