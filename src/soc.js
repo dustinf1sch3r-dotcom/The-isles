@@ -1393,7 +1393,8 @@
     const need = Math.max(1, needsWeek(c)), FLs = forageList(W, c); let P = 0;
     for (let k = 0; k < FLs.idx.length; k++) P += cellFood(W, FLs.idx[k], FLs.ev[k], c.tool, c.tribe.boats);
     const hands = labor(c) * LABOR_KCAL, m = Math.min(P, hands), bind = [];
-    if (P < need * 1.3 && P <= m * 1.1) bind.push('range'); if (hands < need * 1.3 && hands <= m * 1.1) bind.push('hands'); // the store spoils a tenth a week or so, so a take under about 1.3 of the need does not hold a clan fed
+    const covered = Math.min(c.grain || 0, need * 0.8) + (c.store || 0) + m / 1.3 >= need; // grain (up to 0.8 of the need), the store and the week's take (counted at the same margin as below) feed the clan this week: nothing is the limit now
+    if (!covered) { if (P < need * 1.3 && P <= m * 1.1) bind.push('range'); if (hands < need * 1.3 && hands <= m * 1.1) bind.push('hands'); } // the store spoils a tenth a week or so, so a take under about 1.3 of the need does not hold a clan fed
     return { need, P, hands, range: P / need, handsN: hands / need, grainWk: (c.grain || 0) / need, bind };
   }
   // why a clan's food is short, in a few words: the limit that binds now (the hands, the range, the winter), the grain left, and hunger that has not yet eased

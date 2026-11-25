@@ -2424,7 +2424,8 @@ const SIM = (() => {
     const need = Math.max(1, needsWeek(c)), FLs = forageList(W, c); let P = 0;
     for (let k = 0; k < FLs.idx.length; k++) P += cellFood(W, FLs.idx[k], FLs.ev[k], c.tool, c.tribe.boats);
     const hands = labor(c) * LABOR_KCAL, m = Math.min(P, hands), bind = [];
-    if (P < need * 1.3 && P <= m * 1.1) bind.push('range'); if (hands < need * 1.3 && hands <= m * 1.1) bind.push('hands'); // the store spoils a tenth a week or so, so a take under about 1.3 of the need does not hold a clan fed
+    const covered = Math.min(c.grain || 0, need * 0.8) + (c.store || 0) + m / 1.3 >= need; // grain (up to 0.8 of the need), the store and the week's take (counted at the same margin as below) feed the clan this week: nothing is the limit now
+    if (!covered) { if (P < need * 1.3 && P <= m * 1.1) bind.push('range'); if (hands < need * 1.3 && hands <= m * 1.1) bind.push('hands'); } // the store spoils a tenth a week or so, so a take under about 1.3 of the need does not hold a clan fed
     return { need, P, hands, range: P / need, handsN: hands / need, grainWk: (c.grain || 0) / need, bind };
   }
   // why a clan's food is short, in a few words: the limit that binds now (the hands, the range, the winter), the grain left, and hunger that has not yet eased
@@ -8502,7 +8503,7 @@ const ART = (() => {
   let advOpen = false, tabsKey = '', tabsX = 0;
   // the house at a glance, two lines at most on the phone: the food (and why it is short), the heir, the seat, and the first sentence of the top warning (the whole alert stays in the list below; a tap goes to it)
   function houseStrip(h, c, t, heir, alTx, foodLow) {
-    const fs = foodState(c), first = alTx.length ? String(alTx[0]).replace(/<[^>]*>/g, '').match(/^[^.!?]*[.!?]?/)[0].trim() : '';
+    const fs = foodState(c), first = alTx.length ? (String(alTx[0]).replace(/<[^>]*>/g, '').match(/^.*?[.!?](?=\s|$)/) || [String(alTx[0]).replace(/<[^>]*>/g, '')])[0].trim() : '';
     let seat = ''; try { const si = typeof SIM.seatInfo === 'function' ? SIM.seatInfo(W) : null; if (si && si.pct != null) seat = `${t.headman === h ? 'Keeping the seat' : 'Chance at the seat'}: about ${si.pct}%`; } catch (e) { seat = ''; }
     if (!seat) seat = t.headman === h ? 'Leads the tribe' : c.head === h ? (SIM.isMatri(t) ? 'Clan mother' : 'Head of the clan') : `Not the head of the ${c.name} clan`;
     return `<div class="glance"><div class="gl1"><span class="gf ${fs.cls}">Food <b>${foodWords(fs)}</b></span><span class="gh">${heir ? `Heir <b>${esc(heir.name)}</b>, ${Math.floor(heir.age)}` : '<b>No heir</b>'}</span></div>` +
@@ -8810,7 +8811,7 @@ const ART = (() => {
           html += `<div class="lede"><b>${esc(h.name)}</b>, ${Math.floor(h.age)}${tt.length ? ', ' + tt.join(' and ') : ''}. ${link(c, c.name)} clan of ${link(t, 'the ' + t.name)}${t.confed ? `, in ${esc(t.confed.name)}` : ''}.</div>`;
           // what needs your attention
           const al = [], alTx = [], alert = (cls, txt) => { al.push(`<div class="alert ${cls}">${txt}</div>`); alTx.push(txt); };
-          if (c.cond < 0.7) alert('', `Your clan is going hungry. Food for ${fd} days.`); else if (c.cond < 0.85) alert('warn', `Food is short: ${fd} days in store.`);
+          if (c.cond < 0.7) alert('', `Your clan is going hungry. Food for ${fd} days.`); else if (c.cond < 0.85) alert('warn', `Food is short: ${fd} days left.`);
           { const fw = c.people.filter(q => q.sex === 'F' && !q.slave && q.age >= 16 && q.age < 45).length; if (fw <= 2 && SIM.freeCount(c) < 30) alert('warn', `Only ${fw || 'no'} wom${fw === 1 ? 'a' : 'e'}n of childbearing age in the clan. Invite a household to join, or marry your sons.`); }
           { const F0 = SIM.clanFlow(W, 1); if (F0.splitAt && F0.free >= F0.splitAt - 4) alert('warn', `The clan is close to splitting: ${F0.free} people, and it splits above ${F0.splitAt}.${c.settled && !(c.works && c.works.hall) ? ' A great hall lets a village grow much larger.' : ''}`); }
           if (!heir) alert('', `No heir in the clan. If ${esc(h.name)} dies, the house ends. Under Act you can call one of the blood home, or adopt a child of the clan.`); else if (heir.age < 15) alert('warn', `Your heir ${esc(heir.name)} is only ${Math.floor(heir.age)}.`);
@@ -8835,7 +8836,7 @@ const ART = (() => {
           if (houseTab === 'overview') {
             const ch = c.head, hm = t.headman;
             if (strip) html += houseStrip(h, c, t, heir, alTx, foodLow) + (al.length ? `<div class="alerts">${al.join('')}</div>` : '');
-            { const adv = SIM.advice(W); if (adv) { const rg = SIM.ring(W), sp = rg.find(r => r.role === 'lore') || rg[0], first = adv.text.match(/^[^.!?]*[.!?]?/)[0], rest = adv.text.slice(first.length), dl = adv.deed ? ` <button class="lnk" data-act="${esc(String(adv.deed))}">Open deeds</button>` : '';
+            { const adv = SIM.advice(W); if (adv) { const rg = SIM.ring(W), sp = rg.find(r => r.role === 'lore') || rg[0], first = (adv.text.match(/^.*?[.!?](?=\s|$)/) || [adv.text])[0], rest = adv.text.slice(first.length), dl = adv.deed ? ` <button class="lnk" data-act="${esc(String(adv.deed))}">Open deeds</button>` : '';
               html += sp ? `<div class="says adv${advOpen ? ' open' : ''}" data-adv>${ART.faceImg(sp.q, c.tribe.hue, phone() ? 44 : 64)}<div class="bubble"><span class="who">${esc(sp.q.name)}</span>${iconize(esc(first))}<span class="a2">${iconize(esc(rest))}${dl}</span></div></div>` : `<div class="counsel"><span class="k">Counsel</span>${iconize(esc(adv.text))}${dl}</div>`; }
               const am = (P.amb || []).filter(a => !a.done), done = (P.amb || []).filter(a => a.done).slice(-2), tr = (h.traits || []).map(k => SIM.TRAITS[k]);
               html += `<div class="k sec" style="margin-top:4px">${esc(h.name)}${tr.length ? ' ' + esc(tr[0].name) : ''}</div>${tr.length ? `<div class="muted" style="margin:-2px 0 6px">${tr.map(x => esc(x.does)).join('. ')}.${P.lineage ? ` Of the line of ${esc((P.lineageOf || []).join(' and '))}, told of at the fires: standing +${P.lineage.toFixed(2)} for all of the blood.` : ''}</div>` : ''}` +
@@ -8844,7 +8845,7 @@ const ART = (() => {
               const rows = rowC(cs0.friend, 'your friend', cs0.friendSince) + rowC(cs0.rival, 'your enemy', cs0.rivalSince); if (rows) html += `<div class="k sec" style="margin-top:8px">People in your life</div>${rows}`; }
             if (c.treasures && c.treasures.length) html += `<div class="k sec" style="margin-top:8px">Treasures of the ${esc(c.name)}</div><div class="muted" style="margin-bottom:4px">Each one raises the standing of whoever leads the clan (+0.05, up to three). Raiders want them. Under Act you can give one away.</div>${c.treasures.map(tr => `<div class="myth"><b>${esc(tr.name[0].toUpperCase() + tr.name.slice(1))}</b><div class="muted">${esc(tr.hist.map((x, i) => i ? x : x[0].toUpperCase() + x.slice(1)).join('; '))}.</div></div>`).join('')}`;
             html += `<div class="k sec" style="margin-top:8px">Stores</div><div class="tiles">
-                <div class="tile"><div class="k">Food</div><div class="v" style="color:${foodCol}">${fd} day${fd === 1 ? '' : 's'}</div><div class="muted">${c.grain > 0 ? `${Math.round(c.grain / Math.max(1, SIM.needsWeek(c)))} weeks of grain, ` : ''}${pct(c.cond)} fed</div>${bar(c.cond, foodCol)}</div>
+                <div class="tile"><div class="k">Food</div><div class="v" style="color:${foodCol}">${fd} day${fd === 1 ? '' : 's'}</div><div class="muted">${c.grain > 0 ? (() => { const gw = Math.round(c.grain / Math.max(1, SIM.needsWeek(c))); return gw < 1 ? 'less than a week of grain, ' : `${gw} week${gw === 1 ? '' : 's'} of grain, `; })() : ''}${pct(c.cond)} fed</div>${bar(c.cond, foodCol)}</div>
                 <div class="tile"><div class="k">Tools</div><div class="v">${c.tool >= 1.15 ? 'Bronze' : c.tool >= 1 ? 'Copper' : c.tool > 0.8 ? 'Good flint' : c.tool > 0.55 ? 'Fair stone' : 'Poor stone'}</div><div class="muted">${pct(c.tool)} as good as fine flint</div>${bar(c.tool / 1.2, '#cfd6e0')}</div>
               </div>
               <div style="margin-top:8px">${goodsChips(c.goods)}</div>
@@ -9189,7 +9190,7 @@ const ART = (() => {
   $('#mapBtn').onclick = () => { if (!$('#mapMenu').classList.contains('open')) sheetToHalf(); buildLegend(); togglePop('#mapMenu', '#mapBtn'); };
   $('#menuBtn').onclick = () => togglePop('#menu', '#menuBtn');
   $('#noteBtn').onclick = () => { const was = $('#noteList').classList.contains('open'); closePops(); if (!was) { noteList(); $('#noteList').classList.add('open'); $('#noteBtn').classList.add('on'); } };
-  $('#moreBtn').onclick = () => { sheetToHalf(); const m = $('#mapMenu').classList.toggle('more'); $('#moreBtn').setAttribute('aria-expanded', m ? 'true' : 'false'); if (m) buildLegend(); };
+  $('#moreBtn').onclick = () => { if (phone() && sheet === 'mid') setSheet('half'); sheetToHalf(); const m = $('#mapMenu').classList.toggle('more'); $('#moreBtn').setAttribute('aria-expanded', m ? 'true' : 'false'); if (m) buildLegend(); };
   document.addEventListener('pointerdown', e => { if (!e.target.closest('.pop, .tools, #noteBtn, #speedRow, #speed')) closePops(); if (!e.target.closest('#picker')) hidePicker(); }, true);
   // the help opens with a contents list made from its headings as they stand now, so a new section shows in it by itself
   function openHelp() {
