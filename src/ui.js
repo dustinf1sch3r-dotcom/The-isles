@@ -226,17 +226,17 @@
   }
 
   // ---------- camera ----------
-  const wide = () => cv.clientWidth >= 820;
+  const wide = () => cv.clientWidth >= 820, phone = () => !wide();
   function viewRect() {
     const w = cv.clientWidth, h = cv.clientHeight, top = $('.top').getBoundingClientRect().bottom + 4;
     if (wide()) return { x0: 0, y0: top, x1: $('.panel').getBoundingClientRect().left - 8, y1: h - 8 };
-    return { x0: 0, y0: top, x1: w, y1: h - Math.min($('.panel').getBoundingClientRect().height, h * 0.45) - 8 };
+    return { x0: 0, y0: top, x1: w, y1: h - Math.min($('.panel').getBoundingClientRect().height, h * 0.9) - 8 };
   }
   // parts of the screen the names must keep clear of (the buttons laid over the map), measured from the page, not on every frame
   let zoneAt = -1e9, zoneKey = '', zoneBoxes = [];
   function clearZones(w, h) {
     const t = performance.now(), k = w + 'x' + h; if (k === zoneKey && t - zoneAt < 300) return zoneBoxes;
-    const out = []; for (const el of [$('.tools'), $('#actBtn')]) { if (!el) continue; const r = el.getBoundingClientRect(); if (r.width > 0 && r.height > 0) out.push([(r.left + r.right) / 2, (r.top + r.bottom) / 2, r.width + 8, r.height + 8]); }
+    const out = []; for (const el of [$('.tools'), $('#actBtn'), ...(phone() ? [$('#play'), $('#speed'), $('#skipBtn')] : [])]) { if (!el) continue; const r = el.getBoundingClientRect(); if (r.width > 0 && r.height > 0) out.push([(r.left + r.right) / 2, (r.top + r.bottom) / 2, r.width + 8, r.height + 8]); }
     zoneKey = k; zoneAt = t; return zoneBoxes = out;
   }
   function fit() {
@@ -927,7 +927,7 @@
     drawFog(); // always: never let a hiccup reveal the unknown
     drawPlacePick();
     // ---- names, written last and kept clear of icons and of each other ----
-    const km = cam.s * 1000, opts = [10, 25, 50, 100, 200], L = opts.find(v => v * km > 50) || 200, VR = viewRect(), by = VR.y1 - 10, bx = wide() ? 14 : 12;
+    const km = cam.s * 1000, opts = [10, 25, 50, 100, 200], L = opts.find(v => v * km > 50) || 200, VR = viewRect(), by = VR.y1 - 10 - (wide() ? 0 : 58), bx = wide() ? 14 : 12; // on the phone the scale and the compass ride above the bottom controls
     icons.push([bx + L * km / 2, by - 7, L * km + 12, 24]); icons.push([bx + 24, by - 52, 60, 60]); // the compass
     const placed = icons.slice(), fits = (cx, cy, tw, th) => cx - tw / 2 >= VR.x0 + 2 && cx + tw / 2 <= VR.x1 - 2 && cy - th / 2 >= VR.y0 + 2 && cy + th / 2 <= VR.y1 - 2 && !placed.some(p => Math.abs(p[0] - cx) < (p[2] + tw) / 2 + 2 && Math.abs(p[1] - cy) < (p[3] + th) / 2 + 1);
     const ZB = clearZones(w, h); for (const z of ZB) placed.push(z); // names are kept clear of the buttons
@@ -1060,14 +1060,31 @@
   const iconize = (s, size = 15) => String(s).replace(GLYPH_RE, m => ART.img(GLYPH[m], size));
   const depIc = (k, size = 16) => ART.img(k === 'whale' ? 'whale' : k, size);
   const faithIc = (t, size = 16) => ART.img(SIM.faithOf(t), size);
+  // the food of a clan as the top bar, the strip, the Stores tile and the alerts tell it: SIM.foodDays (the store and the grain together). The colour is the old top-bar rule (how well fed the clan is).
+  // A camp with nothing in store whose range feeds it, and which is well fed, says "from the land" instead of "0 days".
+  function foodState(c) {
+    const days = SIM.foodDays(c), land = days < 1 && c.cond >= 0.85 && (c.supply || 0) >= 1.1;
+    return { days, land, cls: c.cond < 0.7 ? 'bad' : c.cond < 0.85 ? 'warn' : 'good' };
+  }
+  const dayWord = n => `${n} day${n === 1 ? '' : 's'}`, foodWords = fs => fs.land ? 'from the land' : dayWord(fs.days);
+  let advOpen = false, tabsKey = '', tabsX = 0;
+  // the house at a glance, two lines at most on the phone: the food (and why it is short), the heir, the seat, and the first sentence of the top warning (the whole alert stays in the list below; a tap goes to it)
+  function houseStrip(h, c, t, heir, alTx, foodLow) {
+    const fs = foodState(c), first = alTx.length ? (String(alTx[0]).replace(/<[^>]*>/g, '').match(/^.*?[.!?](?=\s|$)/) || [String(alTx[0]).replace(/<[^>]*>/g, '')])[0].trim() : '';
+    let seat = ''; try { const si = typeof SIM.seatInfo === 'function' ? SIM.seatInfo(W) : null; if (si && si.pct != null) seat = `${t.headman === h ? 'Keeping the seat' : 'Chance at the seat'}: about ${si.pct}%`; } catch (e) { seat = ''; }
+    if (!seat) seat = t.headman === h ? 'Leads the tribe' : c.head === h ? (SIM.isMatri(t) ? 'Clan mother' : 'Head of the clan') : `Not the head of the ${c.name} clan`;
+    return `<div class="glance"><div class="gl1"><span class="gf ${fs.cls}">Food <b>${foodWords(fs)}</b></span><span class="gh">${heir ? `Heir <b>${esc(heir.name)}</b>, ${Math.floor(heir.age)}` : '<b>No heir</b>'}</span></div>` +
+      (foodLow ? `<div class="gl2"><span class="gw ${fs.cls}" data-warn>${esc(SIM.foodWhy(W, c))}</span></div>` : `<div class="gl2"><span class="gs">${esc(seat)}</span>${first ? `<span class="gw" data-warn>${esc(first)}</span>` : ''}</div>`) + `</div>`;
+  }
   function updateTop() {
     let tot = 0; for (const c of W.clans) tot += c.people.length;
     const P = W.player, playing = P && !P.over && P.head.alive && P.head.clan;
     $('#actBtn').style.display = P && !P.over ? '' : 'none'; $('#homeBtn').style.display = P && !P.over ? '' : 'none';
     $('#date').innerHTML = `${SIM.seasonName(W.week)}, year ${yr(W.week)}${W.gathering ? '<small>gathering season</small>' : ''}`;
     let hud;
-    if (playing) { const c = P.head.clan, cls = c.cond < 0.7 ? 'bad' : c.cond < 0.85 ? 'warn' : 'good';
-      hud = `<span class="${cls}"><i>Food</i><b>${SIM.foodDays(c)} day${SIM.foodDays(c) === 1 ? '' : 's'}</b></span><span><i>Clan</i><b>${SIM.freeCount(c)}</b></span><span><i>Spears</i><b>${SIM.warriors({ clans: [c] })}</b></span><span class="r"><i>Renown</i><b>${Math.round(P.renown)}</b></span>`; }
+    if (playing) { const c = P.head.clan;
+      const fs = foodState(c);
+      hud = `<span class="${fs.cls}"><i>Food</i><b>${foodWords(fs)}</b></span><span><i>Clan</i><b>${SIM.freeCount(c)}</b></span><span><i>Spears</i><b>${SIM.warriors({ clans: [c] })}</b></span><span class="r"><i>Renown</i><b>${Math.round(P.renown)}</b></span>`; }
     else hud = `<span><i>${P && P.over ? `The House of ${esc(P.house)} has ended` : 'Watching the isles'}</i></span>`;
     $('#hud').innerHTML = hud;
     if (P && P.hist.length !== tideN) { if (tideN >= 0 && P.hist.length > tideN && playing) { tide = P.hist[P.hist.length - 1].t; tideAt = performance.now(); } tideN = P.hist.length; }
@@ -1320,7 +1337,7 @@
         </div>`; })()}
         ${t.myths && t.myths.length ? `<div class="k sec">Stories they tell</div><div class="muted" style="margin-bottom:4px">None of it need be true. All of it is believed, and acted on.</div>${t.myths.slice().reverse().map(m => `<div class="myth"><b>${esc(m.title)}</b>${m.kind === 'hero' && m.dyn && W.player && !W.player.over && W.player.head.clan && W.player.head.clan.tribe === t ? ' <span class="badge">of your house</span>' : ''}${m.kind === 'beast' ? (b => ` <span class="badge">${b && b.alive ? 'still out there' : b && b.slain ? 'slain, year ' + b.slain.y : 'not seen for years'}</span>`)((W.beasts || []).find(b => b.id === m.beast)) : ''}<div class="muted">${esc(m.text)}</div></div>`).join('')}` : ''}
         <div class="k sec">Custom and belief</div><div class="tiles">
-          ${tile('Customs & faith', `${faithIc(t, 18)}${SIM.FAITHS[SIM.faithOf(t)].name}`, `${SIM.isMatri(t) ? 'matrilineal — clan mothers lead; husbands join the wife\'s clan' : 'patrilineal — men lead; wives join the husband\'s clan'} · ${SIM.FAITHS[SIM.faithOf(t)].short.toLowerCase()}${t.blessing && t.blessing.until > W.week ? ' · <b>blessed</b>' : ''}`, `<div class="scale"><i style="left:calc(${Math.round(((t.culture && t.culture.patri) ?? 0.5) * 100)}% - 2px)"></i></div><div class="muted" style="display:flex;justify-content:space-between;font-size:10.5px"><span>mothers lead</span><span>fathers lead</span></div>`).replace('class="tile"', 'class="tile" style="grid-column:1/-1"')}
+          ${tile('Customs & faith', `${faithIc(t, 18)}${SIM.FAITHS[SIM.faithOf(t)].name}`, `${SIM.isMatri(t) ? 'matrilineal — clan mothers lead; husbands join the wife\'s clan' : 'patrilineal — men lead; wives join the husband\'s clan'} · ${SIM.FAITHS[SIM.faithOf(t)].short.toLowerCase()}${t.blessing && t.blessing.until > W.week ? ' · <b>blessed</b>' : ''}`, `<div class="scale"><i style="left:calc(${Math.round(((t.culture && t.culture.patri) ?? 0.5) * 100)}% - 2px)"></i></div><div class="muted" style="display:flex;justify-content:space-between;font-size:12px"><span>mothers lead</span><span>fathers lead</span></div>`).replace('class="tile"', 'class="tile" style="grid-column:1/-1"')}
         </div>
         <div class="k sec">Population over time</div><canvas id="spark" width="600" height="90"></canvas>
         <div class="k sec">Leadership</div>
@@ -1376,8 +1393,8 @@
           const foodCol = c.cond > 0.85 ? '#476428' : c.cond > 0.7 ? '#8a5a10' : '#a83a22', tt = titlesFor(h);
           html += `<div class="lede"><b>${esc(h.name)}</b>, ${Math.floor(h.age)}${tt.length ? ', ' + tt.join(' and ') : ''}. ${link(c, c.name)} clan of ${link(t, 'the ' + t.name)}${t.confed ? `, in ${esc(t.confed.name)}` : ''}.</div>`;
           // what needs your attention
-          const al = [], alert = (cls, txt) => al.push(`<div class="alert ${cls}">${txt}</div>`);
-          if (c.cond < 0.7) alert('', `Your clan is going hungry. Food for ${fd} days.`); else if (c.cond < 0.85) alert('warn', `Food is short: ${fd} days in store.`);
+          const al = [], alTx = [], alert = (cls, txt) => { al.push(`<div class="alert ${cls}">${txt}</div>`); alTx.push(txt); };
+          if (c.cond < 0.7) alert('', `Your clan is going hungry. Food for ${fd} days.`); else if (c.cond < 0.85) alert('warn', `Food is short: ${fd} days left.`);
           { const fw = c.people.filter(q => q.sex === 'F' && !q.slave && q.age >= 16 && q.age < 45).length; if (fw <= 2 && SIM.freeCount(c) < 30) alert('warn', `Only ${fw || 'no'} wom${fw === 1 ? 'a' : 'e'}n of childbearing age in the clan. Invite a household to join, or marry your sons.`); }
           { const F0 = SIM.clanFlow(W, 1); if (F0.splitAt && F0.free >= F0.splitAt - 4) alert('warn', `The clan is close to splitting: ${F0.free} people, and it splits above ${F0.splitAt}.${c.settled && !(c.works && c.works.hall) ? ' A great hall lets a village grow much larger.' : ''}`); }
           if (!heir) alert('', `No heir in the clan. If ${esc(h.name)} dies, the house ends. Under Act you can call one of the blood home, or adopt a child of the clan.`); else if (heir.age < 15) alert('warn', `Your heir ${esc(heir.name)} is only ${Math.floor(heir.age)}.`);
@@ -1391,7 +1408,9 @@
           if (P.omenIgnored) alert('', `${esc(P.omenIgnored.by)} waved a sign away. If a bad year comes before year ${Math.ceil(P.omenIgnored.until / 52)}, the clan will blame the house.`);
           for (const b of W.beasts || []) if (b.alive && (b.name || b.kills) && Math.hypot(b.x - c.x, b.y - c.y) < (SIM.BEASTS[b.kind].sea ? 75000 : 45000)) { const nm = SIM.beastNm(b); alert(b.kills ? 'warn' : '', `${esc(nm[0].toUpperCase() + nm.slice(1))}${b.name ? ', ' + SIM.BEASTS[b.kind].a + ',' : ''} is ${Math.round(Math.hypot(b.x - c.x, b.y - c.y) / 1000)} km from your ${c.settled ? 'village' : 'camp'}${b.kills ? ` and has killed ${b.kills}` : ''}. Under Act you can hunt it${c.shun && c.shun.id === b.id && c.shun.until > W.week ? '; its ground is forbidden to the clan for now' : ''}.`); }
           if (t.blessing && t.blessing.until > W.week) alert('ok', `The tribe is blessed: ${esc(F.boon.split(':')[0].toLowerCase())}.`);
-          html += al.length ? `<div class="alerts">${al.join('')}</div>` : '';
+          const strip = !wide() && houseTab === 'overview'; // on the phone the Overview opens with a strip that carries the top warning, and lists the rest below it
+          const foodLow = foodState(c).cls !== 'good'; // under 0.85 fed: the same line as the alert
+          if (!strip) html += al.length ? `<div class="alerts">${al.join('')}</div>` : '';
           if (!P.over && wide()) html += `<button class="actbig" data-act>Choose a deed</button>`;
           const tabs = [['overview', 'Overview'], ['deal', 'Dealings'], ['family', 'Family'], ['clan', `Clan ${SIM.freeCount(c)}`], ['tribe', `Tribe ${SIM.tribeSize(t)}`], ['story', 'Story']];
           if (t.confed) tabs.splice(5, 0, ['realm', 'Realm']);
@@ -1399,7 +1418,9 @@
           html += `<div class="tabs2">${tabs.map(([k, l]) => `<button data-htab="${k}" class="${k === houseTab ? 'on' : ''}">${l}</button>`).join('')}</div>`;
           if (houseTab === 'overview') {
             const ch = c.head, hm = t.headman;
-            { const adv = SIM.advice(W); if (adv) { const rg = SIM.ring(W), sp = rg.find(r => r.role === 'lore') || rg[0]; html += sp ? `<div class="says">${ART.faceImg(sp.q, c.tribe.hue, 64)}<div class="bubble"><span class="who">${esc(sp.q.name)}</span>${esc(adv.text)}${adv.deed ? ` <button class="lnk" data-act>Open deeds</button>` : ''}</div></div>` : `<div class="counsel"><span class="k">Counsel</span>${esc(adv.text)}${adv.deed ? ` <button class="lnk" data-act>Open deeds</button>` : ''}</div>`; }
+            if (strip) html += houseStrip(h, c, t, heir, alTx, foodLow) + (al.length ? `<div class="alerts">${al.join('')}</div>` : '');
+            { const adv = SIM.advice(W); if (adv) { const rg = SIM.ring(W), sp = rg.find(r => r.role === 'lore') || rg[0], first = (adv.text.match(/^.*?[.!?](?=\s|$)/) || [adv.text])[0], rest = adv.text.slice(first.length), dl = adv.deed ? ` <button class="lnk" data-act="${esc(String(adv.deed))}">Open deeds</button>` : '';
+              html += sp ? `<div class="says adv${advOpen ? ' open' : ''}" data-adv>${ART.faceImg(sp.q, c.tribe.hue, phone() ? 44 : 64)}<div class="bubble"><span class="who">${esc(sp.q.name)}</span>${iconize(esc(first))}<span class="a2">${iconize(esc(rest))}${dl}</span></div></div>` : `<div class="counsel"><span class="k">Counsel</span>${iconize(esc(adv.text))}${dl}</div>`; }
               const am = (P.amb || []).filter(a => !a.done), done = (P.amb || []).filter(a => a.done).slice(-2), tr = (h.traits || []).map(k => SIM.TRAITS[k]);
               html += `<div class="k sec" style="margin-top:4px">${esc(h.name)}${tr.length ? ' ' + esc(tr[0].name) : ''}</div>${tr.length ? `<div class="muted" style="margin:-2px 0 6px">${tr.map(x => esc(x.does)).join('. ')}.${P.lineage ? ` Of the line of ${esc((P.lineageOf || []).join(' and '))}, told of at the fires: standing +${P.lineage.toFixed(2)} for all of the blood.` : ''}</div>` : ''}` +
                 am.map(a => `<div class="row2"><span class="amb"></span>${esc(a.text)} <span class="muted" style="margin-left:auto">+${a.r} renown</span></div>`).join('') + done.map(a => `<div class="row2 muted"><span class="amb done"></span>${esc(a.text)} <span style="margin-left:auto">done by ${esc(a.by)}</span></div>`).join(''); }
@@ -1407,7 +1428,7 @@
               const rows = rowC(cs0.friend, 'your friend', cs0.friendSince) + rowC(cs0.rival, 'your enemy', cs0.rivalSince); if (rows) html += `<div class="k sec" style="margin-top:8px">People in your life</div>${rows}`; }
             if (c.treasures && c.treasures.length) html += `<div class="k sec" style="margin-top:8px">Treasures of the ${esc(c.name)}</div><div class="muted" style="margin-bottom:4px">Each one raises the standing of whoever leads the clan (+0.05, up to three). Raiders want them. Under Act you can give one away.</div>${c.treasures.map(tr => `<div class="myth"><b>${esc(tr.name[0].toUpperCase() + tr.name.slice(1))}</b><div class="muted">${esc(tr.hist.map((x, i) => i ? x : x[0].toUpperCase() + x.slice(1)).join('; '))}.</div></div>`).join('')}`;
             html += `<div class="k sec" style="margin-top:8px">Stores</div><div class="tiles">
-                <div class="tile"><div class="k">Food</div><div class="v" style="color:${foodCol}">${fd} day${fd === 1 ? '' : 's'}</div><div class="muted">${c.grain > 0 ? `${Math.round(c.grain / Math.max(1, SIM.needsWeek(c)))} weeks of grain, ` : ''}${pct(c.cond)} fed</div>${bar(c.cond, foodCol)}</div>
+                <div class="tile"><div class="k">Food</div><div class="v" style="color:${foodCol}">${fd} day${fd === 1 ? '' : 's'}</div><div class="muted">${c.grain > 0 ? (() => { const gw = Math.round(c.grain / Math.max(1, SIM.needsWeek(c))); return gw < 1 ? 'less than a week of grain, ' : `${gw} week${gw === 1 ? '' : 's'} of grain, `; })() : ''}${pct(c.cond)} fed</div>${bar(c.cond, foodCol)}</div>
                 <div class="tile"><div class="k">Tools</div><div class="v">${c.tool >= 1.15 ? 'Bronze' : c.tool >= 1 ? 'Copper' : c.tool > 0.8 ? 'Good flint' : c.tool > 0.55 ? 'Fair stone' : 'Poor stone'}</div><div class="muted">${pct(c.tool)} as good as fine flint</div>${bar(c.tool / 1.2, '#cfd6e0')}</div>
               </div>
               <div style="margin-top:8px">${goodsChips(c.goods)}</div>
@@ -1553,7 +1574,11 @@
     el.innerHTML = html;
     for (const [id, k] of [['houseBtn', 'house'], ['logBtn', 'log'], ['tribesBtn', 'tribes'], ['chartBtn', 'chart']]) $('#' + id).classList.toggle('on', panel === k);
     el.querySelectorAll('[data-back]').forEach(b => b.onclick = () => closeSel());
-    el.querySelectorAll('[data-act]').forEach(ab => ab.onclick = () => showActions());
+    el.querySelectorAll('[data-act]').forEach(ab => ab.onclick = ev => { ev.stopPropagation(); showActions(null, ab.dataset.act || null); });
+    el.querySelectorAll('[data-warn]').forEach(w => w.onclick = () => { const a = el.querySelector('.alerts .alert'); if (!a) return; a.scrollIntoView({ block: 'center', behavior: 'smooth' }); a.classList.remove('flash'); void a.offsetWidth; a.classList.add('flash'); });
+    el.querySelectorAll('[data-adv]').forEach(a => a.onclick = () => { advOpen = !advOpen; a.classList.toggle('open', advOpen); });
+    // a name that heads a row is a target the width of the row
+    if (phone()) el.querySelectorAll('.row2, .rel, .pp').forEach(r => { const a = r.querySelector('a[data-e]'); if (!a || r.classList.contains('pp') || r.querySelectorAll('a[data-e]').length > 1) return; const f = [...r.childNodes].find(n => n.nodeType === 1 ? !n.matches('img, .amb') : n.textContent.trim()); if (f === a || (f && f.contains && f.contains(a) && f.firstElementChild === a)) { r.dataset.go = a.dataset.e; r.onclick = ev => { if (ev.target.closest('a, button, input, label')) return; const e = W.ents.get(+r.dataset.go); if (e) open(e, true); }; } });
     if (pyr) drawPyramid(pyr);
     if (panel === 'chart') drawChart();
     el.querySelectorAll('[data-e]').forEach(a => a.onclick = ev => { ev.stopPropagation(); const e = W.ents.get(+a.dataset.e); if (e) open(e, true); });
@@ -1565,7 +1590,12 @@
     el.querySelectorAll('[data-kult]').forEach(b => b.onclick = () => { show.kult = !show.kult; const tb = document.querySelector('#togs button[data-s="kult"]'); if (tb) tb.classList.toggle('on', show.kult); renderPanel(); });
     el.querySelectorAll('[data-settle],[data-forgive]').forEach(b => b.onclick = () => { const r = SIM.settleFeud(W, +(b.dataset.settle || b.dataset.forgive), !!b.dataset.forgive); if (r) toast(r); const st = el.scrollTop; renderPanel(); el.scrollTop = st; });
     el.querySelectorAll('[data-htab]').forEach(b => b.onclick = () => { houseTab = b.dataset.htab; renderPanel(); });
-    { const on = el.querySelector('.tabs2 button.on'); if (on) on.parentNode.scrollLeft = Math.max(0, on.offsetLeft - 60); }
+    { const key = panel + ':' + (panel === 'house' ? houseTab : tribeTab), same = key === tabsKey; tabsKey = key;
+      for (const t2 of el.querySelectorAll('.tabs2')) { // the sub-tab strip sticks to the top of the panel body, fades at the edge that scrolls, and keeps the active tab in view
+        const w = document.createElement('div'); w.className = 'tabsw'; t2.parentNode.insertBefore(w, t2); w.appendChild(t2);
+        const on = t2.querySelector('button.on'), upd = () => { w.classList.toggle('fl', t2.scrollLeft > 4); w.classList.toggle('fr', t2.scrollLeft + t2.clientWidth < t2.scrollWidth - 4); };
+        t2.scrollLeft = same ? tabsX : on ? Math.max(0, on.offsetLeft - (t2.clientWidth - on.offsetWidth) / 2) : 0; upd();
+        t2.addEventListener('scroll', () => { tabsX = t2.scrollLeft; upd(); }, { passive: true }); } }
     el.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tribeTab = b.dataset.tab; renderPanel(); $('#panelBody').scrollTop = 0; });
     el.querySelectorAll('.pp[data-p]').forEach(d => d.onclick = () => { let q = null; for (const c of W.clans) { q = c.people.find(p => p.id == d.dataset.p); if (q) break; } if (q) { sel = q; q.kind = 'person'; panel = 'person'; renderPanel(); } });
   }
@@ -1594,7 +1624,7 @@
     const line = (f, col, wd) => { g.strokeStyle = col; g.lineWidth = wd; g.beginPath(); H.forEach((d, k) => k ? g.lineTo(X(k), Y(f(d))) : g.moveTo(X(k), Y(f(d)))); g.stroke(); };
     line(d => d.tribes / mt, '#2c6a8a', 2); line(d => (d.allies || 0) / mt, '#a8801a', 2); line(d => (d.confeds || 0) * 4 / mt, '#a83a22', 2); line(d => d.pop / mp, '#2f2218', 3);
     g.fillStyle = '#6c563c'; g.font = '16px Georgia, serif'; g.textAlign = 'right'; [0, 0.5, 1].forEach(t => g.fillText(Math.round(mp * t).toLocaleString(), L - 6, Y(t) + 5));
-    g.textAlign = 'center'; g.fillText(`year ${Math.round(H[0].year)}`, X(0) + 24, h - 4); g.fillText(`year ${Math.round(H.at(-1).year)}`, X(H.length - 1) - 34, h - 4);
+    g.textAlign = 'center'; g.fillText(`year ${Math.round(H[0].year)}`, X(0) + 24, h - 4); g.fillText(`year ${Math.round(H[H.length - 1].year)}`, X(H.length - 1) - 34, h - 4);
   }
   function open(e, focus) {
     sel = e; selCell = null; panel = e.kind; renderPanel(); $('#panelBody').scrollTop = 0; if (sheet === 'peek') setSheet('half');
@@ -1700,7 +1730,10 @@
   cv.addEventListener('pointerleave', () => { hover = null; $('#tip').style.display = 'none'; });
   $('#play').onclick = () => { if (modalEv || picking) return; running = !running; $('#play').textContent = running ? '❚❚' : '▶'; };
   $('#skipBtn').onclick = () => { if (!W || picking || modalEv) return; skipping = !skipping; skipFrom = W.week; $('#skipBtn').classList.toggle('on', skipping); if (skipping) { running = false; $('#play').textContent = '▶'; } };
-  $('#speed').onclick = () => { speedIx = (speedIx + 1) % SPEEDS.length; $('#speed').textContent = SPEEDS[speedIx].l; };
+  const setSpeed = i => { speedIx = i; $('#speed').textContent = SPEEDS[speedIx].l; document.querySelectorAll('#speedRow button').forEach(b => { b.classList.toggle('on', +b.dataset.sp === speedIx); b.setAttribute('aria-pressed', +b.dataset.sp === speedIx ? 'true' : 'false'); }); };
+  // on the phone the speed is picked straight from a row of four; on a wide screen the button still cycles
+  $('#speed').onclick = () => { if (!phone()) return setSpeed((speedIx + 1) % SPEEDS.length); const r = $('#speedRow'); closePops(); setSpeed(speedIx); r.classList.toggle('open'); };
+  document.querySelectorAll('#speedRow button').forEach(b => b.onclick = () => { setSpeed(+b.dataset.sp); $('#speedRow').classList.remove('open'); });
   const tabTo = p => { panel = p; sel = null; selCell = null; renderPanel(); $('#panelBody').scrollTop = 0; if (sheet === 'peek') setSheet('half'); };
   $('#chartBtn').onclick = () => tabTo('chart');
   $('#logBtn').onclick = () => tabTo('log');
@@ -1710,19 +1743,47 @@
   $('#homeBtn').onclick = () => { closePops(); centerOnHouse(); };
   $('#actBtn').onclick = () => showActions(); window.__act = () => showActions();
   $('#fitBtn').onclick = () => { closePops(); fit(); };
-  // the phone's bottom sheet: peek, half, full
-  function setSheet(s) { sheet = s; expanded = s === 'full'; document.body.classList.toggle('sheet-peek', s === 'peek'); document.body.classList.toggle('expanded', s === 'full'); }
-  { const g = $('#grab'); let y0 = null;
-    g.addEventListener('pointerdown', e => { y0 = e.clientY; g.setPointerCapture(e.pointerId); });
-    g.addEventListener('pointerup', e => { if (y0 == null) return; const dy = e.clientY - y0; y0 = null;
-      if (Math.abs(dy) < 10) setSheet(sheet === 'half' ? 'full' : 'half'); else if (dy < 0) setSheet(sheet === 'peek' ? 'half' : 'full'); else setSheet(sheet === 'full' ? 'half' : 'peek'); }); }
+  // the phone's bottom sheet: peek, half, a third stop at 62%, full. A drag on the handle or on a tab row follows the finger and settles on the nearest stop.
+  // The map moves with it: the panel grows by so much, the map is panned by half of that, and the point at the middle of the visible map stays there.
+  let lastPanelH = null, panelWatch = 0;
+  const panelH = () => $('.panel').getBoundingClientRect().height;
+  const STOPS = ['peek', 'half', 'mid', 'full'], stopPx = s => s === 'peek' ? 80 + sabPx() : innerHeight * ({ half: 0.42, mid: 0.62, full: 0.82 }[s]);
+  const sabPx = () => { const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sab')); return isNaN(v) ? safeBottom() : v; };
+  function safeBottom() { const d = document.createElement('div'); d.style.cssText = 'position:fixed;visibility:hidden;padding-bottom:env(safe-area-inset-bottom,0px)'; document.body.appendChild(d); const v = parseFloat(getComputedStyle(d).paddingBottom) || 0; d.remove(); return v; }
+  function setSheet(s) { if (phone()) { lastPanelH = panelH(); panelWatch = performance.now() + 700; } sheet = s; expanded = s === 'full'; document.body.classList.toggle('sheet-peek', s === 'peek'); document.body.classList.toggle('sheet-mid', s === 'mid'); document.body.classList.toggle('expanded', s === 'full'); }
+  function followPanel(t) { if (t > panelWatch) { lastPanelH = null; return; } if (phone() && lastPanelH != null) { const H = panelH(); cam.oy -= (H - lastPanelH) / 2; lastPanelH = H; } }
+  { const pn = $('.panel'); let dr = null, swallow = 0;
+    pn.addEventListener('pointerdown', e => { if (!phone() || !e.target.closest('.grab, .tabs, .tabsw')) return; dr = { y0: e.clientY, x0: e.clientX, h0: panelH(), on: false, grab: !!e.target.closest('.grab'), yl: e.clientY, tl: performance.now(), v: 0 }; });
+    pn.addEventListener('pointermove', e => {
+      if (!dr) return; const dy = e.clientY - dr.y0, dx = e.clientX - dr.x0;
+      if (!dr.on) { if (Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(dx) * 1.2) { dr.on = true; try { pn.setPointerCapture(e.pointerId); } catch (x) {} document.body.classList.add('dragging'); lastPanelH = dr.h0; panelWatch = Infinity; } else return; }
+      const now = performance.now(); if (now > dr.tl) dr.v = 0.7 * dr.v + 0.3 * (e.clientY - dr.yl) / (now - dr.tl); dr.yl = e.clientY; dr.tl = now;
+      document.body.style.setProperty('--sheet', clamp(dr.h0 - dy, stopPx('peek'), innerHeight * 0.84) + 'px');
+    });
+    const end = e => { if (!dr) return; const d = dr; dr = null;
+      if (d.on) { const h = panelH(), proj = h - d.v * 140; let best = 'half'; for (const k of STOPS) if (Math.abs(stopPx(k) - proj) < Math.abs(stopPx(best) - proj)) best = k;
+        swallow = performance.now(); document.body.classList.remove('dragging'); document.body.style.removeProperty('--sheet'); lastPanelH = h; panelWatch = performance.now() + 700; setSheet(best); lastPanelH = h; return; }
+      if (d.grab && e.type === 'pointerup' && Math.abs(e.clientY - d.y0) < 10) setSheet({ peek: 'half', half: 'mid', mid: 'full', full: 'half' }[sheet]); };
+    pn.addEventListener('pointerup', end); pn.addEventListener('pointercancel', end);
+    pn.addEventListener('click', e => { if (performance.now() - swallow < 400) { e.stopPropagation(); e.preventDefault(); } }, true); }
   // popovers: map view and menu. Anything opened closes when you tap outside it.
-  const closePops = () => { for (const p of document.querySelectorAll('.pop.open')) p.classList.remove('open'); $('#mapBtn').classList.remove('on'); $('#menuBtn').classList.remove('on'); };
+  const closePops = () => { for (const p of document.querySelectorAll('.pop.open')) p.classList.remove('open'); $('#mapMenu').classList.remove('more'); $('#moreBtn').setAttribute('aria-expanded', 'false'); $('#speedRow').classList.remove('open'); for (const b of ['#mapBtn', '#menuBtn', '#noteBtn']) $(b).classList.remove('on'); };
   const togglePop = (id, btn) => { const p = $(id), was = p.classList.contains('open'); closePops(); if (!was) { p.classList.add('open'); $(btn).classList.add('on'); } };
-  $('#mapBtn').onclick = () => { buildLegend(); togglePop('#mapMenu', '#mapBtn'); };
+  const sheetToHalf = () => { if (phone() && sheet === 'full') setSheet('half'); }; // the map menu sits above the controls, which a full panel pushes off the screen: bring the panel down first
+  $('#mapBtn').onclick = () => { if (!$('#mapMenu').classList.contains('open')) sheetToHalf(); buildLegend(); togglePop('#mapMenu', '#mapBtn'); };
   $('#menuBtn').onclick = () => togglePop('#menu', '#menuBtn');
-  document.addEventListener('pointerdown', e => { if (!e.target.closest('.pop, .tools')) closePops(); if (!e.target.closest('#picker')) hidePicker(); }, true);
-  $('#helpBtn').onclick = () => { closePops(); $('#help').style.display = 'flex'; };
+  $('#noteBtn').onclick = () => { const was = $('#noteList').classList.contains('open'); closePops(); if (!was) { noteList(); $('#noteList').classList.add('open'); $('#noteBtn').classList.add('on'); } };
+  $('#moreBtn').onclick = () => { if (phone() && sheet === 'mid') setSheet('half'); sheetToHalf(); const m = $('#mapMenu').classList.toggle('more'); $('#moreBtn').setAttribute('aria-expanded', m ? 'true' : 'false'); if (m) buildLegend(); };
+  document.addEventListener('pointerdown', e => { if (!e.target.closest('.pop, .tools, #noteBtn, #speedRow, #speed')) closePops(); if (!e.target.closest('#picker')) hidePicker(); }, true);
+  // the help opens with a contents list made from its headings as they stand now, so a new section shows in it by itself
+  function openHelp() {
+    closePops(); const h = $('#help'), box = h.querySelector('.box'); h.style.display = 'flex';
+    const hs = [...box.querySelectorAll('h3')]; let toc = $('#helpToc'); if (toc) toc.remove();
+    toc = document.createElement('nav'); toc.id = 'helpToc'; toc.innerHTML = '<b>Contents</b>';
+    hs.forEach(x => { const a = document.createElement('a'); a.textContent = x.textContent; a.setAttribute('role', 'button'); a.tabIndex = 0; const go = () => x.scrollIntoView({ block: 'start', behavior: 'smooth' }); a.onclick = go; a.onkeydown = e => { if (e.key === 'Enter') go(); }; toc.appendChild(a); });
+    const p0 = box.querySelector('.hhead + p'); if (p0) p0.after(toc); box.scrollTop = 0;
+  }
+  $('#helpBtn').onclick = openHelp;
   $('#help').addEventListener('click', e => { if (e.target.id === 'help') e.target.style.display = 'none'; });
   $('#saveBtn').onclick = () => { closePops(); saveNow(true); };
   $('#saveFileBtn').onclick = () => { closePops(); saveFile(); };
@@ -1756,14 +1817,14 @@
     picking = true; running = false; modalDismiss = null; $('#play').textContent = '▶';
     const C = SIM.houseCandidates(W), gd = W.deposits.find(d => d.type === 'grain');
     const byTribe = new Map(); for (const k of C) { if (!byTribe.has(k.tribe)) byTribe.set(k.tribe, []); byTribe.get(k.tribe).push(k); }
-    let html = (savedGame && savedGame.meta ? `<div class="pick" id="contBtn" style="margin-bottom:10px;border-color:#7a5a10"><b>Continue the House of ${esc(savedGame.meta.house || '?')}</b> <span class="muted">— year ${savedGame.meta.year}${savedGame.meta.head ? ', led by ' + esc(savedGame.meta.head) : ''}${savedGame.meta.over ? ' (the house has ended)' : ''}</span></div>` : '') + `<h2>Choose your house</h2><p class="muted">You will lead one family line through the generations — its marriages, its feuds, its bids for power. When the head of your house dies, you continue as the heir. If your blood dies out, the game ends.</p>`;
+    let html = `<div class="welbtns"><button id="welLoad">Load a game</button><button id="welHelp">How to play</button></div>` + (savedGame && savedGame.meta ? `<div class="pick" id="contBtn" style="margin-bottom:10px;border-color:#7a5a10"><b>Continue the House of ${esc(savedGame.meta.house || '?')}</b> <span class="muted">— year ${savedGame.meta.year}${savedGame.meta.head ? ', led by ' + esc(savedGame.meta.head) : ''}${savedGame.meta.over ? ' (the house has ended)' : ''}</span></div>` : '') + `<h2>Choose your house</h2><p class="muted">You will lead one family line through the generations — its marriages, its feuds, its bids for power. When the head of your house dies, you continue as the heir. If your blood dies out, the game ends.</p>`;
     for (const [t, ks] of byTribe) {
       const c0 = t.clans[0], i = SIM.cellAt(c0.x, c0.y), bi = BIOMES[W.biome[i]].name.toLowerCase();
       const near = []; const [hx, hy] = SIM.tribeCenter(t);
       for (const d of W.deposits) if (Math.hypot(d.x - hx, d.y - hy) < 60000) near.push(depIc(d.type, 15) + (d.type === 'grain' ? 'the wild grain valley' : DEPOSITS[d.type].name.toLowerCase()));
-      html += `<div class="tribeblk"><div class="rh"><b style="color:hsl(${t.hue},60%,30%)">The ${esc(t.name)}</b><span class="muted">${SIM.tribeSize(t)} people · ${bi} · ${W.comp[i] === 1 ? 'great isle' : 'lesser isle'}</span></div>
+      html += `<div class="tribeblk fold${byTribe.keys().next().value === t ? ' open' : ''}"><div class="rh foldh" role="button" tabindex="0" aria-expanded="${byTribe.keys().next().value === t}"><b style="color:hsl(${t.hue},60%,30%)"><span class="chev">${byTribe.keys().next().value === t ? '▾' : '▸'}</span>The ${esc(t.name)}</b><span class="muted">${SIM.tribeSize(t)} people · ${bi} · ${W.comp[i] === 1 ? 'great isle' : 'lesser isle'}</span></div><div class="foldbody">
         <div class="muted" style="margin:3px 0 1px">${[...new Set(near)].join(' &nbsp; ') || 'No special resources nearby'}</div><div class="muted" style="margin:1px 0 4px">${faithIc(t, 15)}${SIM.FAITHS[SIM.faithOf(t)].name}, ${SIM.isMatri(t) ? 'led by clan mothers' : 'led by men'}</div>` +
-        ks.slice(0, 4).map(k => `<div class="pick" data-h="${k.head.id}"><b>House of ${esc(k.head.name)}</b> <span class="muted">— ${esc(k.head.name)}, ${Math.floor(k.head.age)}, of the ${esc(k.clan.name)} clan · ${k.head.sex === 'F' ? 'husband' : 'wife'} ${esc(k.head.spouse.name)} · ${k.kids} child${k.kids === 1 ? '' : 'ren'}${k.clan.head === k.head ? ' · clan head' : ''}</span></div>`).join('') + `</div>`;
+        ks.slice(0, 4).map(k => `<div class="pick" data-h="${k.head.id}"><b>House of ${esc(k.head.name)}</b> <span class="muted">— ${esc(k.head.name)}, ${Math.floor(k.head.age)}, of the ${esc(k.clan.name)} clan · ${k.head.sex === 'F' ? 'husband' : 'wife'} ${esc(k.head.spouse.name)} · ${k.kids} child${k.kids === 1 ? '' : 'ren'}${k.clan.head === k.head ? ' · clan head' : ''}</span></div>`).join('') + `</div></div>`;
     }
     html += `<div class="row" style="gap:8px;margin-top:10px"><button id="watchBtn">Just watch the world</button><button id="rerollBtn">Different world</button></div>`;
     const m = $('#modal'); m.querySelector('.card2').innerHTML = html; m.style.display = 'flex';
@@ -1773,10 +1834,13 @@
       d.onclick = () => { SIM.choosePlayer(W, h); lastSaveWeek = W.week; m.style.display = 'none'; picking = false; running = true; $('#play').textContent = '❚❚'; panel = 'house'; sel = null; renderPanel(); centerOnHouse(); updateTop(); };
     });
     if ($('#contBtn')) $('#contBtn').onclick = () => loadFrom(savedGame.str);
+    $('#welLoad').onclick = () => loadFile(); $('#welHelp').onclick = () => openHelp();
+    m.querySelectorAll('.fold .foldh').forEach(hd => { const tog = () => { const f = hd.parentNode, on = f.classList.toggle('open'); hd.setAttribute('aria-expanded', on ? 'true' : 'false'); hd.querySelector('.chev').textContent = on ? '▾' : '▸'; }; hd.onclick = tog; hd.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tog(); } }; });
     $('#watchBtn').onclick = () => { m.style.display = 'none'; picking = false; running = true; $('#play').textContent = '❚❚'; };
     $('#rerollBtn').onclick = () => { m.style.display = 'none'; picking = false; newWorld(Math.floor(Math.random() * 1e9)); };
   }
   // routine matters that can be answered by a standing order: card type -> [policy key, value for each option in order]
+  const ROUTINE_CARDS = ['gathering', 'omen', 'toobig', 'friendneed', 'sickness', 'exiles', 'oath', 'foundling', 'slight'];
   const ROUTINE_POL = { gathering: ['gather', ['gifts', 'trade', 'keep']], omen: ['omen', ['offer', 'quiet', 'sign']], toobig: ['split', ['letgo', 'hold']], friendneed: ['friend', ['give', 'send']], sickness: ['sick', ['scatter', 'tend']], exiles: ['exiles', ['place', 'feed', 'turn']], oath: ['oath', ['swear', 'friendship', 'refuse']], foundling: ['found', ['take', 'other', 'refuse']],
     rivalry: ['seat', ['face', 'buy', 'step']], slight: ['slight', ['gift', 'kind', 'pass']], oathback: ['oathback', ['keep', 'food', 'break']], exilesback: ['exback', ['refuse', 'pay', 'hand']], foundback: ['foundback', ['choose', 'send', 'keep']] };
   function showDecision(ev) {
@@ -1784,35 +1848,97 @@
     modalEv = ev; cardAt = performance.now(); wasRunning = running || wasRunning; running = false; $('#play').textContent = '▶';
     const P = W.player;
     modalDismiss = ev.options.length === 1 ? () => choose(0) : null;
-    const ringS = P && !P.over ? SIM.ringSay(W, ev) : [], hue = P && P.head && P.head.clan ? P.head.clan.tribe.hue : null, first = Math.max(0, ringS.findIndex(r => r.text));
+    const cmp = phone(), ringS = P && !P.over ? SIM.ringSay(W, ev) : [], hue = P && P.head && P.head.clan ? P.head.clan.tribe.hue : null, first = Math.max(0, ringS.findIndex(r => r.text));
     const html = (modalDismiss ? '<button class="xbtn" data-x title="Close (Esc)">✕</button>' : '') + `<img class="plate" src="${ART.scene(ev.type, ev.type === 'beast' && ev.data && ev.data.b ? ev.data.b.kind : '')}" alt=""><div class="evhead">${P ? `House of ${esc(P.house)}, year ${yr(W.week)}` : ''}</div><h2>${esc(ev.title)}</h2><p>${iconize(ev.text)}</p>` + (ROUTINE_POL[ev.type] && P && !P.over ? '<label class="setline"><input type="checkbox" id="standOrd"><span>From now on, answer such matters the same way</span></label>' : '') +
       ev.options.map((o, k) => `<button class="opt${o.off ? ' off' : ''}" data-k="${k}"${o.off ? ' disabled' : ''}><span class="num">${k + 1}</span><span><b>${esc(o.label)}</b>${o.hint ? `<br><span class="muted">${esc(o.hint)}</span>` : ''}</span></button>`).join('') +
-            (ringS.some(r => r.text) ? `<div class="ringbox"><div class="bubble" id="ringSay"></div><div class="ring">${ringS.map((r, i) => `<button class="rf${i === first ? ' on' : ''}${r.text ? '' : ' mute'}" data-r="${i}" title="${esc(r.q.name)}">${ART.faceImg(r.q, hue, 50)}</button>`).join('')}</div></div>` : '');
+            (ringS.some(r => r.text) ? (cmp ? `<div class="ringbox cmp"><div class="ring">${ringS.map((r, i) => r.text ? `<button class="rf${i === first ? ' on' : ''}" data-r="${i}" title="${esc(r.q.name)}, ${esc(r.title)}" aria-label="${esc(r.q.name)}, ${esc(r.title)}">${ART.faceImg(r.q, hue, 44)}</button>` : '').join('')}</div><div class="rline" id="ringSay"></div></div>`
+              : `<div class="ringbox"><div class="bubble" id="ringSay"></div><div class="ring">${ringS.map((r, i) => `<button class="rf${i === first ? ' on' : ''}${r.text ? '' : ' mute'}" data-r="${i}" title="${esc(r.q.name)}">${ART.faceImg(r.q, hue, 50)}</button>`).join('')}</div></div>`) : '');
     const m = $('#modal'); m.querySelector('.card2').innerHTML = html; m.style.display = 'flex';
     if (P && P.head && P.head.clan) { const c = ev.data && (ev.data.byClan || ev.data.foe || (ev.data.q && ev.data.q.clan)) || P.head.clan; if (c && c.x != null) centerOn(c.x, c.y); }
     m.querySelectorAll('.opt').forEach(b => b.onclick = () => choose(+b.dataset.k));
     { const x = m.querySelector('[data-x]'); if (x) x.onclick = () => modalDismiss && modalDismiss(); }
-    const say = m.querySelector('#ringSay'); if (say) { const speak = i => { const r = ringS[i]; say.innerHTML = `<span class="who">${esc(r.q.name)}</span><span class="role">${esc(r.title)}</span>${r.text ? esc(r.text) : '<i>has nothing to say on this.</i>'}`; say.style.setProperty('--tail', (i * 52 + 14) + 'px'); m.querySelectorAll('.rf').forEach(b => b.classList.toggle('on', +b.dataset.r === i)); m.querySelectorAll('.opt').forEach(b => b.classList.toggle('fav', +b.dataset.k === r.k)); };
-      m.querySelectorAll('.rf').forEach(b => b.onclick = () => speak(+b.dataset.r)); speak(first); }
+    const say = m.querySelector('#ringSay'); if (say) { const speak = i => { const r = ringS[i]; say.innerHTML = cmp ? `<span class="who">${esc(r.q.name)}</span>, <span class="role">${esc(r.title)}:</span> ${r.text ? esc(r.text) : '<i>has nothing to say on this.</i>'}` : `<span class="who">${esc(r.q.name)}</span><span class="role">${esc(r.title)}</span>${r.text ? esc(r.text) : '<i>has nothing to say on this.</i>'}`; say.style.setProperty('--tail', (i * 52 + 14) + 'px'); m.querySelectorAll('.rf').forEach(b => b.classList.toggle('on', +b.dataset.r === i)); m.querySelectorAll('.opt').forEach(b => b.classList.toggle('fav', +b.dataset.k === r.k)); };
+      m.querySelectorAll('.rf').forEach(b => b.onclick = () => speak(+b.dataset.r)); speak(first); if (cmp) say.onclick = () => say.classList.toggle('open'); }
   }
   // ---- player actions (⚑ Act) ----
-  function showCard(head, title, text, opts, onPick) {
+  // ---- the deeds, in groups. One table: every deed id and the group it is listed under; an id not in it goes under Your house ----
+  const GROUPS = ['Your house', 'Your clan', 'Your tribe', 'Other peoples', 'Faith and lore', 'Land and villages'];
+  const DEED_GROUP = {
+    adopt: 'Your house', recall: 'Your house', claim: 'Your house', treasure: 'Your house', free: 'Your house',
+    invite: 'Your clan', challengeClan: 'Your clan', feast: 'Your clan', expedition: 'Your clan', hunt: 'Your clan',
+    clanlife: 'Your clan', clanblood: 'Your clan', tribelife: 'Your tribe', tribeblood: 'Your tribe', bindseat: 'Your tribe',
+    challenge: 'Your tribe', crown: 'Your tribe', kingdom: 'Your tribe', leaverealm: 'Your tribe', bloodseat: 'Your tribe', plot: 'Your tribe', strike: 'Your tribe', court: 'Your tribe', confront: 'Your tribe',
+    raid: 'Other peoples', landask: 'Other peoples', landdrive: 'Other peoples', explore: 'Other peoples', voyage: 'Other peoples', trader: 'Other peoples', ally: 'Other peoples', pact: 'Other peoples', tribute: 'Other peoples', peace: 'Other peoples', gifts: 'Other peoples', war: 'Other peoples', endwar: 'Other peoples',
+    rite: 'Faith and lore', walk: 'Faith and lore',
+    movecamp: 'Land and villages', movevillage: 'Land and villages', foundvillage: 'Land and villages', settle: 'Land and villages', takefarming: 'Land and villages', fields: 'Land and villages', build: 'Land and villages', migrate: 'Land and villages', canoes: 'Land and villages', monument: 'Land and villages',
+  };
+  const deedGroup = id => DEED_GROUP[id] || 'Your house';
+  // a long list of peoples in a deed's text shows its first three; the rest wait behind "and N more"
+  const FOLD_MARK = ['Peoples you know of but cannot raid: ', 'Known peoples: '];
+  function foldHint(h) {
+    for (const mk of FOLD_MARK) { const i = h.indexOf(mk); if (i < 0) continue; const j = i + mk.length, tail = h.slice(j), end = tail.lastIndexOf('.'), list = end >= 0 ? tail.slice(0, end) : tail, after = end >= 0 ? tail.slice(end) : '', items = list.split('; ');
+      if (items.length <= 3) return null; return { hint: h.slice(0, j) + items.slice(0, 3).join('; ') + after, n: items.length - 3, more: items.slice(3).join('; ') }; }
+    return null;
+  }
+  function showCard(head, title, text, opts, onPick, cfg) {
     const P = W.player; modalEv = { act: true, pick: onPick, n: opts.length }; cardAt = performance.now();
     if (!wasRunning) wasRunning = running; running = false; $('#play').textContent = '▶';
     modalDismiss = () => { modalEv = null; closeCard(); };
-    const html = '<button class="xbtn" data-x title="Close (Esc)">✕</button>' + `<div class="evhead">${head || (P ? `House of ${esc(P.house)}, year ${yr(W.week)}` : '')}</div><h2>${esc(title)}</h2>${text ? `<p>${iconize(text)}</p>` : ''}` +
-      opts.map((o, k) => `<button class="opt${o.off ? ' off' : ''}" data-k="${k}"${o.off ? ' disabled' : ''}><span class="num">${o.icon || k + 1}</span><span><b>${esc(o.label)}</b>${o.hint ? `<br><span class="muted">${esc(o.hint)}</span>` : ''}</span></button>`).join('');
+    const ph = phone(), groups = ph && cfg && cfg.groups;
+    const optHtml = (o, k) => `<button class="opt${o.off ? ' off' : ''}" data-k="${k}"${o.off ? ' disabled' : ''}><span class="num">${o.icon || k + 1}</span><span><b>${esc(o.label)}</b>${o.hint ? `<br><span class="muted">${esc(o.hint)}</span>` : ''}</span></button>` + (o.fold ? `<button class="moreb" data-more="${k}">and ${o.fold.n} more: tap to see all</button>` : '');
+    let body;
+    if (groups) {
+      const ix = opts.map((o, k) => [o, k]); body = '';
+      for (const g of GROUPS) { const it = ix.filter(([o]) => !o.off && (o.group || 'Your house') === g); if (it.length) body += `<div class="ghead">${g}</div>` + it.map(([o, k]) => optHtml(o, k)).join(''); }
+      const off = ix.filter(([o]) => o.off);
+      if (off.length) body += `<button class="notnow" data-notnow aria-expanded="false"><span>Not now (${off.length})</span><span>▾</span></button><div class="notnowbox"><div class="ghead">Not now</div>${off.map(([o, k]) => optHtml(o, k)).join('')}</div>`;
+    } else body = opts.map(optHtml).join('');
+    const hd = ph ? `<div class="ahead"><h2>${esc(title)}</h2><button class="xbtn" data-x title="Close (Esc)" aria-label="Close">✕</button></div><div class="evhead">${head || (P ? `House of ${esc(P.house)}, year ${yr(W.week)}` : '')}</div>`
+      : `<button class="xbtn" data-x title="Close (Esc)">✕</button><div class="evhead">${head || (P ? `House of ${esc(P.house)}, year ${yr(W.week)}` : '')}</div><h2>${esc(title)}</h2>`;
+    const html = hd + (text ? `<p>${iconize(text)}</p>` : '') + body;
     const m = $('#modal'); m.querySelector('.card2').innerHTML = html; m.style.display = 'flex'; m.querySelector('.card2').scrollTop = 0;
     m.querySelectorAll('.opt').forEach(b => b.onclick = () => choose(+b.dataset.k));
+    m.querySelectorAll('[data-more]').forEach(b => b.onclick = () => { const o = opts[+b.dataset.more]; b.outerHTML = `<div class="foldlist">${esc(o.fold.more)}</div>`; });
+    m.querySelectorAll('[data-notnow]').forEach(b => b.onclick = () => { const box = b.nextElementSibling, on = box.classList.toggle('open'); b.setAttribute('aria-expanded', on ? 'true' : 'false'); b.lastElementChild.textContent = on ? '▴' : '▾'; if (on) box.scrollIntoView({ block: 'nearest' }); });
     m.querySelector('[data-x]').onclick = () => modalDismiss && modalDismiss();
   }
   function closeCard() { modalEv = null; modalDismiss = null; $('#modal').style.display = 'none'; if (!W.pending.length) { running = wasRunning; wasRunning = false; $('#play').textContent = running ? '❚❚' : '▶'; } if (panel === 'house') renderPanel(); updateTop(); }
   function showResult(r) { if (!r) return closeCard(); W.lastResult = null; const c = W.player && W.player.head && W.player.head.clan; if (c) centerOn(c.x, c.y); showCard(null, r.title, r.text, [{ label: 'Continue' }], () => closeCard()); }
+  // ---- notices ----
+  // On the phone a notice is a one-line chip stacked above the bottom controls: tap to read it whole, swipe it away or press its cross. On a wide screen it is the toast it always was.
+  // Every notice, whichever way it is shown, also goes into a log of the last 30, with its date; the bell in the top bar counts the ones not yet looked at.
+  const NOTE_LOG = []; let noteUnread = 0;
+  const noteDate = () => W ? `${SIM.seasonName(W.week)}, year ${yr(W.week)}` : '';
+  function clearNotes() { NOTE_LOG.length = 0; noteUnread = 0; noteBadge(); $('#toasts').innerHTML = ''; if ($('#noteList').classList.contains('open')) noteList(); } // a new world or a loaded game starts with no notices
+  function noteBadge() { const b = $('#noteBtn'), n = $('#noteN'); if (!b) return; n.textContent = noteUnread > 99 ? '99+' : String(noteUnread); b.classList.toggle('has', noteUnread > 0); b.setAttribute('aria-label', noteUnread ? `Notices, ${noteUnread} new` : 'Notices'); }
+  function noteList() {
+    const el = $('#noteList'), n = noteUnread;
+    el.innerHTML = `<div class="nh"><span>Notices</span><button data-x aria-label="Close">✕</button></div>` + (NOTE_LOG.length ? NOTE_LOG.map((e, i) => `<div class="nr${i < n ? ' new' : ''}"><b>${esc(e.title)}</b><small>${esc(e.date)}</small>${iconize(e.text)}</div>`).join('') : '<div class="none">Nothing yet.</div>');
+    el.querySelector('[data-x]').onclick = () => closePops();
+    noteUnread = 0; noteBadge();
+  }
   function toast(r) {
-    const box = $('#toasts'); while (box.children.length > 2) box.firstChild.remove();
-    const el = document.createElement('div'); el.className = 'toast'; el.innerHTML = `<b>${esc(r.title)}</b><br>${iconize(r.text)}`;
-    $('#toasts').appendChild(el); setTimeout(() => el.classList.add('out'), 7000); setTimeout(() => el.remove(), 7800);
-    el.onclick = () => el.remove();
+    NOTE_LOG.unshift({ title: r.title, text: r.text, date: noteDate() }); if (NOTE_LOG.length > 30) NOTE_LOG.pop();
+    if ($('#noteList').classList.contains('open')) { noteList(); } else { noteUnread++; noteBadge(); }
+    const box = $('#toasts');
+    if (!phone()) while (box.children.length > 2) box.firstChild.remove();
+    else { let live = [...box.children].filter(x => !x.classList.contains('gone')); while (live.length > 2) { const old = live.find(x => !x.classList.contains('open')); if (!old) break; old.remove(); live = live.filter(x => x !== old); } } // a fourth notice puts out the oldest chip that is not open; one being read stays
+    const el = document.createElement('div');
+    if (!phone()) {
+      el.className = 'toast'; el.innerHTML = `<b>${esc(r.title)}</b><br>${iconize(r.text)}`;
+      box.appendChild(el); setTimeout(() => el.classList.add('out'), 7000); setTimeout(() => el.remove(), 7800);
+      el.onclick = () => el.remove(); return;
+    }
+    el.className = 'toast'; el.innerHTML = `<div class="tc"><b>${esc(r.title)}</b><div class="tx">${iconize(r.text)}</div></div><button class="tx-x" aria-label="Dismiss">✕</button>`;
+    box.appendChild(el);
+    let t1 = setTimeout(() => el.classList.add('out'), 7000), t2 = setTimeout(() => el.remove(), 7800), x0 = null, dx = 0, moved = false;
+    const gone = dir => { el.classList.add('gone'); clearTimeout(t1); clearTimeout(t2); el.style.transform = `translateX(${dir * 420}px)`; el.style.opacity = '0'; setTimeout(() => el.remove(), 220); };
+    el.querySelector('.tx-x').onclick = ev => { ev.stopPropagation(); gone(1); };
+    el.querySelector('.tc').onclick = () => { if (moved) { moved = false; return; } const o = el.classList.toggle('open'); clearTimeout(t1); clearTimeout(t2); el.classList.remove('out'); if (!o) { t1 = setTimeout(() => el.classList.add('out'), 7000); t2 = setTimeout(() => el.remove(), 7800); } }; // read whole it stays until it is dismissed
+    el.addEventListener('pointerdown', e => { if (e.target.closest('.tx-x')) return; x0 = e.clientX; dx = 0; moved = false; });
+    el.addEventListener('pointermove', e => { if (x0 == null) return; dx = e.clientX - x0; if (Math.abs(dx) > 10) { moved = true; el.style.transform = `translateX(${dx}px)`; el.style.opacity = String(Math.max(0.25, 1 - Math.abs(dx) / 220)); } });
+    const end = () => { if (x0 == null) return; const d = dx; x0 = null; if (Math.abs(d) > 60) gone(d > 0 ? 1 : -1); else { el.style.transform = ''; el.style.opacity = ''; } };
+    el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
   }
   // ---- choosing a place on the map ----
   let placePick = null;
@@ -1852,15 +1978,16 @@
     ctx.restore();
   }
   let hoverPt = null;
-  function showActions(openId) {
+  function showActions(openId, focusId) {
     const P = W.player; if (!P || P.over || modalEv || picking) return;
     const A = SIM.playerActions(W); if (!A.length) return;
     const h = P.head;
     const direct = typeof openId === 'string' ? A.find(a => a.id === openId && a.ok && a.targets) : null;
+    const sorted = A.slice().sort((a, b) => (b.ok ? 1 : 0) - (a.ok ? 1 : 0));
     showCard(null, `What will ${h.name} do?`, `<span class="muted">Greyed-out deeds are not possible right now; each says why.</span>`,
-      [...A.slice().sort((a, b) => (b.ok ? 1 : 0) - (a.ok ? 1 : 0)).map(a => ({ icon: a.icon, label: a.label, hint: a.ok ? a.hint : (a.why || 'Not possible for now'), off: !a.ok }))],
+      sorted.map(a => { const t = a.ok ? a.hint : (a.why || 'Not possible for now'), f = phone() ? foldHint(t) : null; return { icon: a.icon, label: a.label, hint: f ? f.hint : t, fold: f, off: !a.ok, group: deedGroup(a.id) }; }),
       k => {
-        const a = k === -1 ? direct : A.slice().sort((a, b) => (b.ok ? 1 : 0) - (a.ok ? 1 : 0))[k]; if (!a) return closeCard();
+        const a = k === -1 ? direct : sorted[k]; if (!a) return closeCard();
         if (a.targets) {
           showCard(null, a.label, esc(a.hint), [...a.targets.map(tg => ({ label: tg.label, hint: tg.hint })), { icon: '←', label: 'Back' }], j => {
             if (j >= a.targets.length) { modalEv = null; return showActions(); }
@@ -1875,8 +2002,12 @@
           });
           const r0 = a.targets[0] && a.targets[0].ref; if (r0) { const x = r0.x != null ? r0.x : r0.clans && r0.clans[0] && r0.clans[0].x, y = r0.y != null ? r0.y : r0.clans && r0.clans[0] && r0.clans[0].y; if (x != null) centerOn(x, y); }
         } else showResult(SIM.doAction(W, a.id, 0));
-      });
+      }, { groups: true });
     if (direct) modalEv.pick(-1);
+    else if (focusId) { // open at the deed an advice line named: its box opened if it sits in Not now, the sheet scrolled to it, the deed marked for a moment
+      const k = sorted.findIndex(a => a.id === focusId), m = $('#modal'), b = k >= 0 ? m.querySelector(`.opt[data-k="${k}"]`) : null;
+      if (b) { const nn = b.closest('.notnowbox'); if (nn && !nn.classList.contains('open')) { const tg = nn.previousElementSibling; if (tg) tg.click(); } b.scrollIntoView({ block: 'center' }); b.classList.add('hl'); setTimeout(() => b.classList.remove('hl'), 1800); }
+    }
   }
   function choose(k) {
     const ev = modalEv; if (!ev) return;
@@ -1884,13 +2015,14 @@
     modalEv = null; modalDismiss = null;
     { const cb = $('#modal').querySelector('#standOrd'), rp = ROUTINE_POL[ev.type]; if (cb && cb.checked && rp && rp[1][k]) SIM.setPolicy(W, rp[0], rp[1][k]); }
     SIM.resolve(W, ev, k); $('#modal').style.display = 'none';
-    if (W.lastResult && (W.lastResult.text || '').length > 200) { const r = W.lastResult; if (panel === 'house') renderPanel(); updateTop(); return showResult(r); } // a long account (who backed whom, and why) gets a card that waits to be read
+    const lr = W.lastResult, quick = phone() && lr && ROUTINE_CARDS.includes(ev.type) && (lr.text || '').replace(/<[^>]*>/g, '').length < 220 && !/<table|<br|<li/i.test(lr.text || ''); // a routine matter with a short plain answer is a notice, not a second card
+    if (lr && !quick && (lr.text || '').length > 200) { const r = W.lastResult; if (panel === 'house') renderPanel(); updateTop(); return showResult(r); } // a long account (who backed whom, and why) gets a card that waits to be read
     if (W.lastResult) { toast(W.lastResult); W.lastResult = null; }
     if (!W.pending.length) { running = wasRunning; wasRunning = false; $('#play').textContent = running ? '❚❚' : '▶'; }
     if (panel === 'house') renderPanel(); updateTop();
   }
   window.addEventListener('keydown', e => { if (placePick && e.key === 'Escape') { endPlacePick(); closeCard(); return; }
-    if (e.key === 'Escape') { if (document.querySelector('.pop.open')) return closePops(); if ($('#help').style.display === 'flex') { $('#help').style.display = 'none'; return; } if ($('#picker').style.display === 'block') return hidePicker(); if ($('#modal').style.display === 'flex') { if (modalDismiss) modalDismiss(); return; } if (sel || panel === 'cell') return closeSel(); return; } if (modalEv && /^[1-9]$/.test(e.key)) choose(+e.key - 1); if (!modalEv && (e.key === 'a' || e.key === 'A') && e.target === document.body) showActions(); if (e.key === ' ' && !modalEv && !picking && e.target === document.body) { e.preventDefault(); $('#play').click(); } });
+    if (e.key === 'Escape') { if (document.querySelector('.pop.open') || $('#speedRow').classList.contains('open')) return closePops(); if ($('#help').style.display === 'flex') { $('#help').style.display = 'none'; return; } if ($('#picker').style.display === 'block') return hidePicker(); if ($('#modal').style.display === 'flex') { if (modalDismiss) modalDismiss(); return; } if (sel || panel === 'cell') return closeSel(); return; } if (modalEv && /^[1-9]$/.test(e.key)) choose(+e.key - 1); if (!modalEv && (e.key === 'a' || e.key === 'A') && e.target === document.body) showActions(); if (e.key === ' ' && !modalEv && !picking && e.target === document.body) { e.preventDefault(); $('#play').click(); } });
   function centerOnHouse() { const P = W.player; if (P && P.head && P.head.clan) centerOn(P.head.clan.x, P.head.clan.y, 0.0016); }
 
   const STORE = {
@@ -1924,7 +2056,7 @@
     $('#loading').style.display = 'flex'; $('#modal').style.display = 'none';
     setTimeout(() => {
       try { W = SIM.loadGame(str); } catch (e) { $('#loading').style.display = 'none'; toast({ title: 'That save could not be read', text: esc(String(e && e.message || e)) }); return showStart(); }
-      prep(); detail = null; modalEv = null; wasRunning = false; picking = false; running = false; $('#play').textContent = '▶'; lastSaveWeek = W.week;
+      prep(); clearNotes(); detail = null; modalEv = null; wasRunning = false; picking = false; running = false; $('#play').textContent = '▶'; lastSaveWeek = W.week;
       sel = null; panel = W.player ? 'house' : 'log'; selCell = null; dirty = true; renderPanel(); updateTop(); if (W.player && !W.player.over) centerOnHouse(); else fit();
       $('#loading').style.display = 'none'; toast({ title: 'Welcome back', text: W.player ? `The House of ${esc(W.player.house)}, year ${yr(W.week)}. The game is paused: press play when you are ready.` : `Year ${yr(W.week)}.` });
     }, 40);
@@ -1937,7 +2069,7 @@
   function newWorld(seed) {
     $('#loading').style.display = 'flex';
     setTimeout(() => {
-      W = SIM.createWorld(seed); SIM.seedFirstPop(W, 4); prep(); detail = null; modalEv = null; wasRunning = false;
+      W = SIM.createWorld(seed); SIM.seedFirstPop(W, 4); prep(); clearNotes(); detail = null; modalEv = null; wasRunning = false;
       sel = null; panel = 'log'; selCell = null; dirty = true; renderPanel(); updateTop(); fit();
       $('#loading').style.display = 'none'; showStart();
     }, 40);
@@ -1972,7 +2104,7 @@
       if (W.player && !picking && !saving && !modalEv && !skipping && W.week - lastSaveWeek >= 260) saveNow(false); // autosave every five years
       if (!modalEv && !picking && W.pending.length) showDecision(W.pending[0]);
       if (W.notices && W.notices.length) { const n = W.notices.shift(); toast({ title: n.title, text: esc(n.text) }); }
-      easeCamps(dt);
+      easeCamps(dt); followPanel(t);
       // repaint the land only when the season changes (or a layer is switched), a slice at a time
       const season = Math.floor(W.week / 13);
       const PR = SIM.prof.on && running; let r0 = PR ? performance.now() : 0, rPaint = 0, rDetail = 0; // profiler: land painting, detail jobs and draw() are the rendering
