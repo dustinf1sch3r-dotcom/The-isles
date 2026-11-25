@@ -1388,6 +1388,14 @@
   const GOOD_NAMES = { flint: 'Flint', axe: 'Polished greenstone axes', amber: 'Amber', ochre: 'Red ochre', salt: 'Salt', furs: 'Furs', shells: 'Shell beads', copper: 'Copper ore', tin: 'Tin', metal: 'Copper tools & ornaments', bronze: 'Bronze', clay: 'Potter\'s clay', pots: 'Pottery', leather: 'Leather', art: 'Carvings & ornaments' };
   const GIFTABLE = ['bronze', 'metal', 'amber', 'art', 'axe', 'salt', 'ochre', 'furs', 'shells', 'pots', 'leather'], TRADEABLE = ['flint', 'amber', 'salt', 'ochre', 'furs', 'shells', 'axe', 'metal', 'pots', 'leather', 'art', 'clay'];
   const foodDays = c => Math.round((c.store + c.grain) / Math.max(1, needsWeek(c) / 7));
+  // why a clan's food is short, in a few words, from its own numbers: the season, what the range yields against the need (c.supply), the grain left, and hunger. Reads state only.
+  function foodWhy(W, c) {
+    const sn = seasonName(W.week).toLowerCase(), s = c.supply || 0, need = Math.max(1, needsWeek(c)), parts = [sn];
+    parts.push(s >= 1.1 ? 'the range feeds us' : s < 0.05 ? 'the range gives almost nothing' : `the range feeds ${s.toFixed(1)} of us`);
+    if (c.live === 'farm' || c.tribe.stage >= 2 || (c.grain || 0) > 0 || (c.cereal || 0) > 0.02) { const wk = (c.grain || 0) / need; parts.push(wk < 0.5 ? 'no grain left' : wk < 1.5 ? 'grain for a week' : `grain for ${Math.round(wk)} weeks`); }
+    if (c.cond < 0.7) parts.push('going hungry');
+    return parts.join(', ');
+  }
   function acquireGoods(W, c) {
     if (c.goods.bronze > 0) { c.tool = Math.max(c.tool, 1.2); if (W.rand() < 0.03) c.goods.bronze--; } else if (c.goods.metal > 0) { c.tool = Math.max(c.tool, 1.05); if (W.rand() < 0.04) c.goods.metal--; }
     // everyday wealth: prime furs from a good hunting season, beads from shell middens
@@ -6036,6 +6044,7 @@
   }
 
   return { canTakeFarming, soilWarn, groundAt, bondWord, tribeKnown, liveSigns, walkWord, SIGN_R, N, CELL, WORLD, HA, FORAGE_R, TRIBE_MAX, tribeMax, BIOMES, GROVES, DEPOSITS, GOOD_NAMES, createWorld, seedFirstPop, step, clanSize, tribeSize, battleOdds, warSides, warBegin, realmWarcall, familiesOf, famMembers, needsWeek, opinion, prestige, isAllied, sameConfed, tribeCenter, roadLevel, pactRoute, playerActions, doAction, dealings, settleFeud, policy: W => pol(W), setPolicy: (W, k, v) => { const p = pol(W); if (k === 'deal' || !(k in p) || (v !== 'ask' && !(AUTOIX[k] && v in AUTOIX[k]))) return; p[k] = v; }, setDeal: (W, id, v) => { if (v === 'auto') delete pol(W).deal[id]; else pol(W).deal[id] = v; }, dealMode: (W, o) => dealWith(W, o), clanHeir, FAITHS, isMatri, faithOf, cultureName, MON, checkPlace, und, speechWord, kultInfo, grainInfo, clanFlow, HOME_R, CREATION, claimsYear, foreignHeld, landLive, landScan, landYear, driveOutOdds, leaveOdds, landTargets, ring, ringSay, BEASTS, beastNm, beastTale, beastOdds, beastWhere, beastToll, beastNear, saveGame, loadGame, saveInfo, ruleInfo, advice, legacy, legacyHTML, TRAITS, epithet, hasTrait, leadWeight, standingWhy, villageInfo, RANKS, SOCIETY, societyOf, rankOf, WORKS, JOBS, walls, canBuild, releaseClaim: (W, i) => { const P = W.player; if (P && P.claims && P.claims[i]) { houseNote(W, `The house gave up its claim to the ${DEPOSITS[P.claims[i].d.type].name.toLowerCase()}.`); P.claims.splice(i, 1); } }, weaponsName, houseSlaves, slaveCount, freeCount, knows, knowsTribe, foodDays, GIFTABLE, STAGES, BOAT_STAGES, METAL_STAGES, boatStage, metalStage, arms, canReach, houseCandidates, choosePlayer, resolve, dynMembers, bloodCount, titlesOf, relWord, vigor, tribeVigor, statureCm, farmSuit, fieldInfo, potential, cellFood, foodBreakdown, kingshipBid, warriors, tribeWealth, confedTribes, confedPeople, newConfed, joinConfed, leaveConfed, formAlliance, kinOf, rulerWord, realmWord, realmInfo, realmHeir, realmRisk, realmPutDown, realmWarList, realmRiseOdds, realmStay, realmNext, realmKingdomNeeds, succession, confedYear,
+    foodWhy,
     seasonOf, seasonName, tempOffset, cellAt, lifeStage, siler, fecund, makePerson, stepPop, prof: PROF };
 })();
 if (typeof module !== 'undefined') module.exports = SIM;
