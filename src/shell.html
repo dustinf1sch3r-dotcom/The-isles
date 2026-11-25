@@ -215,7 +215,6 @@
     body.expanded .ctl #actBtn { display:none; }
     .tools { left:auto; right:8px; }
     #mapMenu, #menu { left:8px; right:56px; width:auto; top:calc(var(--topb) + 8px); }
-    #toasts { bottom:auto; top:calc(var(--topb) + 12px); }
     .ph b { font-size:18px; }
   }
   @media (prefers-reduced-motion:reduce) { * { transition:none !important; animation:none !important; } }
@@ -247,6 +246,159 @@
   .opt.fav b::after { content:"  ◂"; color:var(--flint); font-weight:400; }
   img.plate { display:block; width:calc(100% + 8px); margin:-4px -4px 10px; border:1px solid var(--frame); border-radius:2px; aspect-ratio:640/230; object-fit:cover; }
   .xbtn { z-index:2; background:#efe4c3 var(--paper); }
+
+  /* ============ the phone layout (issue #36): thumb reach, quiet notices, safe areas, 44 px targets ============ */
+  :root { --sab:env(safe-area-inset-bottom,0px); --sat:env(safe-area-inset-top,0px); --sal:env(safe-area-inset-left,0px); --sar:env(safe-area-inset-right,0px); --gl:max(14px,var(--sal)); --gr:max(14px,var(--sar)); }
+  #noteBtn, #speedRow, #moreBtn, .welbtns, .chev, #noteList, #helpToc { display:none; }
+  .hhead { display:block; }
+  #mapMore > h4:first-child { margin-top:12px; }
+  @media (min-width:820px) { /* a phone turned sideways keeps clear of the notch and the home bar; with no inset these are the old numbers */
+    .panel { right:max(10px,var(--sar)); top:max(10px,var(--sat)); bottom:max(10px,var(--sab)); }
+    .top { left:max(8px,var(--sal)); top:max(8px,var(--sat)); right:calc(420px + max(10px,var(--sar))); }
+    .tools { left:max(8px,var(--sal)); }
+  }
+  @media (max-width:819px) {
+    body.sheet-peek { --sheet:calc(80px + var(--sab)); } body.sheet-mid { --sheet:62vh; } body.expanded { --sheet:82vh; }
+    body.dragging .panel, body.dragging .ctl button, body.dragging #speedRow { transition:none !important; }
+    /* top bar: the status, and the notices button where play was */
+    .top { top:max(8px,var(--sat)); left:max(8px,var(--sal)); right:max(8px,var(--sar)); }
+    #noteBtn { display:flex; position:relative; width:44px; height:44px; padding:0; align-items:center; justify-content:center; flex:none; }
+    #noteBtn svg { width:21px; height:21px; stroke:currentColor; fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+    #noteN { display:none; position:absolute; top:-6px; right:-6px; min-width:21px; height:21px; border-radius:11px; padding:0 5px; background:#8f2a16; color:#fff; font:700 12.5px/21px system-ui,sans-serif; text-align:center; border:1px solid #f0e5c5; }
+    #noteBtn.has #noteN { display:block; }
+    /* bottom-left cluster, mirroring the Act button on the right: it moves with the panel and goes with it when the panel is full */
+    .ctl #play, .ctl #speed, .ctl #skipBtn { position:fixed; bottom:calc(var(--sheet) + 14px); width:48px; height:48px; min-width:48px; border-radius:24px; padding:0; z-index:5; box-shadow:0 6px 20px rgba(54,36,14,0.35); transition:bottom .22s ease; font-size:15px; }
+    .ctl #play { left:var(--gl); letter-spacing:-1px; } .ctl #speed { left:calc(var(--gl) + 56px); } .ctl #skipBtn { left:calc(var(--gl) + 112px); font-size:24px; padding-bottom:3px; }
+    .ctl #actBtn { right:var(--gr); transition:bottom .22s ease; }
+    body.expanded .ctl #play, body.expanded .ctl #speed, body.expanded .ctl #skipBtn, body.expanded #speedRow { display:none !important; }
+    #speedRow { position:fixed; left:var(--gl); bottom:calc(var(--sheet) + 14px + 48px + 8px); z-index:7; gap:6px; padding:6px; border:1px solid var(--frame); border-radius:28px; background:var(--hide); background-image:var(--paper); box-shadow:0 8px 24px rgba(54,36,14,0.35); transition:bottom .22s ease; }
+    #speedRow.open { display:flex; }
+    #speedRow button { width:44px; height:44px; min-width:44px; padding:0; border-radius:22px; font-size:15px; }
+    #speedRow button.on { background:var(--amber); color:var(--amber-ink); border-color:var(--amber); font-weight:700; }
+    .tools { right:max(8px,var(--sar)); }
+    .tools button { width:44px; height:44px; }
+    /* the panel: handle and tab row both drag; safe areas */
+    .grab { height:44px; margin-top:-10px; }
+    .tabs { padding-left:max(8px,var(--sal)); padding-right:max(8px,var(--sar)); touch-action:none; }
+    .tabs button { height:44px; min-width:44px; font-size:14px; }
+    #panelBody { padding:10px var(--gr) calc(18px + var(--sab)) var(--gl); }
+    .tabsw { position:sticky; top:-10px; z-index:3; margin:0 calc(-1 * var(--gr)) 8px calc(-1 * var(--gl)); padding:0 var(--gr) 0 var(--gl); background:var(--surface) var(--paper); }
+    .tabsw::before, .tabsw::after { content:''; position:absolute; top:0; bottom:1px; width:26px; pointer-events:none; opacity:0; transition:opacity .15s; z-index:1; }
+    .tabsw::before { left:var(--gl); background:linear-gradient(90deg,var(--surface),rgba(240,229,197,0)); } .tabsw::after { right:var(--gr); background:linear-gradient(270deg,var(--surface),rgba(240,229,197,0)); }
+    .tabsw.fl::before, .tabsw.fr::after { opacity:1; }
+    .tabsw .tabs2 { margin:0; touch-action:pan-x; }
+    .tabs2 { touch-action:pan-x; }
+    .tabs2 button { height:44px; min-width:44px; font-size:13.5px; }
+    .selbar button { height:44px; min-width:44px; font-size:14px; }
+    .selbar { margin:-6px 0 4px; }
+    /* targets of 44 px */
+    button.lnk { position:relative; } button.lnk::before { content:''; position:absolute; left:-4px; right:-4px; top:-8px; bottom:-8px; }
+    .seg button, .seg.sm button { height:44px; min-width:44px; font-size:13.5px; padding:0 14px; }
+    .seg, .seg.sm { gap:6px; }
+    .ev, .pp { min-height:44px; padding:12px 0; } .row2:has(a[data-e]), .rel:has(a[data-e]), [data-go] { min-height:44px; } [data-go] { cursor:pointer; }
+    a[data-e], a[data-release] { display:inline-block; padding:14px 3px; margin:-14px -3px; }
+    #menu button { height:44px; } #menu { padding:6px; }
+    #picker .pick { min-height:44px; padding:12px 9px; display:block; }
+    #pickbar button { height:44px; min-width:44px; padding:0 14px; }
+    #pickbar .pbt { flex:1 1 160px; }
+    .xbtn { width:44px; height:44px; font-size:17px; top:6px; right:6px; }
+    .tribeblk .pick { min-height:44px; } #modal .row button { height:44px; padding:0 16px; }
+    .setline { position:relative; align-items:center; min-height:44px; margin:6px 0 6px; padding:2px 4px; gap:0; font-size:14px; color:var(--chalk); box-shadow:inset 0 1px 0 var(--rule), inset 0 -1px 0 var(--rule); }
+    .setline input { position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; z-index:1; cursor:pointer; }
+    .setline span { display:flex; align-items:center; gap:12px; }
+    .setline span::before { content:''; flex:none; width:24px; height:24px; box-sizing:border-box; border:2px solid #6a4a22; border-radius:6px; background:#f8f0d8; color:var(--amber-ink); font:700 16px/20px system-ui,sans-serif; text-align:center; }
+    .setline input:checked + span::before { content:'✓'; background:var(--amber); border-color:var(--amber); }
+    .setline input:focus-visible + span::before { outline:2px solid var(--amber); outline-offset:2px; }
+    /* notices: one-line chips above the bottom controls, never over the map tools, the top bar or Act */
+    #toasts { left:var(--gl); right:calc(max(8px,var(--sar)) + 52px); transform:none; width:auto; top:auto; bottom:calc(var(--sheet) + 14px + 48px + 10px); max-height:calc(100vh - var(--sheet) - var(--topb) - 100px); overflow-y:auto; scrollbar-width:none; z-index:6; transition:bottom .22s ease; }
+    body.dragging #toasts { transition:none; }
+    body.sheet-mid .tools { display:grid; grid-template-columns:44px 44px; } body.sheet-mid #toasts { right:calc(max(8px,var(--sar)) + 108px); }
+    body.expanded #toasts { display:none; }
+    #toasts > :first-child { margin-top:auto; }
+    .toast { padding:0; display:flex; align-items:flex-start; border-radius:12px; touch-action:pan-y; min-height:44px; transition:opacity .5s, transform .2s; }
+    .toast .tc { flex:1; min-width:0; padding:11px 2px 11px 12px; font-size:14px; line-height:22px; }
+    .toast .tc b { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .toast .tx { display:none; margin-top:2px; font-size:14px; line-height:1.42; white-space:normal; }
+    .toast.open .tc b { white-space:normal; } .toast.open .tx { display:block; }
+    .toast .tx-x { width:44px; height:44px; min-width:44px; flex:none; padding:0; background:none; background-image:none; border:none; box-shadow:none; font-size:16px; color:#4f1f12; }
+    #noteList { position:fixed; left:max(8px,var(--sal)); right:max(8px,var(--sar)); top:calc(var(--topb) + 8px); width:auto; max-height:min(72vh,calc(100vh - var(--topb) - 100px)); padding:0 12px 6px; z-index:9; }
+    #noteList.open { display:block; }
+    #noteList .nh { position:sticky; top:0; z-index:2; display:flex; align-items:center; justify-content:space-between; height:48px; margin:0 -12px; padding:0 4px 0 12px; background:var(--hide); background-image:var(--paper); border-bottom:1px solid var(--rule); font:600 16px var(--serif); }
+    #noteList .nh button { width:44px; height:44px; padding:0; }
+    #noteList .nr { padding:10px 0; border-bottom:1px solid var(--rule); font-size:14px; line-height:1.42; }
+    #noteList .nr small { display:block; color:var(--dust); font-size:12.5px; }
+    #noteList .nr.new { border-left:3px solid var(--amber); padding-left:9px; }
+    #noteList .none { padding:16px 0; color:var(--dust); }
+    /* the map menu: a strip above the bottom controls; the toggles and the legend behind More */
+    #mapMenu { left:max(8px,var(--sal)); right:max(8px,var(--sar)); top:auto; width:auto; bottom:calc(var(--sheet) + 14px + 48px + 8px); max-height:none; overflow:visible; padding:6px; flex-direction:column; transition:bottom .22s ease; }
+    #mapMenu.open { display:flex; }
+    #mapMenu .vh { display:none; }
+    #layers { flex:1; min-width:0; flex-wrap:nowrap; overflow-x:auto; gap:6px; scrollbar-width:none; }
+    .vrow { order:2; display:flex; gap:6px; align-items:center; }
+    #layers::-webkit-scrollbar { display:none; }
+    #layers button, .togs button { height:44px; min-width:44px; border-radius:22px; font-size:14px; padding:0 14px; flex:none; }
+    #moreBtn { display:block; flex:none; height:44px; min-width:64px; border-radius:22px; font-size:14px; padding:0 14px; font-weight:650; }
+    #mapMore > h4:first-child { margin-top:0; }
+    #mapMore { display:none; order:1; max-height:max(120px,min(52vh,430px,calc(100vh - var(--sheet) - 128px - var(--topb) - 20px))); overflow-y:auto; margin:0 0 8px; padding:0 4px; }
+    #mapMenu.more #mapMore { display:block; }
+    #mapMenu.more { right:calc(max(8px,var(--sar)) + 52px); }
+    #mapMenu.more #moreBtn { background-color:var(--amber); color:var(--amber-ink); border-color:var(--amber); }
+    #legend { font-size:13px; }
+    /* act: groups under sticky headings */
+    .ahead { position:sticky; top:-18px; z-index:4; display:flex; align-items:center; justify-content:space-between; height:56px; margin:-18px -18px 4px; padding:0 6px 0 18px; background:var(--hide); background-image:var(--paper); border-bottom:1px solid var(--rule); border-radius:16px 16px 0 0; }
+    .ahead h2 { margin:0; font-size:20px; }
+    .ahead, .hhead { box-shadow:inset 0 3px 0 0 rgba(240,229,197,0.9), inset 0 4px 0 0 rgba(138,106,60,0.55), inset 3px 0 0 0 rgba(240,229,197,0.9), inset -3px 0 0 0 rgba(240,229,197,0.9), inset 4px 0 0 0 rgba(138,106,60,0.55), inset -4px 0 0 0 rgba(138,106,60,0.55); } .ghead { box-shadow:inset 3px 0 0 0 rgba(240,229,197,0.9), inset -3px 0 0 0 rgba(240,229,197,0.9), inset 4px 0 0 0 rgba(138,106,60,0.55), inset -4px 0 0 0 rgba(138,106,60,0.55); } /* the frame of the card carries on behind the sticky heads */
+    .ahead .xbtn { position:static; flex:none; }
+    .ghead { position:sticky; top:38px; z-index:3; margin:10px -18px 0; padding:0 18px; min-height:34px; display:flex; align-items:center; background:var(--hide); background-image:var(--paper); border-bottom:1px solid var(--rule); font:650 13.5px var(--serif); letter-spacing:0.4px; color:#4f1f12; text-transform:uppercase; }
+    .notnow { display:flex; align-items:center; justify-content:space-between; width:100%; min-height:48px; margin-top:12px; padding:0 14px; text-align:left; border-radius:12px; font-weight:650; }
+    .notnowbox { display:none; } .notnowbox.open { display:block; }
+    .moreb { display:block; width:100%; min-height:44px; text-align:left; padding:0 4px; border:0; border-top:1px dashed var(--rule); border-radius:0; background:transparent; background-image:none; box-shadow:none; color:var(--flint); font:600 14px var(--serif); }
+    .foldlist { padding:6px 4px 8px; font-size:13.5px; line-height:1.4; color:var(--dust); }
+    /* cards: the advisors in one compact row */
+    .ringbox { position:sticky; bottom:-14px; margin:10px -18px -14px; padding:6px 18px 8px; }
+    .ringbox.cmp::before { inset:0; }
+    .ringbox.cmp .ring { gap:4px; }
+    .ringbox .rf { width:44px; height:44px; flex:none; }
+    .ringbox .rf img.face { width:44px; height:44px; }
+    .ringbox .rline { margin-top:2px; font:13.5px/1.3 "Gill Sans","Gill Sans MT","Trebuchet MS",system-ui,sans-serif; color:#2a2218; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; overflow:hidden; cursor:pointer; }
+    .ringbox .rline.open { -webkit-line-clamp:unset; line-clamp:unset; display:block; }
+    .ringbox .rline .who { color:#5e5848; font-weight:600; } .ringbox .rline .role { color:#5e5848; font-style:italic; }
+    .bubble .who, .bubble .role { color:#5e5848; }
+    /* the first screen and the help */
+    .welbtns { display:flex; gap:8px; margin:2px 0 12px; } .welbtns button { flex:1; height:48px; font-weight:650; }
+    .fold .foldh { min-height:44px; cursor:pointer; align-items:center; } .fold .chev { display:inline-block; width:18px; font-size:13px; color:var(--dust); }
+    .fold:not(.open) .foldbody { display:none; } .fold:not(.open) { padding-bottom:0; }
+    #help .box { padding-top:0; }
+    .hhead { position:sticky; top:0; z-index:5; display:flex; align-items:center; justify-content:space-between; height:56px; margin:0 -18px 4px; padding:0 6px 0 18px; background:var(--hide); background-image:var(--paper); border-bottom:1px solid var(--rule); border-radius:16px 16px 0 0; }
+    .hhead h2 { margin:0; } .hhead .xbtn { position:static; flex:none; }
+    #help h3 { scroll-margin-top:64px; }
+    #helpToc { display:block; margin:8px 0 6px; padding:2px 0; border-top:1px solid var(--rule); }
+    #helpToc a { display:flex; align-items:center; min-height:44px; padding:0 4px; border-bottom:1px solid var(--rule); font:600 14.5px var(--serif); color:var(--flint); cursor:pointer; }
+    #helpToc b { display:block; padding:8px 4px 2px; font:650 13px var(--serif); color:var(--dust); letter-spacing:0.4px; text-transform:uppercase; }
+    #modal, #help { padding:max(14px,var(--sat)) max(14px,var(--sar)) max(14px,var(--sab)) max(14px,var(--sal)); }
+    #modal .card2, #help .box { max-height:calc(100vh - 28px - var(--sat) - var(--sab)); }
+    /* the house at a glance */
+    .glance { margin:0 0 8px; padding:6px 10px 7px; border:1px solid var(--rule); border-left:3px solid var(--amber); border-radius:0 10px 10px 0; background:rgba(84,58,30,0.06); font-size:13.5px; line-height:1.4; }
+    .glance .gl1, .glance .gl2 { display:flex; justify-content:space-between; gap:10px; white-space:nowrap; min-width:0; }
+    .glance .gf { flex:none; } .glance .gh { min-width:0; overflow:hidden; text-overflow:ellipsis; text-align:right; }
+    .glance .gs { min-width:0; flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; } .glance .gw { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; text-align:right; color:#7a2414; }
+    .glance .gl2 .gw:only-child { text-align:left; }
+    .glance .gf b { font-weight:700; } .glance .good b { color:var(--lichen); } .glance .warn b { color:#7c4a08; } .glance .bad b { color:#8f2a16; }
+    .glance .gw.warn { color:#5e4310; } .glance .gw.bad { color:#7a2414; } .glance .gw.good { color:var(--chalk); }
+    .says.adv { cursor:pointer; margin:4px 0 8px; align-items:center; gap:10px; }
+    .says.adv .bubble { padding:8px 11px 9px; }
+    .says.adv:not(.open) .bubble { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right:26px; font-size:14px; }
+    .says.adv:not(.open) .bubble .who { display:inline; margin:0 6px 0 0; font-weight:600; }
+    .says.adv:not(.open) .bubble::after { content:'▾'; position:absolute; right:9px; top:50%; transform:translateY(-50%); color:#5e5848; }
+    .says.adv:not(.open) .a2 { display:none; }
+    .says.adv::before { display:none; } .says.adv .bubble::before { top:50%; margin-top:-7px; }
+    /* readable text: nothing under 12 px, labels 13, darker small text, greyed deeds that can be read */
+    .k { font-size:13px; } .tile .muted, .grid2 .muted { font-size:12.5px; } .ev .yr, .badge, .ties { font-size:12.5px; }
+    .mini, .bidparts, table.mx { font-size:12.5px; } #date small { font-size:12.5px; }
+    .alert { font-size:13px; } .crumbs { font-size:13px; }
+    .ev.k-conflict .yr { color:#8a4a0e; } .ev.k-gather .yr, .ev.k-grain .yr { color:#6e5408; } .ev.k-big .yr { color:#1d5f7c; } .ev.k-sea .yr { color:#17607e; } .ev.k-settle .yr { color:#6e4e20; } .ev.k-metal .yr { color:#8a4410; }
+    .opt.off { opacity:1; } .opt.off b { font-weight:500; color:#5e4c34; } .opt.off .muted { color:#5e4c34; } .opt.off .num { opacity:0.45; } .opt.off:hover b, .opt.off:active b { color:#5e4c34; }
+  }
 </style>
 <script>if ('serviceWorker' in navigator && location.protocol.startsWith('http')) addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); });</script>
 </head>
@@ -256,12 +408,14 @@
 <div class="top">
   <div class="pill" id="status" role="button" tabindex="0" title="Open your house"><div id="date">Year 1</div><div id="hud"></div><div id="popcount"></div></div>
   <div class="ctl">
+    <button id="noteBtn" title="Notices" aria-label="Notices"><svg viewBox="0 0 24 24"><path d="M6 17V11a6 6 0 0 1 12 0v6l1.5 2h-15L6 17Z"/><path d="M10 21h4"/></svg><b id="noteN"></b></button>
     <button id="play" title="Play or pause (space)">❚❚</button>
     <button id="speed" title="Speed">1×</button>
     <button id="skipBtn" title="Skip ahead to the next decision (ten years at most)">»</button>
     <button id="actBtn" title="Choose a deed (A)">Act</button>
   </div>
 </div>
+<div id="speedRow" role="group" aria-label="Speed"><button data-sp="0">½×</button><button data-sp="1">1×</button><button data-sp="2">4×</button><button data-sp="3">16×</button></div>
 <div class="tools">
   <button id="mapBtn" title="Map view, what to show, and the legend"><svg viewBox="0 0 24 24"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 16 9 5 9-5"/></svg></button>
   <button id="homeBtn" title="Go to your house"><svg viewBox="0 0 24 24"><path d="m12 3 2.7 5.7 6.3.8-4.6 4.3 1.2 6.2L12 17l-5.6 3 1.2-6.2L3 9.500l6.300-.8L12 3Z"/></svg></button>
@@ -269,8 +423,8 @@
   <button id="menuBtn" title="Menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
 </div>
 <div class="pop" id="mapMenu">
-  <h4>Map view</h4>
-  <div id="layers">
+  <h4 class="vh">Map view</h4>
+  <div class="vrow"><div id="layers">
     <button data-l="terrain" class="on">Land</button>
     <button data-l="biome">Biomes</button>
     <button data-l="food">Food</button>
@@ -278,7 +432,8 @@
     <button data-l="soil">Soil</button>
     <button data-l="water">Moisture</button>
     <button data-l="impact">Human impact</button>
-  </div>
+  </div><button id="moreBtn" aria-expanded="false">More</button></div>
+  <div id="mapMore">
   <h4>Show on the map</h4>
   <div class="togs" id="togs">
     <button data-s="people" class="on">Peoples</button>
@@ -291,7 +446,9 @@
   </div>
   <h4>Legend</h4>
   <div id="legend"></div>
+  </div>
 </div>
+<div class="pop" id="noteList"></div>
 <div class="pop" id="menu">
   <button id="helpBtn">How to play</button>
   <button id="saveBtn">Save game</button>
@@ -314,8 +471,7 @@
 <div id="pickbar"></div>
 <div id="tip"></div><div id="picker"></div>
 <div id="loading">Raising the isles…</div>
-<div id="help"><div class="box"><button class="xbtn" onclick="document.getElementById('help').style.display='none'" title="Close">✕</button>
-  <h2>How to play</h2>
+<div id="help"><div class="box"><div class="hhead"><h2>How to play</h2><button class="xbtn" onclick="document.getElementById('help').style.display='none'" title="Close" aria-label="Close">✕</button></div>
   <p>At the start you choose one household. You lead its family line from then on: the head of the house, then the heir, and so on. A gold star on the map marks your camp. The bar at the top shows your food, clan and spears; tap it, or the House tab, to open your house.</p>
   <h3>Finding your way around</h3>
   <ul>
@@ -326,7 +482,7 @@
     <li><b>House panel:</b> anything that needs your attention is listed at the top (hunger, no heir, blood owed, rivals at your sources). The tabs below cover your stores and standing, your dealings, your family, clan and tribe, and the story of the house.</li>
     <li><b>The Realm tab:</b> once your tribe is in a confederacy or kingdom, the House panel gains a Realm tab: the ruler, the tribes and whether each would stay, and how the realm is held. At first the tribes only follow the high chief and scatter when he dies; later they choose among themselves, and last it passes by blood. A confederacy held by blood may become a kingdom.</li>
     <li><b>Dealings:</b> give standing orders once and the game follows them without stopping: what to do when one of your blood is killed (revenge, compensation, or let it go), when a clan swears vengeance on you (pay them, post guards, or do nothing), and when raiders come. Below, each clan you deal with has its own setting for whether it may share the sources your house has claimed. On automatic, your house shares with its own tribe and anyone who is not an enemy. You can also pay compensation to end a clan's grudge, or forgive one you hold. Each time an order is carried out, a short note appears and it is written in the house chronicle. Choose Ask me for anything you want to decide each time.</li>
-    <li><b>On a phone:</b> drag or tap the handle on the bottom sheet to make it taller or tuck it away. The Act button floats above it.</li>
+    <li><b>On a phone:</b> drag the handle or the tab row of the bottom sheet to make it taller or tuck it away; it rests at four heights. Play, the speed (tap it to pick one of four) and skip sit at the bottom left, the Act button at the bottom right. Notices appear as short chips above them: tap one to read it whole, swipe it away, or open the bell at the top for the last thirty.</li>
     <li><b>Other buttons:</b> the star takes you home, the corners show the whole of the isles, and the menu has this guide and a new world.</li>
   </ul>
   <ul>
