@@ -4532,7 +4532,7 @@
   //  The player's is P.plot; the world's are W.plots (one to a tribe). Won clans count for their man in headshipTally,
   //  won households in clanChallengeOdds, so the chance shown is always the chance rolled.
   // =====================================================================
-  const PLOT_TALK = 6, PLOT_HOUSE = 25, PLOT_YEARS = 5, PLOT_GRACE = 26, PLOT_VS_START = 0.14, PLOT_WIN_BASE = 0.03, PLOT_WIN_CAP = 0.14, PLOT_WIN_FLOOR = 0.03;
+  const PLOT_TALK = 6, PLOT_HOUSE = 25, PLOT_YEARS = 5, PLOT_GRACE = 26, PLOT_VS_START = 0.14, PLOT_WIN_BASE = 0.02, PLOT_WIN_CAP = 0.12, PLOT_WIN_FLOOR = 0.02;
   const plotStat = (W, k) => { const s = W._plotStat || (W._plotStat = {}); s[k] = (s[k] || 0) + 1; };
   const plotMonths = (W, p) => Math.floor((W.week - p.start) / 4);
   const hisHer = heHer;
@@ -4647,7 +4647,7 @@
     if (best) {
       const fr = P.cast && P.cast.friend && P.cast.friend.alive && (clan ? P.cast.friend.fam === best : P.cast.friend.clan === best);
       const kin = clan ? Math.min(6, best.alive !== false ? p.clan.people.filter(q => q.fam === best && q !== x && closeKin(x, q)).length : 0) : kinIn(x, best);
-      const pr = clamp(PLOT_WIN_BASE + (fr ? 0.06 : 0) + 0.015 * kin + bo / 500, PLOT_WIN_FLOOR, PLOT_WIN_CAP);
+      const pr = clamp(PLOT_WIN_BASE + (fr ? 0.06 : 0) + 0.015 * kin + bo / 600, PLOT_WIN_FLOOR, PLOT_WIN_CAP);
       if (W.rand() < pr) { plotWin(W, p, best, true); }
     }
     // the talk may be heard
