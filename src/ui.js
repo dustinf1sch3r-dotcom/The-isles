@@ -1124,6 +1124,11 @@
       <div class="ord"><div class="k">When exiles ask for shelter</div>${seg('exiles', [['place', 'Take them in'], ['feed', 'Feed them'], ['turn', 'Turn away'], ['ask', 'Ask me']])}</div>
       <div class="ord"><div class="k">When one asks for your oath</div>${seg('oath', [['swear', 'Swear it'], ['friendship', 'Friendship only'], ['refuse', 'Refuse'], ['ask', 'Ask me']])}</div>
       <div class="ord"><div class="k">When a lost child is found</div>${seg('found', [['take', 'Take the child'], ['other', 'Another house'], ['refuse', 'Not ours'], ['ask', 'Ask me']])}</div>
+      <div class="ord"><div class="k">When a rival clan head strikes at your seat</div>${seg('seat', [['face', 'Face the challenge'], ['buy', 'Buy their support'], ['step', 'Step aside'], ['ask', 'Ask me']])}</div>
+      <div class="ord"><div class="k">When someone mocks you before the clans</div>${seg('slight', [['gift', 'Open hands'], ['kind', 'Answer in kind'], ['pass', 'Let it pass'], ['ask', 'Ask me']])}</div>
+      <div class="ord"><div class="k">When an oath you swore is called in</div>${seg('oathback', [['keep', 'Keep it'], ['food', 'Send food'], ['break', 'Break it'], ['ask', 'Ask me']])}</div>
+      <div class="ord"><div class="k">When a people ask for their exiles back</div>${seg('exback', [['refuse', 'Refuse'], ['pay', 'Pay the price'], ['hand', 'Hand them over'], ['ask', 'Ask me']])}</div>
+      <div class="ord"><div class="k">When a lost child is claimed</div>${seg('foundback', [['choose', 'Let the child choose'], ['send', 'Send the child home'], ['keep', 'Keep the child'], ['ask', 'Ask me']])}</div>
       <div class="k sec">Clans you deal with</div>
       <div class="muted" style="margin-bottom:2px">Choose who may work the sources your house has claimed. On automatic, your house shares with its own tribe and with any people who are not its enemies, and keeps enemies out.</div>`;
     if (!D.length) return html + '<div class="muted" style="margin-top:8px">No other clans nearby yet.</div>' + pactRest(new Set());
@@ -1161,11 +1166,22 @@
       fams.map(f => { const ps = c.people.filter(q => q.fam === f && !q.slave), op = mine && f !== mine ? SIM.opinion(f, mine) : null, ours = ps.some(q => q.dyn);
         return `<div class="card"><div class="rh">${ours ? '★ ' : ''}${link(f, famLabel(f))}<span class="badge">${ps.length}</span></div><div class="muted">${f.head ? `head ${esc(f.head.name)}, ${Math.floor(f.head.age)} · ` : ''}${counts(ps)}</div>${op != null ? `<div class="mini"><span>feeling for you</span><div class="rbar"><i style="left:${op < 0 ? 50 + Math.max(-100, op) / 2 : 50}%;width:${Math.min(100, Math.abs(op)) / 2}%;background:${opCol(op)}"></i></div></div>` : ''}</div>`; }).join('');
   }
+  // the Seat list: who stands with whom for the seat that matters to the house today (SIM.seatInfo)
+  function seatBlock(si) {
+    if (!si) return '';
+    return `<div class="k sec" style="margin-top:4px">${esc(si.title)}</div><div class="lede" style="margin:0 0 4px">${esc(si.line)}</div>${si.rumour ? `<div class="lede" style="margin:6px 0 0;color:#a03a20">${esc(si.rumour)}</div>` : ''}${si.plot ? `<div class="lede" style="margin:6px 0 0">${esc(si.plot)}</div>` : ''}<div style="height:6px"></div>`;
+  }
+  // one short line for a clan's card: how it leans for the seat, why, and whose talk won it
+  function seatLean(si, o) {
+    const r = si && si.rows.find(x => x.clan === o); if (!r) return '';
+    const col = { you: 60, 'leans you': 30, undecided: 0, 'leans them': -30, them: -60 };
+    return `<div class="muted" style="margin-top:2px"><span style="color:${opCol(col[r.lean])};font-weight:600">${esc(r.leanWord)}</span> · ${esc(r.reason)}${r.wonBy ? ` · <b>${r.wonBy === 'you' ? 'won by your talk' : 'won by ' + esc(r.wonBy) + '\'s talk'}</b>` : ''}</div>`;
+  }
   function tribeMakeup(h) {
-    const c = h.clan, t = c.tribe;
-    return ruleTile(t) + `<div class="muted" style="margin:4px 0">${link(t, 'The ' + t.name)}: ${SIM.tribeSize(t)} people in ${t.clans.length} clan${t.clans.length > 1 ? 's' : ''} · ${t.headman ? titleWord(t.headman, 'headman') : 'headman'} ${t.headman ? esc(t.headman.name) + (t.headman === h ? ' (you)' : '') : '—'} · ${SIM.warriors(t)} fighting men${t.confed ? ` · part of ${esc(t.confed.name)}` : ''}</div>` +
+    const c = h.clan, t = c.tribe, si = SIM.seatInfo(W);
+    return seatBlock(si) + ruleTile(t) + `<div class="muted" style="margin:4px 0">${link(t, 'The ' + t.name)}: ${SIM.tribeSize(t)} people in ${t.clans.length} clan${t.clans.length > 1 ? 's' : ''} · ${t.headman ? titleWord(t.headman, 'headman') : 'headman'} ${t.headman ? esc(t.headman.name) + (t.headman === h ? ' (you)' : '') : '—'} · ${SIM.warriors(t)} fighting men${t.confed ? ` · part of ${esc(t.confed.name)}` : ''}</div>` +
       t.clans.slice().sort((a, b) => (b === c) - (a === c) || b.people.length - a.people.length).map(o => { const op = o === c ? null : SIM.opinion(o, c), km = Math.round(Math.hypot(o.x - c.x, o.y - c.y) / 1000);
-        return `<div class="card"><div class="rh">${o === c ? '★ ' : ''}${link(o, o.name + ' clan')}<span class="badge">${o.people.length}</span></div><div class="muted">${o.head ? `head ${esc(o.head.name)}${t.headman === o.head ? ' (leads the tribe)' : ''}, weight ${SIM.leadWeight(o.head).toFixed(2)} · ` : ''}${counts(o.people)} · ${o.settled ? `village ${esc(o.village || '')}` : 'camp'}${o === c ? '' : ` · ${km} km away`} · food ${SIM.foodDays(o)} days${o.cond < 0.7 ? ' · <span style="color:#a83a22">hungry</span>' : ''}</div>${op != null ? `<div class="mini"><span>feeling for your clan</span><div class="rbar"><i style="left:${op < 0 ? 50 + Math.max(-100, op) / 2 : 50}%;width:${Math.min(100, Math.abs(op)) / 2}%;background:${opCol(op)}"></i></div></div>` : ''}</div>`; }).join('');
+        return `<div class="card"><div class="rh">${o === c ? '★ ' : ''}${link(o, o.name + ' clan')}<span class="badge">${o.people.length}</span></div><div class="muted">${o.head ? `head ${esc(o.head.name)}${t.headman === o.head ? ' (leads the tribe)' : ''}, weight ${SIM.leadWeight(o.head).toFixed(2)} · ` : ''}${counts(o.people)} · ${o.settled ? `village ${esc(o.village || '')}` : 'camp'}${o === c ? '' : ` · ${km} km away`} · food ${SIM.foodDays(o)} days${o.cond < 0.7 ? ' · <span style="color:#a83a22">hungry</span>' : ''}</div>${seatLean(si, o)}${op != null ? `<div class="mini"><span>feeling for your clan</span><div class="rbar"><i style="left:${op < 0 ? 50 + Math.max(-100, op) / 2 : 50}%;width:${Math.min(100, Math.abs(op)) / 2}%;background:${opCol(op)}"></i></div></div>` : ''}</div>`; }).join('');
   }
   // ---------- the realm: a confederacy or kingdom, as the simulation describes it (SIM.realmInfo) or, until it does, as worked out here from what exists ----------
   const realmWord = cf => SIM.realmWord && cf ? SIM.realmWord(cf) : cf && cf.kingdom ? 'kingdom' : 'confederacy';
@@ -1761,8 +1777,10 @@
     $('#rerollBtn').onclick = () => { m.style.display = 'none'; picking = false; newWorld(Math.floor(Math.random() * 1e9)); };
   }
   // routine matters that can be answered by a standing order: card type -> [policy key, value for each option in order]
-  const ROUTINE_POL = { gathering: ['gather', ['gifts', 'trade', 'keep']], omen: ['omen', ['offer', 'quiet', 'sign']], toobig: ['split', ['letgo', 'hold']], friendneed: ['friend', ['give', 'send']], sickness: ['sick', ['scatter', 'tend']], exiles: ['exiles', ['place', 'feed', 'turn']], oath: ['oath', ['swear', 'friendship', 'refuse']], foundling: ['found', ['take', 'other', 'refuse']] };
+  const ROUTINE_POL = { gathering: ['gather', ['gifts', 'trade', 'keep']], omen: ['omen', ['offer', 'quiet', 'sign']], toobig: ['split', ['letgo', 'hold']], friendneed: ['friend', ['give', 'send']], sickness: ['sick', ['scatter', 'tend']], exiles: ['exiles', ['place', 'feed', 'turn']], oath: ['oath', ['swear', 'friendship', 'refuse']], foundling: ['found', ['take', 'other', 'refuse']],
+    rivalry: ['seat', ['face', 'buy', 'step']], slight: ['slight', ['gift', 'kind', 'pass']], oathback: ['oathback', ['keep', 'food', 'break']], exilesback: ['exback', ['refuse', 'pay', 'hand']], foundback: ['foundback', ['choose', 'send', 'keep']] };
   function showDecision(ev) {
+    SIM.freshCard(W, ev); // a chance on the card is worked out as it is shown
     modalEv = ev; cardAt = performance.now(); wasRunning = running || wasRunning; running = false; $('#play').textContent = '▶';
     const P = W.player;
     modalDismiss = ev.options.length === 1 ? () => choose(0) : null;

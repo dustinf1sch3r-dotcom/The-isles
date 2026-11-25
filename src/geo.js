@@ -81,7 +81,7 @@ const SIM = (() => {
   // ---------- world generation ----------
   function createWorld(seed) {
     const rand = mulberry32(seed), noise = makeNoise(rand), n = N * N, F = () => new Float32Array(n), U = () => new Uint8Array(n);
-    const W = { seed, rand, week: 0, clans: [], tribes: [], confeds: [], sites: [], pending: [], player: null, places: new Map(), settlements: [], roads: new Map(), roadsVer: 0, deposits: [], ents: new Map(), nextId: 1, nextPid: 1, history: [], events: [], weather: 1,
+    const W = { seed, rand, week: 0, plotsFrom: 0, clans: [], tribes: [], confeds: [], sites: [], pending: [], player: null, places: new Map(), settlements: [], roads: new Map(), roadsVer: 0, deposits: [], ents: new Map(), nextId: 1, nextPid: 1, history: [], events: [], weather: 1,
       land: U(), comp: new Int16Array(n), lake: U(), isRiver: U(), coast: U(), shelf: U(), biome: U(), groveType: U(), chalk: U(),
       elev: F(), slope: F(), hand: F(), acc: F(), flow: F(), down: new Int32Array(n).fill(-1), T0: F(), amp: F(), rainAnn: F(), inland: F(), seaDist: F(),
       sand: F(), clay: F(), depth: F(), om: F(), nit: F(), water: F(), whc: F(), mAvg: F(), grass: F(), shrub: F(), forest: F(), conif: F(),
