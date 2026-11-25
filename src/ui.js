@@ -1780,6 +1780,7 @@
   const ROUTINE_POL = { gathering: ['gather', ['gifts', 'trade', 'keep']], omen: ['omen', ['offer', 'quiet', 'sign']], toobig: ['split', ['letgo', 'hold']], friendneed: ['friend', ['give', 'send']], sickness: ['sick', ['scatter', 'tend']], exiles: ['exiles', ['place', 'feed', 'turn']], oath: ['oath', ['swear', 'friendship', 'refuse']], foundling: ['found', ['take', 'other', 'refuse']],
     rivalry: ['seat', ['face', 'buy', 'step']], slight: ['slight', ['gift', 'kind', 'pass']], oathback: ['oathback', ['keep', 'food', 'break']], exilesback: ['exback', ['refuse', 'pay', 'hand']], foundback: ['foundback', ['choose', 'send', 'keep']] };
   function showDecision(ev) {
+    SIM.freshCard(W, ev); // a chance on the card is worked out as it is shown
     modalEv = ev; cardAt = performance.now(); wasRunning = running || wasRunning; running = false; $('#play').textContent = '▶';
     const P = W.player;
     modalDismiss = ev.options.length === 1 ? () => choose(0) : null;
