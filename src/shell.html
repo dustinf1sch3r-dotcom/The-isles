@@ -143,6 +143,17 @@
   table.mx td { text-align:center; padding:3px 4px; border-radius:4px; min-width:30px; }
   .chip { display:inline-flex; align-items:center; border:1px solid var(--rule); border-radius:11px; padding:2px 9px 2px 5px; margin:3px 5px 2px 0; font-size:12.5px; background:rgba(84,58,30,0.051); }
   .chip b { margin-left:5px; font-weight:650; }
+  .chip .gw { margin-left:5px; font-style:normal; font-size:10.5px; letter-spacing:0.2px; color:var(--dust); }
+  .chip .gw.scarce, .grow .gw.scarce { color:#a03a20; font-weight:650; }
+  .chip .gw.plenty, .grow .gw.plenty { color:#476428; }
+  .chip.tap { cursor:pointer; }
+  .grow { display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid var(--rule); font-size:13.5px; }
+  .grow .gi { flex:0 0 24px; display:flex; justify-content:center; }
+  .grow .gt { flex:1; min-width:0; line-height:1.3; }
+  .grow .gt .muted { font-size:12px; }
+  .grow .gw { font-style:normal; font-size:11.5px; color:var(--dust); }
+  .keepsw { flex:0 0 auto; min-width:64px; height:44px; padding:0 12px; border-radius:22px; font-size:13px; background:transparent; color:var(--dust); backdrop-filter:none; }
+  .keepsw.on { color:var(--amber-ink); background:var(--amber); border-color:var(--amber); font-weight:650; }
   .stack { display:flex; height:9px; border-radius:5px; overflow:hidden; margin:4px 0; background:rgba(84,58,30,0.19); }
   .stack i { display:block; height:100%; }
   .ties { font-size:11.5px; color:#6c5326; margin:1px 0; }
@@ -297,6 +308,7 @@
     .selbar { margin:-6px 0 4px; }
     /* targets of 44 px */
     button.lnk { position:relative; } button.lnk::before { content:''; position:absolute; left:-4px; right:-4px; top:-8px; bottom:-8px; }
+    .chip.tap { min-height:44px; padding-top:0; padding-bottom:0; }
     .seg button, .seg.sm button { height:44px; min-width:44px; font-size:13.5px; padding:0 14px; }
     .seg, .seg.sm { gap:6px; }
     .ev, .pp { min-height:44px; padding:12px 0; } .row2:has(a[data-e]) { min-height:44px; } .rel:has(a[data-e]) { min-height:44px; } [data-go] { min-height:44px; cursor:pointer; }
@@ -579,6 +591,14 @@
     <li>Once the isles hold many tribes, a headman can make a <b>bid for kingship</b>. His bid is built from his prestige, his tribe's wealth (amber, axes, salt), his living kin, the backing of the other clans, his tribe's size, and his allied tribes. A strong enough bid lets him unite his allies into a <b>confederacy</b> with himself as 👑 king.</li>
     <li>A king can wage <b>wars of subjugation</b> on weaker neighbours. Battles are decided by numbers of warriors and some luck. Defeated tribes become ⛓ <b>subjects</b> who pay tribute, and they may revolt if resentment grows and the king looks weak. Friendly tribes may also join of their own accord. Every tribe of a confederacy that is not a subject, whether ally or founder (other than the high chief's own), sends the high chief's clan a light tribute each year, a twentieth of the food stored by one of its clans and now and then a piece of amber, an axe, salt, ochre or flint, unless it goes hungry; a subject gives three times that share of food and grain, and each good at an even chance, hungry or not.</li>
     <li>When a king dies, his son, or failing that his brother or a strongman, takes his place. Each member tribe then decides whether to stay, based on its loyalty, its kin ties, and the heir's standing. Subjects are the quickest to break away, and a confederacy can fall apart entirely.</li>
+  </ul>
+  <h3>Goods and trade</h3>
+  <ul>
+    <li><b>Worth differs from place to place.</b> A good that few clans near you hold is dear to you; one that most hold is cheap. The Stores chips say <b>scarce</b> or <b>plenty</b> where it is so.</li>
+    <li><b>Traders</b> carry what is cheap at home to a village where it is dear, and come back with what that village can spare, about as much in worth as they took. Robbers may waylay them, and the deed tells the chance. Good roads shorten the way.</li>
+    <li><b>Keep:</b> under Dealings, Our goods, tap a good's switch to mark it Kept or Spare. A Kept good is never traded or given in small gifts. Amber, axes, copper tools and bronze are kept at first.</li>
+    <li><b>Flint and salt are used:</b> flint keeps tools sharp, and salt keeps the stores from rotting. A clan with none feels it.</li>
+    <li><b>Grain is traded too:</b> a hungry clan may barter goods for it, and a clan with plenty may trade it away. Under Dealings you may order a trader to go each spring.</li>
   </ul>
   <h3>Rivals, traders and scarce resources</h3>
   <ul>

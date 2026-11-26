@@ -326,7 +326,7 @@
     }
     c.tool = Math.max(0.3, c.tool - (c.tool > 1 ? 0.002 : 0.004)); // metal tools last longer // stone tools wear out, get lost, need replacing
     c.store += take - Math.min(take, spared);
-    const eaten = Math.min(c.store, need); c.store -= eaten; { const kp = c.live === 'fishing' ? 0.95 : boats >= 0.3 && coastal ? 0.9 : (sn > 0.6 || sn < 0.17) ? 0.93 : 0.85; c.store *= kp + (1 - kp) * 0.2 * potF(c); } // drying & smoking fish; cold keeps the winter cache
+    const eaten = Math.min(c.store, need); c.store -= eaten; { const kp = c.live === 'fishing' ? 0.95 : boats >= 0.3 && coastal ? 0.9 : (sn > 0.6 || sn < 0.17) ? 0.93 : 0.85; c.store *= 1 - (1 - (kp + (1 - kp) * 0.2 * potF(c))) * (1 - 0.05 * Math.min(3, c.goods.salt || 0)); } // salt cuts the loss by a twentieth for each measure held, up to three // drying & smoking fish; cold keeps the winter cache
     const ratio = need > 0 ? eaten / need : 1;
     c.cond += (ratio - c.cond) * 0.12; c.cond = clamp(c.cond, 0.15, 1);
     c.supply += (P / Math.max(need, 1) - c.supply) * 0.15;
@@ -792,9 +792,9 @@
       }
       // violence — unless it is the house's own household, which chooses for itself
       { const PH = W.player && !W.player.over && W.player.head.alive ? W.player.head : null;
-        if (PH && PH.fam && (a === PH.fam || b === PH.fam)) { const o = a === PH.fam ? b : a, tr = GIFTABLE.find(g => PH.clan.goods[g] > 0);
+        if (PH && PH.fam && (a === PH.fam || b === PH.fam)) { const o = a === PH.fam ? b : a, gv = giftFrom(W, PH.clan, 2, false, { dry: true, food: 0.5 });
           pushEvent(W, { type: 'quarrel', key: o.id, title: `A quarrel with the house of ${o.name}`, text: `What began as ${txt} between your household and the house of ${o.name}${o.clan !== PH.clan ? ` of the ${o.clan.name} clan` : ', of your own clan,'} has turned ugly. Men are reaching for their spears.`, data: { a, b, txt },
-            options: [{ label: 'Make peace', hint: tr ? `Give them ${GOOD_NAMES[tr].toLowerCase()} and swallow the insult. No blood` : 'Send food and swallow the insult. No blood' }, { label: 'Stand our ground', hint: 'Shouting and shoving, and lasting ill will, but no one dies' }, { label: 'Fight', hint: `Blood may be spilled on either side. ${PH.name} could be among the dead` }] });
+            options: [{ label: 'Make peace', hint: gv.text ? `Give them ${gv.text} and swallow the insult. No blood` : 'Send food and swallow the insult. No blood' }, { label: 'Stand our ground', hint: 'Shouting and shoving, and lasting ill will, but no one dies' }, { label: 'Fight', hint: `Blood may be spilled on either side. ${PH.name} could be among the dead` }] });
           continue; } }
       fight(W, a, b, txt);
     }
@@ -1176,7 +1176,7 @@
       for (const o of nearClans(W, leadC.x, leadC.y, 80000)) {
         if (o.tribe === t || isAllied(t, o.tribe) || sameConfed(t, o.tribe) || peaceHeld(W, t, o.tribe) || !canReach(W, leadC, o.x, o.y)) continue;
         const op = opinion(t, o.tribe); if (op > 10) continue;
-        const weak = tribeSize(t) / Math.max(10, tribeSize(o.tribe)), wealth = o.store + o.grain / 2 + (o.goods.amber + o.goods.bronze + o.goods.metal + o.goods.furs) * 1e6;
+        const weak = tribeSize(t) / Math.max(10, tribeSize(o.tribe)), wealth = o.store + o.grain / 2 + goodsWorth(W, t, o) * 0.3e6;
         const sc = (weak > 1 ? Math.min(3, weak) : weak * 0.3) * (1 + wealth / 2e7) * (1 + o.people.length / 30) * (1 - op / 60) / (1 + Math.hypot(o.x - leadC.x, o.y - leadC.y) / 40000) / walls(o) * (und(t, o.tribe) < 0.2 ? 1.25 : 1);
         if (sc > bs) { bs = sc; best = o; }
       }
@@ -1188,7 +1188,10 @@
       W.nWarParties = (W.nWarParties || 0) + 1;
     }
   }
+  const goodsWorth = (W, t, c) => { let s = 0; for (const g in BASE_WORTH) if (c.goods[g] > 0) s += c.goods[g] * worth(W, t, g); return s; }; // what a clan's goods are worth to a tribe
   const warriorsOf = c => { let n = 0; for (const q of c.people) if (q.sex === 'M' && !q.slave && q.age >= 16 && q.age < 50) n++; return n; };
+  // x holds 2 or more of a good that y's people find scarce (worth twice its base or more) and y holds none of
+  function covets(W, x, y) { const m = worthMap(W, y.tribe); for (const g in BASE_WORTH) if ((x.goods[g] || 0) >= 2 && !(y.goods[g] > 0) && m[g] >= 2) return true; return false; }
   function interTribe(W) {
     const rand = W.rand;
     for (const a of W.clans) for (const b of nearClans(W, a.x, a.y, 2 * FORAGE_R)) {
@@ -1198,8 +1201,8 @@
       const ta = a.tribe, tb = b.tribe, op = opinion(ta, tb), allied = isAllied(ta, tb);
       const hunger = Math.max(0, 0.9 - a.cond) + Math.max(0, 0.9 - b.cond);
       const temper = ((a.head ? a.head.temper : .5) + (b.head ? b.head.temper : .5)) / 2;
-      // covet: one side holds stone or amber the other lacks
-      const covet = ((a.tool < 0.6 && b.goods.flint + b.goods.axe > 0) || (b.tool < 0.6 && a.goods.flint + a.goods.axe > 0) ? 0.08 : 0) + (a.grain > needsWeek(a) * 6 || b.grain > needsWeek(b) * 6 ? 0.06 : 0);
+      // covet: one side holds goods the other's people find scarce and have none of; or grain in plenty
+      const covet = op < -35 ? (covets(W, a, b) || covets(W, b, a) ? 0.08 : 0) + (a.grain > needsWeek(a) * 6 || b.grain > needsWeek(b) * 6 ? 0.06 : 0) : 0;
       if (!allied && !sameConfed(ta, tb) && !peaceHeld(W, ta, tb) && op < -35 && rand() < 0.04 + temper * 0.08 + hunger * 0.3 + covet) { raid(W, hunger > 0 && a.cond < b.cond ? a : rand() < 0.5 ? a : b, a, b); continue; }
       if (!allied && hunger > 0.3 && rand() < 0.4) {
         affect(W, ta, tb, -7, `Clash over foraging grounds between the ${a.name} and ${b.name} camps`);
@@ -1208,7 +1211,7 @@
         continue;
       }
       const kind = rand();
-      if (op > -20 && kind < 0.45 * (0.45 + 0.55 * und(ta, tb))) exchange(W, a, b);
+      if (op > -20 && kind < 0.45 * (0.45 + 0.55 * und(ta, tb)) && exchange(W, a, b)) { /* traded */ } // when nothing is worth swapping, they still meet: the gift exchange below
       else if (kind < 0.7) { affect(W, ta, tb, 4, rand() < 0.15 ? `Gift exchange between the ${a.name} and ${b.name} camps` : null); affect(W, a, b, 4); }
       else if (kind < 0.85) { affect(W, ta, tb, 7, `Joint hunt by the ${a.name} and ${b.name}`); affect(W, a, b, 6); note(W, a, `Hunted together with the ${b.name} clan of the ${tb.name}.`); }
       else affect(W, ta, tb, 3);
@@ -1407,7 +1410,65 @@
     if (!L.bind.length && c.cond < 0.9) parts.push('still weak from hunger');
     return parts.join(', ');
   }
+  // ---------- goods and worth ----------
+  // What a good is worth is set by how scarce it is near the tribe: the fewer clans round about hold it, the dearer it is there.
+  // Worked out from the world (no random numbers), cached in W._worth (a W key starting with _ is not saved), each tribe's entry rebuilt once a year.
+  const BASE_WORTH = { bronze: 6, amber: 5, axe: 4, metal: 4, tin: 4, flint: 3, copper: 3, art: 3, salt: 2, ochre: 2, furs: 1, shells: 1, pots: 1, leather: 1, clay: 1 };
+  const GRAIN_UNIT = 20 * 7 * kcalDay(30, true); // grain is traded in units: a week of food for 20 people (a grown man eats 2,700 kcal a day)
+  const WORTH_KEYS = Object.keys(BASE_WORTH).concat(['grain']);
+  const LOAD_WORTH = 10, RECV_CAP = 8, DEFAULT_KEEP = { bronze: true, metal: true, amber: true, axe: true };
+  const SWAP_GOODS = ['flint', 'axe', 'amber', 'ochre', 'salt', 'furs', 'shells', 'metal', 'bronze', 'pots', 'leather', 'art']; // never copper, tin or clay (raw stuff)
+  const LOAD_GOODS = ['flint', 'axe', 'amber', 'ochre', 'salt', 'furs', 'shells', 'metal', 'pots', 'leather', 'art', 'copper', 'tin', 'bronze']; // never clay
+  function worthMap(W, t) {
+    const C = W._worth || (W._worth = new Map()); const e = C.get(t.id);
+    if (e && W.week >= e.week && W.week - e.week < 52) return e.m;
+    const cen = tribeCenter(t), near = nearClans(W, cen[0], cen[1], 150000), n = near.length, cnt = {}, m = {};
+    for (const k of WORTH_KEYS) cnt[k] = 0;
+    for (const c of near) { const g = c.goods; for (const k in BASE_WORTH) if (g[k] >= 2) cnt[k]++; if (c.store + (c.grain || 0) > needsWeek(c) * 8) cnt.grain++; }
+    // 0.6 / (0.1 + share): a good half the clans hold is worth its base; held by few it is dear (at most 6 times), held by nearly all it is cheap (at least half)
+    for (const k of WORTH_KEYS) m[k] = clamp(0.6 / (0.1 + (n ? cnt[k] / n : 0.5)), 0.5, 6);
+    C.set(t.id, { week: W.week, m }); return m;
+  }
+  const room = (c, g) => Math.max(0, RECV_CAP - ((c.goods && c.goods[g]) || 0)); // a clan takes no more of a good in trade once it holds 8, so cheap goods do not pile up
+  const worth = (W, t, g) => (g === 'grain' ? 1 : BASE_WORTH[g] || 1) * (worthMap(W, t)[g] || 1);
+  function worthWord(W, t, g) { const f = worthMap(W, t)[g]; return f == null ? '' : f <= 0.8 ? 'plenty' : f >= 2 ? 'scarce' : ''; }
+  const THING = { flint: ['flint', 'flint'], axe: ['axe', 'axes'], amber: ['amber', 'amber'], ochre: ['ochre', 'ochre'], salt: ['salt', 'salt'], furs: ['fur', 'furs'], shells: ['string of beads', 'strings of beads'], copper: ['copper', 'copper'], tin: ['tin', 'tin'], metal: ['copper tool', 'copper tools'], bronze: ['bronze', 'bronze'], clay: ['clay', 'clay'], pots: ['pot', 'pots'], leather: ['leather', 'leather'], art: ['carving', 'carvings'] };
+  const NUMW = ['no', 'a', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+  function thingText(g, n) { const w = THING[g] || [g, g]; return n === 1 ? (/^[aeiou]/.test(w[0]) ? 'an ' : 'a ') + w[0] : (n <= 10 ? NUMW[n] : n) + ' ' + w[1]; }
+  const listText = a => a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
+  const goodsText = (o, grain) => listText(Object.keys(o || {}).filter(g => o[g] > 0).map(g => thingText(g, o[g])).concat(grain ? ['grain'] : []));
+  // the goods the player marked Keep are never traded away or spent on small gifts (until the list is first touched: bronze, copper tools, amber and axes)
+  function isKept(W, c, g) { const P = W.player; if (!P || P.over || !P.head || !P.head.alive || P.head.clan !== c) return false; return P.keep ? !!P.keep[g] : !!DEFAULT_KEEP[g]; }
+  function keptNow(W, g) { const P = W.player; return !!P && (P.keep ? !!P.keep[g] : !!DEFAULT_KEEP[g]); }
+  function setKeep(W, g, on) { const P = W.player; if (!P) return; if (!P.keep) P.keep = Object.assign({}, DEFAULT_KEEP); P.keep[g] = !!on; }
+  // what a good is for, in a line (the house's goods list shows it)
+  const GOOD_USE = { flint: 'Keeps tools sharp', axe: 'Keeps tools sharp; worth much to others', amber: 'Worth much to others', ochre: 'Worth a little to others', salt: 'Keeps the stores from rotting', furs: 'A common gift and trade good', shells: 'A common gift and trade good', copper: 'Ore for the smiths', tin: 'Ore for the smiths', metal: 'Better tools; worth much to others', bronze: 'Best tools; worth the most', clay: 'Potters\' clay', pots: 'Keep food from spoiling; a trade good', leather: 'A common gift and trade good', art: 'A fine gift' };
+  const goodUse = g => GOOD_USE[g] || '';
+  // food held (store and grain), and the grain units a clan can spare while keeping 20 weeks of its need
+  const foodTotal = c => c.store + (c.grain || 0);
+  const grainSpare = c => Math.max(0, Math.floor((foodTotal(c) - needsWeek(c) * 20) / GRAIN_UNIT));
+  function takeFood(c, k) { const a = Math.min(c.grain || 0, k); c.grain = (c.grain || 0) - a; c.store = Math.max(0, c.store - (k - a)); } // grain first, then fresh stores
+  // gifts: spend the cheapest goods (by the giver's own worth) until the need is met, whole pieces, each counting at least 1; food tops up what the goods leave (o.food weeks of the clan's need if there are no goods at all).
+  // need: 2 a small gift, 3 an offering or an envoy, 4 a blood-price. forced: a debt paid even in Kept goods when nothing else is held. o.to receives it; o.keep leaves that many of each good; o.dry only works it out.
+  function giftFrom(W, c, need, forced, o) {
+    o = o || {}; const keep = o.keep || 0, held = g => (c.goods[g] || 0) - keep;
+    let pool = GIFTABLE.filter(g => held(g) > 0 && !isKept(W, c, g)); if (!pool.length && forced) pool = GIFTABLE.filter(g => held(g) > 0);
+    const ws = {}; for (const g of pool) ws[g] = worth(W, c.tribe, g);
+    pool.sort((a, b) => ws[a] - ws[b] || GIFTABLE.indexOf(a) - GIFTABLE.indexOf(b));
+    const spent = {}; let sum = 0;
+    for (const g of pool) { for (let n = held(g); n > 0 && sum < need - 1e-9; n--) { spent[g] = (spent[g] || 0) + 1; sum += Math.max(1, ws[g]); } if (sum >= need - 1e-9) break; }
+    let food = 0, met = Math.min(1, sum / need);
+    if (o.food && sum < need - 1e-9) { const want = needsWeek(c) * o.food * (need - sum) / need; food = Math.min(want, c.store + (c.grain || 0)); met = Math.min(1, (sum + (need - sum) * (want > 0 ? food / want : 1)) / need); }
+    if (!o.dry) {
+      for (const g in spent) { c.goods[g] -= spent[g]; if (o.to) o.to.goods[g] = (o.to.goods[g] || 0) + spent[g]; }
+      if (food > 0) { eatStore(c, food); if (o.to) o.to.store += food; }
+    }
+    const parts = Object.keys(spent).map(g => thingText(g, spent[g])); if (food > 0) parts.push('food');
+    const pieces = Object.keys(spent).reduce((n, g) => n + spent[g], 0);
+    return { spent, worth: sum, food, met, text: listText(parts), any: parts.length > 0, one: (pieces === 1 && !(food > 0)) || (pieces === 0 && food > 0) }; // one: the text reads as a single thing (a verb after it takes goes)
+  }
   function acquireGoods(W, c) {
+    if (c.tool < 0.6) { if (c.goods.flint >= 1) { c.goods.flint--; c.tool = Math.max(c.tool, 0.88); } else if (c.goods.axe >= 1) { c.goods.axe--; c.tool = Math.max(c.tool, 0.85); } } // flint keeps tools sharp; an axe will do
     if (c.goods.bronze > 0) { c.tool = Math.max(c.tool, 1.2); if (W.rand() < 0.03) c.goods.bronze--; } else if (c.goods.metal > 0) { c.tool = Math.max(c.tool, 1.05); if (W.rand() < 0.04) c.goods.metal--; }
     // everyday wealth: prime furs from a good hunting season, beads from shell middens
     if (!c.goods.furs && c.goods.furs !== 0) c.goods.furs = 0; if (!c.goods.shells && c.goods.shells !== 0) c.goods.shells = 0;
@@ -1443,20 +1504,48 @@
     const t = c.tribe;
     if (!t.seen.has(best.type)) { t.seen.add(best.type); note(W, t, `The ${c.name} clan began making trips to the ${best.note} ${Math.round(bd / 1000)} km away.`); logEvent(W, `The ${t.name} begin fetching ${DEPOSITS[best.type].name.toLowerCase()} from a source ${Math.round(bd / 1000)} km away.`, t, 'trade'); }
   }
+  // swaps across tribes by worth: a offers a good it holds 2 or more of that b's people find dearer than a's; b pays in the good (or grain) that a's people find dearer than b's
+  const midWorth = (W, a, b, g) => (worth(W, a.tribe, g) + worth(W, b.tribe, g)) / 2;
+  function swapOffer(W, a, b, did) {
+    let g = null, gg = 0, h = null, hg = 0;
+    for (const x of SWAP_GOODS) { if ((a.goods[x] || 0) < 2 || isKept(W, a, x) || room(b, x) < 1) continue; const gain = worth(W, b.tribe, x) - worth(W, a.tribe, x); if (gain > gg) { gg = gain; g = x; } }
+    if (!g) return false;
+    for (const x of SWAP_GOODS) { if (x === g || (b.goods[x] || 0) < 2 || isKept(W, b, x) || room(a, x) < 1) continue; const gain = worth(W, a.tribe, x) - worth(W, b.tribe, x); if (gain > hg) { hg = gain; h = x; } }
+    if (grainSpare(b) >= 1) { const gain = worth(W, a.tribe, 'grain') - worth(W, b.tribe, 'grain'); if (gain > hg) { hg = gain; h = 'grain'; } }
+    if (!h) return false;
+    let k = clamp(Math.round(midWorth(W, a, b, g) / midWorth(W, a, b, h)), 1, 3);
+    if (h === 'grain') { k = Math.min(k, grainSpare(b)); if (k < 1) return false; takeFood(b, k * GRAIN_UNIT); a.grain = (a.grain || 0) + k * GRAIN_UNIT; W._tradeGrain = (W._tradeGrain || 0) + k * GRAIN_UNIT; }
+    else { k = Math.min(k, b.goods[h] - 1, room(a, h)); b.goods[h] -= k; a.goods[h] = (a.goods[h] || 0) + k; }
+    a.goods[g]--; b.goods[g] = (b.goods[g] || 0) + 1; did.push([a, b, g], [b, a, h]); return true;
+  }
+  // a hungry clan (under 2 weeks of food) buys grain units from one with more than 20 weeks, paying goods at the mid worth, cheapest first
+  function buyGrain(W, x, y, did) {
+    if (foodTotal(x) >= needsWeek(x) * 2 || grainSpare(y) < 1) return;
+    const gm = (worth(W, x.tribe, 'grain') + worth(W, y.tribe, 'grain')) / 2; let bought = 0;
+    for (let u = 0; u < 4 && grainSpare(y) >= 1; u++) {
+      const pool = SWAP_GOODS.filter(g => (x.goods[g] || 0) > 0 && !isKept(W, x, g) && room(y, g) >= 1).map(g => ({ g, w: midWorth(W, x, y, g) })).sort((p, q) => p.w - q.w), pay = {}; let sum = 0;
+      for (const p of pool) { for (let n = Math.min(x.goods[p.g], room(y, p.g)); n > 0 && sum < gm - 1e-9; n--) { pay[p.g] = (pay[p.g] || 0) + 1; sum += p.w; } if (sum >= gm - 1e-9) break; }
+      if (sum < gm - 1e-9) break;
+      for (const g in pay) { x.goods[g] -= pay[g]; y.goods[g] = (y.goods[g] || 0) + pay[g]; did.push([x, y, g]); }
+      takeFood(y, GRAIN_UNIT); x.grain = (x.grain || 0) + GRAIN_UNIT; W._tradeGrain = (W._tradeGrain || 0) + GRAIN_UNIT; bought++;
+    }
+    if (bought) did.push([y, x, 'grain']);
+  }
   function exchange(W, a, b) {
-    const did = [];
+    const did = [], same = a.tribe === b.tribe;
     for (const [g, h] of [[a, b], [b, a]]) {
       for (const st of ['flint', 'axe']) if (g.goods[st] > 0 && h.tool < 0.78) { g.goods[st]--; h.tool = Math.max(h.tool, st === 'axe' ? 0.85 : 0.88); did.push([g, h, st]); break; }
-      for (const pg of ['amber', 'ochre', 'salt', 'furs', 'shells', 'metal', 'bronze', 'pots', 'leather', 'art']) if (g.goods[pg] > 1 && h.goods[pg] === 0 && W.rand() < 0.5) { g.goods[pg]--; h.goods[pg]++; did.push([g, h, pg]); }
+      if (same) for (const pg of ['amber', 'ochre', 'salt', 'furs', 'shells', 'metal', 'bronze', 'pots', 'leather', 'art']) if (g.goods[pg] > 1 && h.goods[pg] === 0 && W.rand() < 0.5) { g.goods[pg]--; h.goods[pg]++; did.push([g, h, pg]); }
       if (h.settled && h.tribe.metal >= 0.2) for (const ore of ['copper', 'tin']) if (g.goods[ore] > 0 && h.goods[ore] < 2 && !(g.settled && g.tribe.metal >= 0.2)) { g.goods[ore]--; h.goods[ore]++; did.push([g, h, ore]); }
     }
+    if (!same) { buyGrain(W, a, b, did); buyGrain(W, b, a, did); for (const [p, q] of [[a, b], [b, a]]) if (W.rand() < 0.5) swapOffer(W, p, q, did); }
     if (!did.length) return false;
     wear(W, a.x, a.y, b.x, b.y, 0.8);
-    const ta = a.tribe, tb = b.tribe, what = [...new Set(did.map(d => d[2]))].map(k => GOOD_NAMES[k].toLowerCase()).join(' and ');
+    const ta = a.tribe, tb = b.tribe, what = [...new Set(did.map(d => d[2]))].map(k => k === 'grain' ? 'grain' : GOOD_NAMES[k].toLowerCase()).join(' and ');
     affect(W, a, b, 5, `Traded ${what}`);
     if (ta !== tb) { affect(W, ta, tb, 6, `The ${a.name} and ${b.name} traded ${what}`); rel(ta, tb).trade++; W.gatherTrades = (W.gatherTrades || 0) + 1; }
     for (const [g, h, good] of did) {
-      if (h.tribe.seen.has(good)) continue; h.tribe.seen.add(good);
+      if (good === 'grain' || h.tribe.seen.has(good)) continue; h.tribe.seen.add(good);
       note(W, h.tribe, `${GOOD_NAMES[good]} first reached us through the ${g.name} clan${g.tribe !== h.tribe ? ` of the ${g.tribe.name}` : ''}.`);
       if (g.tribe !== h.tribe) logEvent(W, `${GOOD_NAMES[good]} reaches the ${h.tribe.name} for the first time, traded from the ${g.tribe.name}.`, h.tribe, 'trade');
     }
@@ -2190,7 +2279,8 @@
   function aiPact(W, a, b, r) {
     if (r.pact || r.op < 10 || a.atWar.has(b.id) || !(r.allied || r.trade >= 1)) return;
     const P = W.player, pt = P && P.head && P.head.clan ? P.head.clan.tribe : null; if (a === pt || b === pt) return;
-    if (W.rand() > 0.08) return;
+    const big = t => t.clans.reduce((m, c) => !m || c.people.length > m.people.length ? c : m, null), ba = big(a), bb = big(b), gain = ba && bb ? tradeGain(W, ba, bb) : 0; // goods each can spare that the other finds dear
+    if (W.rand() > 0.08 * (1 + Math.min(1.5, gain / 6))) return;
     const ends = pactEnds(W, a, b, r, false); if (!ends || Math.hypot(ends[0].x - ends[1].x, ends[0].y - ends[1].y) > 150000) return;
     W.pactsMade = (W.pactsMade || 0) + 1; r.pact = W.week + 52 * PACT_YEARS; r.hist.push({ w: W.week, t: 'Trade pact agreed' }); const way = pactSign(W, a, b, r);
     note(W, a, `A trade pact was agreed with the ${b.name}.${way}`); note(W, b, `A trade pact was agreed with the ${a.name}.${way}`);
@@ -2568,9 +2658,9 @@
       m.light = W.week + 52 * 10; m.calmUntil = W.week + 52 * 8; affect(W, t, cap, 12, 'Their tribute was lightened'); K.giftPrestige = (K.giftPrestige || 0) - 0.03;
       chron = `${realmCap(rm)} ${K.name} lightened the tribute of the ${t.name} (${why}).`; own = `The ${t.name} pay half the tribute for ten years, and keep quiet for eight. Some think you weak for it (standing falls a little).`; title = 'The tribute is lightened';
     } else {
-      const rc = K.clan, g = rc ? GIFTABLE.find(x => rc.goods[x] > 0) : null; if (g) rc.goods[g]--; if (rc) eatStore(rc, needsWeek(rc) * 2);
+      const rc = K.clan, g = rc ? giftFrom(W, rc, 3, false).text : ''; if (rc) eatStore(rc, needsWeek(rc) * 2);
       m.calmUntil = W.week + 52 * 8; affect(W, t, cap, 15, 'Gifts to keep us');
-      chron = `${realmCap(rm)} ${K.name} sent gifts to the ${t.name}, who had thought of leaving (${why}).`; own = `Gifts${g ? ' of ' + GOOD_NAMES[g].toLowerCase() : ''} and two weeks of your clan's food go to the ${t.name}. They stay, and will not speak of leaving for eight years.`; title = 'Gifts to keep them';
+      chron = `${realmCap(rm)} ${K.name} sent gifts to the ${t.name}, who had thought of leaving (${why}).`; own = `Gifts${g ? ' of ' + g : ''} and two weeks of your clan's food go to the ${t.name}. They stay, and will not speak of leaving for eight years.`; title = 'Gifts to keep them';
     }
     note(W, cf, chron); logEvent(W, chron, cf, 'blood');
     if (mine && !isHead(W, K)) houseNote(W, chron);
@@ -3022,8 +3112,15 @@
   }
   const relWord = (q, h) => { const p = h.sex === 'F' ? 'her' : 'his', sb = (a, b) => a && b && a !== b && ((a.father && a.father === b.father) || (a.mother && a.mother === b.mother)), sx = a => a.sex === 'M' ? 'brother' : 'sister'; return (q.father === h || q.mother === h) ? `${p} ${q.sex === 'M' ? 'son' : 'daughter'}` : ((h.father && q.father === h.father) || (h.mother && q.mother === h.mother)) ? `${p} ${q.sex === 'M' ? 'brother' : 'sister'}` : ((q.father && (q.father.father === h || q.father.mother === h)) || (q.mother && (q.mother.father === h || q.mother.mother === h))) ? `${p} grand${q.sex === 'M' ? 'son' : 'daughter'}` : sb(q.father, h) ? `${p} ${sx(q.father)}'s ${q.sex === 'M' ? 'son' : 'daughter'}` : sb(q.mother, h) ? `${p} ${sx(q.mother)}'s ${q.sex === 'M' ? 'son' : 'daughter'}` : sb(q, h.father) ? `${p} father's ${sx(q)}` : sb(q, h.mother) ? `${p} mother's ${sx(q)}` : `of ${p} blood`; };
 
+  // the standing order for traders: each spring (the first month of it) the house sends a trader to the best village on the deed's list, if the deed could be done; a house note, no card
+  function springTrader(W) {
+    const P = W.player; if (!P || P.over || !P.head.alive || !P.head.clan || !P.pol || P.pol.trader !== 'send') return;
+    const wy = W.week % 52; if (wy < 9 || wy >= 13 || P.polTrader === Math.floor(W.week / 52)) return; P.polTrader = Math.floor(W.week / 52);
+    const A = playerActions(W).find(a => a.id === 'trader'); if (A && A.ok && A.targets && A.targets.length) doAction(W, 'trader', 0);
+  }
   function playerMonth(W) {
     const P = W.player; if (!P || P.over) return;
+    springTrader(W);
     { const hd = P.head; if (hd.alive && hd.clan) { const cur = P.heads[P.heads.length - 1]; for (const x of titlesOf(hd)) if (!cur.titles.includes(x)) { cur.titles.push(x); houseNote(W, `${hd.name} became ${x === 'king' ? rulerOf(hd.clan.tribe.confed, hd) : x === 'headman' ? `headman of the ${hd.clan.tribe.name}` : `head of the ${hd.clan.name} clan`}.`); } } }
     // --- succession ---
     if (!P.head.alive || !P.head.clan) {
@@ -3209,7 +3306,7 @@
       case 'gathering': {
         const { st, clans } = ev.data; if (!c) return;
         if (k === 0) {
-          let spent = 0; const gave = []; for (const g of GIFTABLE) while (c.goods[g] > 0 && spent < 3) { c.goods[g]--; spent++; gave.push(GOOD_NAMES[g].toLowerCase()); }
+          const gf6 = giftFrom(W, c, 6, false); let spent = Math.round(3 * gf6.met); const gave = gf6.text;
           const feast = foodDays(c) > 10, fd0 = foodDays(c); if (feast) { c.store *= 0.5; c.grain *= 0.85; spent += 1; } W._feastDays = fd0 - foodDays(c);
           const tribes = [...new Set(clans.map(x => x.tribe))];
           const gm = hasTrait(h, 'generous') ? 1.5 : 1, gT = Math.round((6 + spent * 2) * gm), gC = Math.round((5 + spent) * gm), nT = tribes.filter(o => o !== t0(c)).length, nC = clans.filter(o => o !== c).length;
@@ -3217,15 +3314,15 @@
           for (const o of clans) if (o !== c) affect(W, o, c, gC);
           h.giftPrestige = (h.giftPrestige || 0) + spent * 0.05; W._gift = `<br><br><b>What it bought:</b> ${nC} clan${nC === 1 ? '' : 's'} think better of yours (+${gC} goodwill each)${nT ? `, ${nT} other people${nT === 1 ? '' : 's'} +${gT}` : ''}; ${h.name}'s standing +${(spent * 0.05).toFixed(2)}; renown +${Math.round(1 + spent * 1.5)}.${feast ? `<br><b>What it cost:</b> about ${W._feastDays} day${W._feastDays === 1 ? '' : 's'} of food.` : ''} Goodwill decides who backs you for the leadership, who shares their sources, and who will come when you invite them.`;
           P.renown += 1 + spent * 1.5; houseNote(W, spent ? `At ${st.name}, ${h.name} gave lavish gifts — all spoke of ${h.sex === 'F' ? 'her' : 'his'} generosity.` : `At ${st.name}, ${h.name} shared what little the house had.`);
-          W.lastResult = { title: 'Generous gifts', text: spent ? `${h.name} gave ${gave.length ? [...new Set(gave)].join(', ') : ''}${gave.length && feast ? ' and ' : ''}${feast ? 'a great feast' : ''}. The other clans and tribes speak warmly of the House of ${P.house}.` : `${h.name} had little to give, but shared it. A small kindness, remembered by a few.` }; W.lastResult.text += W._gift || ''; W._gift = null;
+          W.lastResult = { title: 'Generous gifts', text: spent ? `${h.name} gave ${gave}${gave && feast ? ' and ' : ''}${feast ? 'a great feast' : ''}. The other clans and tribes speak warmly of the House of ${P.house}.` : `${h.name} had little to give, but shared it. A small kindness, remembered by a few.` }; W.lastResult.text += W._gift || ''; W._gift = null;
         } else if (k === 1) {
           const b4 = Object.assign({}, c.goods), t0d = foodDays(c), tool0 = c.tool;
           let n = 0; for (const o of clans) if (o !== c && n < 6 && exchange(W, c, o)) n++;
           // barter surplus food — dried meat, smoked fish, grain — for what we lack
           let paidFood = 0; const need = needsWeek(c);
-          for (const g of TRADEABLE) { if (c.goods[g] > 0) continue; const o = clans.find(o => o !== c && (o.goods[g] || 0) > 1); if (!o) continue;
-            const price = need * 0.6; if (c.grain > price * 2) c.grain -= price; else if (c.store > price * 2) c.store -= price; else break;
-            o.goods[g]--; c.goods[g] = 1; o.store += price; paidFood++; affect(W, o, c, 4, 'Traded food for goods'); if (o.tribe !== c.tribe) rel(o.tribe, c.tribe).trade++; if (paidFood >= 3) break; }
+          for (const g of TRADEABLE) { if (c.goods[g] > 0 || room(c, g) < 1) continue; const o = clans.find(o => o !== c && (o.goods[g] || 0) > 1); if (!o) continue;
+            const price = Math.max(1, Math.round(worth(W, c.tribe, g) / worth(W, c.tribe, 'grain'))) * GRAIN_UNIT; if (c.grain > price * 2) { c.grain -= price; o.grain = (o.grain || 0) + price; } else if (c.store > price * 2) { c.store -= price; o.store += price; } else continue;
+            W._tradeGrain = (W._tradeGrain || 0) + price; o.goods[g]--; c.goods[g] = 1; paidFood++; affect(W, o, c, 4, 'Traded food for goods'); if (o.tribe !== c.tribe) rel(o.tribe, c.tribe).trade++; if (paidFood >= 3) break; }
           const got = [], gaveG = []; for (const g in c.goods) { const dlt = c.goods[g] - (b4[g] || 0); if (dlt > 0) got.push(`${dlt} ${GOOD_NAMES[g].toLowerCase()}`); else if (dlt < 0) gaveG.push(`${-dlt} ${GOOD_NAMES[g].toLowerCase()}`); }
           if (c.tool > tool0) got.push('better flint for tools');
           houseNote(W, `At ${st.name}, ${h.name} traded with ${n + paidFood} clans.`); P.renown += (n + paidFood) * 0.5;
@@ -3258,17 +3355,17 @@
       }
       case 'friendneed': {
         const q = ev.data.q; if (!q.alive || !q.fam || !h.fam) return;
-        if (k === 0) { const hungry = q.clan.cond < 0.9, tr = hungry ? null : GIFTABLE.find(g => c.goods[g] > 0); if (tr) { c.goods[tr]--; q.clan.goods[tr] = (q.clan.goods[tr] || 0) + 1; } else { const amt = Math.min(c.store, needsWeek(c) * 1.5); c.store -= amt; q.clan.store += amt; }
-          affect(W, q.fam, h.fam, 30, `${h.name} helped us when we had nothing`); if (q.clan !== c) affect(W, q.clan, c, 8, `${h.name} helped ${q.name} in need`); P.renown += 2;
-          houseNote(W, `${h.name} gave ${q.name} what ${q.sex === 'F' ? 'she' : 'he'} needed, and asked nothing for it.`); W.lastResult = { title: 'A debt of the heart', text: `${q.name} takes it without a word and grips your arm. ${q.sex === 'F' ? 'Her' : 'His'} house will stand with yours when the clans choose a leader, and ${q.sex === 'F' ? 'her' : 'his'} clan thinks better of yours (+8).` }; }
+        if (k === 0) { const hungry = q.clan.cond < 0.9, gf = hungry ? null : giftFrom(W, c, 2, false, { to: q.clan, food: 1.5 }), mt = gf ? gf.met : 1; if (!gf) { const amt = Math.min(c.store, needsWeek(c) * 1.5); c.store -= amt; q.clan.store += amt; }
+          affect(W, q.fam, h.fam, Math.round(30 * mt), `${h.name} helped us when we had nothing`); const w8 = q.clan !== c ? Math.round(8 * mt) : 0; if (w8) affect(W, q.clan, c, w8, `${h.name} helped ${q.name} in need`); P.renown += 2 * mt;
+          houseNote(W, `${h.name} gave ${q.name} ${gf && gf.text ? gf.text : `what ${q.sex === 'F' ? 'she' : 'he'} needed`}, and asked nothing for it.`); W.lastResult = { title: 'A debt of the heart', text: `${q.name} takes it without a word and grips your arm. ${q.sex === 'F' ? 'Her' : 'His'} house will stand with yours when the clans choose a leader, and ${q.sex === 'F' ? 'her' : 'his'} clan thinks better of yours${w8 ? ` (+${w8})` : ''}.` }; }
         else { affect(W, q.fam, h.fam, -30, `${h.name} turned us away when we were in need`); houseNote(W, `${h.name} sent ${q.name} away empty-handed.`); W.lastResult = { title: `${q.sex === 'F' ? 'She' : 'He'} goes home empty-handed`, text: `${q.name} nods, thanks you for the fire, and leaves. Something has gone out of the friendship (−30).` }; }
         return;
       }
       case 'slight': {
         const q = ev.data.q; if (!q.alive || !q.fam || !h.fam) return;
-        if (k === 0) { const tr = GIFTABLE.find(g => c.goods[g] > 0); if (tr) c.goods[tr]--; else eatStore(c, needsWeek(c)); h.giftPrestige = (h.giftPrestige || 0) + 0.06; q.giftPrestige = Math.max(0, (q.giftPrestige || 0) - 0.03); P.renown += 3;
-          for (const o of c.tribe.clans) if (o !== c) affect(W, o, c, 4, `${h.name} answered an insult with a gift`);
-          houseNote(W, `${h.name} answered ${q.name}'s mockery with a gift to the poorest house at the fire.`); W.lastResult = { title: 'The laughter turns', text: `${h.name} says nothing to ${q.name}, and instead gives ${tr ? GOOD_NAMES[tr].toLowerCase() : 'meat from the stores'} to the poorest house at the fire. Now they laugh at him. Your standing rises (+0.06), the other clans warm to yours (+4), renown +3.` }; }
+        if (k === 0) { const gf = giftFrom(W, c, 2, false, { food: 1 }), mt = gf.met; h.giftPrestige = (h.giftPrestige || 0) + 0.06; q.giftPrestige = Math.max(0, (q.giftPrestige || 0) - 0.03); const r3 = Math.round(3 * mt), w4 = Math.round(4 * mt); P.renown += r3;
+          for (const o of c.tribe.clans) if (o !== c && w4) affect(W, o, c, w4, `${h.name} answered an insult with a gift`);
+          houseNote(W, `${h.name} answered ${q.name}'s mockery with a gift to the poorest house at the fire.`); W.lastResult = { title: 'The laughter turns', text: `${h.name} says nothing to ${q.name}, and instead gives ${gf.text || 'meat from the stores'} to the poorest house at the fire. Now they laugh at him. Your standing rises (+0.06)${w4 ? `, the other clans warm to yours (+${w4})` : ''}${r3 ? `, renown +${r3}` : ''}.` }; }
         else if (k === 1) { const p = clamp(0.5 + (h.skill - q.skill) * 0.8 + (q.temper - h.temper) * 0.3 + (hasTrait(h, 'silver') ? 0.15 : 0) + (hasTrait(h, 'bold') ? 0.08 : 0) - (h.age > 50 ? 0.15 : 0), 0.1, 0.9);
           if (W.rand() < p) { P.renown += 5; q.giftPrestige = Math.max(0, (q.giftPrestige || 0) - 0.04); affect(W, q.fam, h.fam, -12, `${h.name} bested ${q.name} before the clans`); houseNote(W, `${h.name} bested ${q.name} before the whole tribe.`); W.lastResult = { title: `${h.name} has the better of it`, text: `Word for word and then throw for throw, ${h.name} leaves ${q.name} flat on his back in the dust. Renown +5. He hates you the more for it.` }; }
           else { P.renown -= 3; affect(W, q.fam, h.fam, -6, `${q.name} bested ${h.name} before the clans`); houseNote(W, `${q.name} bested ${h.name} before the whole tribe.`); W.lastResult = { title: `${q.name} has the better of it`, text: `${h.name} is quick, but ${q.name} is quicker, and the fire roars with laughter at your cost. Renown −3.` }; } }
@@ -3287,8 +3384,8 @@
       }
       case 'omen': {
         const pious = hasTrait(h, 'pious');
-        if (k === 0) { const tr = GIFTABLE.find(g => c.goods[g] > 0); if (tr) c.goods[tr]--; else eatStore(c, needsWeek(c)); for (const o of c.tribe.clans) if (o !== c) affect(W, o, c, pious ? 7 : 4, `${h.name} made the offering when the sign came`); P.renown += pious ? 3 : 1;
-          houseNote(W, `${h.name} made the offering after the sign.`); W.lastResult = { title: 'The offering is made', text: `${tr ? 'A gift of ' + GOOD_NAMES[tr].toLowerCase() : 'A week of food'} goes ${faithOf(c.tribe) === 'ancestors' ? 'into the barrow' : faithOf(c.tribe) === 'sky' ? 'onto the high rock for the birds' : 'into the water'}. The talk dies down, and the other clans think a little better of yours (+${pious ? 7 : 4}).` }; }
+        if (k === 0) { const gf = giftFrom(W, c, 3, false, { food: 1 }), mt = gf.met, wo = Math.round((pious ? 7 : 4) * mt); for (const o of c.tribe.clans) if (o !== c && wo) affect(W, o, c, wo, `${h.name} made the offering when the sign came`); P.renown += (pious ? 3 : 1) * mt;
+          houseNote(W, `${h.name} made the offering after the sign.`); W.lastResult = { title: 'The offering is made', text: `${gf.text ? 'A gift of ' + gf.text : 'A week of food'} goes ${faithOf(c.tribe) === 'ancestors' ? 'into the barrow' : faithOf(c.tribe) === 'sky' ? 'onto the high rock for the birds' : 'into the water'}. The talk dies down, and the other clans think a little better of yours${wo ? ` (+${wo})` : ''}.` }; }
         else if (k === 1) { P.quietUntil = W.week + 104; W._acts = null; for (const o of c.tribe.clans) if (o !== c) affect(W, o, c, 2, `${h.name} kept the quiet when the sign came`);
           houseNote(W, `${h.name} kept the quiet for two years after the sign.`); W.lastResult = { title: 'The quiet is kept', text: `For two years no one of the clan raids, trades abroad, explores, claims a new source or moves away. Feasts, gifts, rites and building go on as before. Nothing is lost but the time, and people say ${h.name} knows what is owed.` }; }
         else { P.omenIgnored = { by: h.name, at: W.week, until: W.week + 156 }; houseNote(W, `${h.name} said the sign was only a sign.`); W.lastResult = { title: 'Only a sign', text: `${h.name} laughs and goes back to work. Some laugh too. Others watch, and will remember, if the next three years go badly.` }; }
@@ -3296,8 +3393,8 @@
       }
       case 'quarrel': {
         const { a, b, txt } = ev.data; if (!a.alive || !b.alive || !a.clan || !b.clan) return; const o = a === h.fam ? b : a;
-        if (k === 0) { const tr = GIFTABLE.find(g => c.goods[g] > 0); if (tr) c.goods[tr]--; else eatStore(c, needsWeek(c) * 0.5);
-          affect(W, a, b, -3, `${txt}, smoothed over with a gift`); houseNote(W, `A quarrel with the house of ${o.name} (${txt}) was smoothed over with ${tr ? GOOD_NAMES[tr].toLowerCase() : 'a gift of food'}.`);
+        if (k === 0) { const gf = giftFrom(W, c, 2, false, { food: 0.5 });
+          affect(W, a, b, -3 * gf.met, `${txt}, smoothed over with a gift`); houseNote(W, `A quarrel with the house of ${o.name} (${txt}) was smoothed over with ${gf.text || 'a gift of food'}.`);
           W.lastResult = { title: 'Peace is kept', text: `The house of ${o.name} takes the gift. The matter is closed, though not forgotten.` }; }
         else if (k === 1) { affect(W, a, b, -22, `${txt} came to blows`); if (a.clan !== b.clan) affect(W, a.clan, b.clan, -10, `Fight between the houses of ${a.name} and ${b.name}`); houseNote(W, `We stood our ground against the house of ${o.name} (${txt}). No one died, but they will not forget.`);
           W.lastResult = { title: 'No blood, no peace', text: `Men shout, shove and are pulled apart. The house of ${o.name} goes home angry.` }; }
@@ -3338,7 +3435,7 @@
       }
       case 'vengeance': {
         const { c: av, o } = ev.data; if (!av.alive || !o.alive) return; const r = rel(av, o);
-        if (k === 0) { const f = needsWeek(o) * 1.5; if (o.grain > f) o.grain -= f; else o.store = Math.max(0, o.store - f); av.store += f; let gave = ''; for (const g of GIFTABLE) if (o.goods[g] > 0) { o.goods[g]--; av.goods[g] = (av.goods[g] || 0) + 1; gave = GOOD_NAMES[g].toLowerCase(); break; }
+        if (k === 0) { const f = needsWeek(o) * 1.5; if (o.grain > f) o.grain -= f; else o.store = Math.max(0, o.store - f); av.store += f; let gave = giftFrom(W, o, 4, true, { to: av }).text;
           const ok = W.rand() < 0.65 + (gave ? 0.2 : 0); if (ok) { r.grudge *= 0.25; r.op += 15; clearWrong(av, o); houseNote(W, `${h.name} paid compensation to the ${av.name} clan; the feud is settled.`); W.lastResult = { title: 'The feud is settled', text: `The ${av.name} accept food${gave ? ' and ' + gave : ''}. The blood debt is paid.` }; }
           else { r.grudge *= 0.7; houseNote(W, `The ${av.name} took ${h.name}'s compensation, but some still want blood.`); W.lastResult = { title: 'Not enough', text: `The ${av.name} take the gifts, but their young men still want blood.` }; } }
         else if (k === 1) { o.guardUntil = W.week + 104; houseNote(W, `${h.name} posted guards around the ${o.name} camp.`); }
@@ -3360,7 +3457,7 @@
       case 'rivalry': {
         const { rival, t } = ev.data; if (!c || !rival.alive || !rival.head || t.headman !== h) return;
         const T0 = k === 1 ? headshipTally(W, t, h, rival.head, false) : null, K0 = k === 1 ? Math.round(keepChance(W, t, h, rival.head) * 100) : 0; let gt = '';
-        if (k === 1) { let spent = 0; for (const o of t.clans) if (o !== c) { for (const g of GIFTABLE) if (c.goods[g] > 0) { c.goods[g]--; spent++; break; } affect(W, o, c, 10, `Gifts from ${h.name}`); } c.store *= 0.5; c.grain *= 0.8; P.renown -= 1; houseNote(W, `${h.name} bought the clans' support with gifts.`);
+        if (k === 1) { let spent = 0; for (const o of t.clans) if (o !== c) { if (giftFrom(W, c, 2, false).any) spent++; affect(W, o, c, 10, `Gifts from ${h.name}`); } c.store *= 0.5; c.grain *= 0.8; P.renown -= 1; houseNote(W, `${h.name} bought the clans' support with gifts.`);
           const T1 = headshipTally(W, t, h, rival.head, false), K1 = Math.round(keepChance(W, t, h, rival.head) * 100), mv = T1.rows.filter((r, i) => r.side !== T0.rows[i].side).map(r => `the ${r.clan.name} clan (${r.n})`);
           gt = `<b>The gifts:</b> before them, ${T0.wa} people stood with ${h.name} and ${T0.wb} with ${rival.head.name}. After them, ${T1.wa} and ${T1.wb}. ${mv.length ? 'Clans that changed sides: ' + mv.join(', ') + '.' : 'No clan changed sides.'} ${K0 === K1 ? `Your chance of keeping the seat stayed at about ${K1}%${T1.rows.every((r, i) => Math.abs(r.pa - T0.rows[i].pa) < 1e-9) ? ': the gifts moved no one' : ''}.` : `Warmer feeling moved your chance of keeping the seat from about ${K0}% to about ${K1}%.`} The clans then chose, and what they chose is below.`; }
         if (k === 2) { t.favored = rival.head; t.headman = rival.head; affect(W, rival, c, 20, `${h.name} stepped aside for ${rival.head.name}`); P.renown -= 2; houseNote(W, `${h.name} stepped aside; ${rival.head.name} of the ${rival.name} now leads the ${t.name}.`); plotCardDone(W, t, h, rival.head, false); return; }
@@ -3512,7 +3609,7 @@
           targets: vr.map(r => ({ ref: r, label: `${r.dir[0].toUpperCase() + r.dir.slice(1)}, ${r.km} km ${r.open ? 'over open sea' : 'along the coast'}`, hint: `${Math.round(r.unk * 100)}% unknown waters` })) }); }
       const et = able && ready('expedition', 2) ? expeditionTargets(W, c) : [];
       A.push({ id: 'expedition', icon: '🎒', label: 'Lead an expedition to gather goods', hint: 'Fetch flint, amber, salt, ochre, axe-stone or ore from a source you know', ok: able && et.length > 0, why: !able ? 'No one fit to go' : !ready('expedition', 2) ? `Too soon (${yl('expedition', 2)})` : 'You know of no sources within 260 km — explore first',
-        targets: et.map(e => ({ ref: e, label: `${DEPOSITS[e.d.type].icon} ${DEPOSITS[e.d.type].name}, ${e.km} km ${compass(e.d.x - c.x, e.d.y - c.y)}`, hint: `${e.d.note} · ${e.guard.length ? `in the land of the ${e.guard[0].tribe.name} (${isAllied(t, e.guard[0].tribe) ? bondWord(W, t, e.guard[0].tribe) + ': they let you pass' : opinion(e.guard[0].tribe, t) > 15 ? 'friendly' : opinion(e.guard[0].tribe, t) < -15 ? 'hostile!' : 'wary'})` : 'no one lives there'}` })) }); }
+        targets: et.map(e => ({ ref: e, label: `${DEPOSITS[e.d.type].icon} ${DEPOSITS[e.d.type].name}, ${e.km} km ${compass(e.d.x - c.x, e.d.y - c.y)}`, hint: `${e.d.note} · ${e.full ? `your store of ${GOOD_NAMES[e.d.type].toLowerCase()} is full` : `brings back ${e.yr}${LOAD_GOODS.includes(e.d.type) ? `, worth about ${Math.max(1, Math.round(e.worthYr))} here` : ''}`} · ${e.guard.length ? `in the land of the ${e.guard[0].tribe.name} (${isAllied(t, e.guard[0].tribe) ? bondWord(W, t, e.guard[0].tribe) + ': they let you pass' : opinion(e.guard[0].tribe, t) > 15 ? 'friendly' : opinion(e.guard[0].tribe, t) < -15 ? 'hostile!' : 'wary'})` : 'no one lives there'}` })) }); }
     // pitch the camp where the head chooses; it stays there until moved again (or until the land cannot feed it)
     if (!c.settled && !c.toSettle) A.push({ id: 'movecamp', icon: '⛺', label: c.head === h || !c.head ? 'Move camp' : `Ask ${c.head.name} to move the camp`, hint: `Choose where your clan camps, up to 80 km away: beside the wild grain, a flint source, the shore. The camp stays there until it is moved again${c.head && c.head !== h ? `. ${c.head.name} leads the clan and may say no` : ''}`, ok: ready('movecamp', c.head === h ? 1 : 2),
       why: c.head === h ? 'The clan has only just pitched camp (1 yr)' : `You asked not long ago (${yl('movecamp', 2)})`, targets: [{ pick: { maxKm: 80 }, label: 'Choose the place on the map…', hint: 'Any land you know of within 80 km that your people can reach' }] });
@@ -3561,17 +3658,14 @@
       A.push({ id: 'monument', icon: MON[faithOf(t)][1], label: `Raise a ${kind}`, hint: 'A lasting monument at our sacred place — renown, unity, and a gathering place others will come to', ok: canB && ready('monument', 15) && c.cond > 0.8, why: t.headman !== h ? `Only the ${isMatri(t) ? 'headwoman' : 'headman'} can command the whole tribe to build` : !canB ? 'Only settled peoples can raise great monuments of earth and stone' : !ready('monument', 15) ? `The people are still weary from the last great work (${yl('monument', 15)})` : 'The people are too hungry for great works' }); }
     // send a trader to a village that lacks what we have
     if (c.settled || (W.settlements && W.settlements.length >= 2 && c.head === h)) {
-      const goods = TRADEABLE.concat(['copper', 'tin', 'bronze']).filter(g => (c.goods[g] || 0) >= 2), mine = (W.traders || []).filter(r => r.home === c).length;
-      const tg = W.clans.filter(o => o !== c && o.settled && knows(W, o.x, o.y) && canReach(W, c, o.x, o.y) && Math.hypot(o.x - c.x, o.y - c.y) < 260000 && Math.hypot(o.x - c.x, o.y - c.y) > 10000 && !(o.tribe !== t && opinion(o.tribe, t) < -20))
-        .map(o => ({ o, km: Math.round(Math.hypot(o.x - c.x, o.y - c.y) / 1000), want: goods.filter(g => !(o.goods[g] > 0)), offer: TRADEABLE.concat(['copper', 'tin', 'bronze']).filter(g => (o.goods[g] || 0) >= 2 && !(c.goods[g] > 0)) }))
-        .sort((a, b) => (b.want.length + b.offer.length) / (1 + b.km / 80) - (a.want.length + a.offer.length) / (1 + a.km / 80)).slice(0, 6);
-      A.push({ id: 'trader', icon: '🎒', label: 'Send a trader', hint: goods.length ? `Carry ${goods.map(g => GOOD_NAMES[g].toLowerCase()).join(', ')} to another village and bring back what we lack` : 'You have little surplus to trade', ok: goods.length > 0 && tg.length > 0 && mine < 2, why: !goods.length ? 'Nothing to spare — you need at least 2 of a good' : mine >= 2 ? 'Two traders of your clan, sent by you or by the clan, are already on the road' : 'You know of no villages within 260 km to trade with',
-        targets: tg.map(e => ({ ref: e.o, label: `${e.o.village || e.o.name} of the ${e.o.tribe.name}, ${e.km} km ${compass(e.o.x - c.x, e.o.y - c.y)}`, hint: `${e.want.length ? 'they lack ' + e.want.map(g => GOOD_NAMES[g].toLowerCase()).join(', ') : 'they have what you carry'}${e.offer.length ? ' · they have ' + e.offer.map(g => GOOD_NAMES[g].toLowerCase()).join(', ') : ''}` })) });
+      const goods = spareOf(W, c, LOAD_GOODS), mine = (W.traders || []).filter(r => r.home === c).length, tg = traderRows(W, c).filter(e => Object.keys(e.load.pack).length || e.load.units), rw = x => Math.max(1, Math.round(x));
+      A.push({ id: 'trader', icon: '🎒', label: 'Send a trader', hint: goods.length ? `Carry what the clan can spare (${goods.map(g => GOOD_NAMES[g].toLowerCase()).join(', ')}) to a village that finds it dear, and bring back what they can spare` : 'You have little surplus to trade', ok: goods.length > 0 && tg.length > 0 && mine < 2, why: !goods.length ? 'Nothing to spare: you need at least 2 of a good that is not kept' : mine >= 2 ? 'Two traders of your clan, sent by you or by the clan, are already on the road' : 'You know of no villages within 260 km to trade with',
+        targets: tg.map(e => ({ ref: e.o, label: `${e.o.village || e.o.name} of the ${e.o.tribe.name}, ${e.km} km ${compass(e.o.x - c.x, e.o.y - c.y)}`, hint: `Takes: ${e.loadText} (worth ${rw(e.loadWorthThem)} to them) · Brings back goods worth about ${rw(e.backWorthHere)} here${e.backText ? `, likely ${e.backText}` : ' · They have little to pay with'}${e.robber > 0 ? ` · Robbers near the way: about ${Math.max(1, Math.round(e.robber * 100))}%` : ''}` })) });
     }
     // claim a source for the household to work, season after season
     { const ct = adult || myW >= 2 ? claimTargets(W, c) : [], n = (P.claims || []).length;
       A.push({ id: 'claim', icon: '⛏', label: 'Claim a source for the house', hint: `Your household will work it every season — ${n ? `now working ${n}` : 'flint, axe-stone, amber, salt, ochre, ore'}`, ok: ct.length > 0 && n < 4, why: n >= 4 ? 'The house can work at most 4 sources' : 'You know of no unclaimed sources within 180 km — explore first',
-        targets: ct.map(e => ({ ref: e, label: `${DEPOSITS[e.d.type].icon} ${DEPOSITS[e.d.type].name}, ${e.km} km ${compass(e.d.x - c.x, e.d.y - c.y)}`, hint: `${e.d.note} · ${e.guard.length ? `in the land of the ${e.guard[0].tribe.name} (${isAllied(t, e.guard[0].tribe) ? bondWord(W, t, e.guard[0].tribe) + ': no trouble from them' : opinion(e.guard[0].tribe, t) > 15 ? 'friendly' : opinion(e.guard[0].tribe, t) < -15 ? 'hostile — expect trouble' : 'wary'})` : 'no one lives there'} · about ${CLAIM_YIELD[e.d.type] * 4} a year` })) }); }
+        targets: ct.map(e => ({ ref: e, label: `${DEPOSITS[e.d.type].icon} ${DEPOSITS[e.d.type].name}, ${e.km} km ${compass(e.d.x - c.x, e.d.y - c.y)}`, hint: `${e.d.note} · ${e.guard.length ? `in the land of the ${e.guard[0].tribe.name} (${isAllied(t, e.guard[0].tribe) ? bondWord(W, t, e.guard[0].tribe) + ': no trouble from them' : opinion(e.guard[0].tribe, t) > 15 ? 'friendly' : opinion(e.guard[0].tribe, t) < -15 ? 'hostile — expect trouble' : 'wary'})` : 'no one lives there'} · ${e.full ? `your store of ${GOOD_NAMES[e.d.type].toLowerCase()} is full` : `about ${e.yr} a year here${LOAD_GOODS.includes(e.d.type) ? `, worth about ${Math.max(1, Math.round(e.worthYr))}` : ''}`}` })) }); }
     // build canoes
     { const ci = cellAt(c.x, c.y), water = c.coastal || W.inland[ci] <= 3 || W.acc[ci] > 400 || W.lake[ci];
       if (boatStage(t) < 2) A.push({ id: 'canoes', icon: '🛶', label: t.boats < 0.3 ? 'Build the first canoes' : 'Build seagoing canoes', hint: t.boats < 0.3 ? 'Hollow out great logs — fish further out, travel by water' : 'Hide-and-timber boats for the open sea, whales and crossings', ok: water && ready('canoes', 6), why: !water ? 'You camp far from the sea, a big river or a lake' : `Your boatbuilders are at work (${yl('canoes', 6)})` }); }
@@ -3591,7 +3685,7 @@
       const pe = near.filter(o => !sameConfed(t, o) && (t.atWar.has(o.id) || opinion(o, t) < -30)).slice(0, 5);
       if (pe.length) A.push({ id: 'peace', icon: '🕊', label: 'Make peace', hint: 'Send an envoy with gifts to end a war or an old hatred', ok: hm && ready('peace', 2), why: !hm ? lw : `Too soon (${yl('peace', 2)})`, targets: pe.map(o => row(o, 'peace')) }); }
     // gifts
-    { const g = GIFTABLE.reduce((s, x) => s + (c.goods[x] || 0), 0), others = W.tribes.filter(o => o !== t && knowsTribe(W, o) && o.clans.some(x => Math.hypot(x.x - c.x, x.y - c.y) < 200000)).sort((a, b) => opinion(t, a) - opinion(t, b)).slice(0, 5);
+    { const g = GIFTABLE.reduce((s, x) => s + (isKept(W, c, x) ? 0 : c.goods[x] || 0), 0), others = W.tribes.filter(o => o !== t && knowsTribe(W, o) && o.clans.some(x => Math.hypot(x.x - c.x, x.y - c.y) < 200000)).sort((a, b) => opinion(t, a) - opinion(t, b)).slice(0, 5);
       A.push({ id: 'gifts', icon: '🎁', label: 'Send gifts to another tribe', hint: 'Spend valuables to win friends — a path to alliances', ok: (g > 0 || c.cond > 0.8) && others.length && ready('gifts', 2), why: !g && c.cond <= 0.8 ? 'Your clan has nothing to spare' : !others.length ? 'No other tribes nearby' : !ready('gifts', 2) ? `Too soon (${yl('gifts', 2)})` : '',
         targets: others.map(o => ({ ref: o, label: `the ${o.name}`, hint: `${tribeSize(o)} people · now ${opinion(t, o) > 15 ? 'friendly' : opinion(t, o) < -15 ? 'hostile' : 'neutral'}${isAllied(t, o) ? ' · ' + bondWord(W, t, o).replace(/^your /, '') : ''}` })) }); }
     // feast
@@ -3736,22 +3830,22 @@
     }
     if (id === 'recall') {
       const q = A.targets[k] && A.targets[k].ref; if (!q || !q.alive || !q.clan || q.clan === c) return null; const oc = q.clan;
-      const tr = GIFTABLE.find(g => c.goods[g] > 0); if (tr) c.goods[tr]--; else eatStore(c, needsWeek(c));
+      const gf = giftFrom(W, c, 2, false, { food: 1 }), gs = gf.text ? ` We gave ${gf.text}.` : '';
       const heirHere = c.people.some(x => x.dyn && x !== h && x.age >= 15 && !x.slave), p = clamp(0.55 + opinion(oc, c) / 100 + (heirHere ? 0 : 0.25), 0.2, 0.95);
-      if (W.rand() > p) { houseNote(W, `${h.name} asked ${q.name} to come home from the ${oc.name} clan. ${q.sex === 'F' ? 'She' : 'He'} chose to stay.`); return { title: `${q.name} stays`, text: `${q.name} has a life among the ${oc.name} now, and will not leave it this year. You can ask again in time; goodwill between the clans makes it likelier.` }; }
+      if (W.rand() > p) { houseNote(W, `${h.name} asked ${q.name} to come home from the ${oc.name} clan. ${q.sex === 'F' ? 'She' : 'He'} chose to stay.${gs}`); return { title: `${q.name} stays`, text: `${q.name} has a life among the ${oc.name} now, and will not leave it this year. You can ask again in time; goodwill between the clans makes it likelier.` }; }
       const sp = q.spouse && q.spouse.alive && q.spouse.clan === oc && q.spouse !== oc.head ? q.spouse : null;
       const movers = [q, ...(sp ? [sp] : []), ...oc.people.filter(x => (x.father === q || x.mother === q) && x.age < 13 && x !== q && x !== sp)];
       const f = newFamily(W, c, q.sex === 'M' || !sp ? q : sp);
       for (const x of movers) { const i = oc.people.indexOf(x); if (i >= 0) oc.people.splice(i, 1); c.people.push(x); x.clan = c; x.fam = f; }
-      affect(W, oc, c, -5, `${q.name} went back to the ${c.name} clan`); houseNote(W, `${q.name}, ${relWord(q, h)}, came home from the ${oc.name} clan with ${movers.length - 1} of ${q.sex === 'F' ? 'her' : 'his'} household.`);
+      affect(W, oc, c, -5, `${q.name} went back to the ${c.name} clan`); houseNote(W, `${q.name}, ${relWord(q, h)}, came home from the ${oc.name} clan with ${movers.length - 1} of ${q.sex === 'F' ? 'her' : 'his'} household.${gs}`);
       return { title: `${q.name} comes home`, text: `${q.name} returns to the ${c.name} clan${movers.length > 1 ? ` with ${movers.length - 1} of ${q.sex === 'F' ? 'her' : 'his'} household` : ''}. The house has its blood beside it again.` };
     }
     if (id === 'adopt') {
       const q = A.targets[k] && A.targets[k].ref; if (!q || !q.alive || q.clan !== c) return null;
-      const tr = GIFTABLE.find(g => c.goods[g] > 0); if (tr) c.goods[tr]--; else eatStore(c, needsWeek(c) * 0.5);
+      const gf = giftFrom(W, c, 2, false, { food: 0.5 });
       if (q.fam && h.fam && q.fam !== h.fam) affect(W, q.fam, h.fam, 15, `${h.name} adopted ${q.name}`);
       q.dyn = true; q.adopted = true; if (q.age < 15 && h.fam) q.fam = h.fam;
-      houseNote(W, `${h.name} adopted ${q.name} (${Math.floor(q.age)}) into the house.`);
+      houseNote(W, `${h.name} adopted ${q.name} (${Math.floor(q.age)}) into the house.${gf.text ? ` We gave ${gf.text}.` : ''}`);
       return { title: `${q.name} joins the house`, text: `Before the whole clan ${h.name} names ${q.name} as ${h.sex === 'F' ? 'her' : 'his'} own child. ${q.name} and ${q.sex === 'F' ? 'her' : 'his'} children are of the blood of the house from this day, and can carry it on.` };
     }
     if (id === 'ally' || id === 'pact' || id === 'tribute' || id === 'peace') {
@@ -3762,9 +3856,9 @@
         r.pact = W.week + 52 * 20; const way = pactSign(W, t, o, r); affect(W, o, t, 8, 'A trade pact agreed'); P.renown += 3; houseNote(W, `${h.name} agreed a trade pact with the ${o.name}.${way}`); note(W, t, `A trade pact was agreed with the ${o.name}.${way}`); note(W, o, `A trade pact was agreed with the ${t.name}.${way}`); logEvent(W, `The ${t.name} and the ${o.name} agree a trade pact for twenty years.${way}`, t, 'gather'); return { title: 'A trade pact', text: `For twenty years the clans of the ${t.name} and the ${o.name} will meet each summer to trade. Expect goods you lack to arrive, goodwill to grow year by year, and both peoples to pick up the other's speech.${way}` }; }
       if (id === 'tribute') { if (!yes) { const pk = peaceHeld(W, t, o); affect(W, o, t, pk ? -4 : -22, 'They demanded tribute of us', pk ? 0 : 15); houseNote(W, `The ${o.name} refused us tribute.`); return { title: 'They refuse', text: pk ? `The ${o.name} send your envoy back with cold words. The peace between you holds, but they think less of you (goodwill −4).` : `The ${o.name} send your envoy back with an insult. They will not pay, and they will not forget that you asked (goodwill −22).` }; }
         r.tribute = { to: t.id, until: W.week + 52 * 10 }; affect(W, o, t, -28, 'Forced to pay tribute', 10); P.renown += 8; houseNote(W, `The ${o.name} agreed to pay us tribute.`); return { title: 'Tribute', text: `The ${o.name} will send food and valuables to ${t.headman && t.headman.clan ? 'the ' + t.headman.clan.name + ' clan' : 'your leader'} each year for ten years. They hate you for it (goodwill −28), and will stop the moment they are strong enough.` }; }
-      const tr = GIFTABLE.find(g => c.goods[g] > 0); if (tr) c.goods[tr]--; else eatStore(c, needsWeek(c));
-      if (!yes) { houseNote(W, `The ${o.name} would not make peace.`); return { title: 'No peace', text: `The ${o.name} keep the gift and their anger. The dead on both sides are too fresh.` }; }
-      t.atWar.delete(o.id); o.atWar.delete(t.id); r.grudge = 0; if (r.op < -8) r.op = -8; r.peaceUntil = W.week + 10 * 52; r.peaceFrom = W.week; r.peaceBy = 'player'; P.renown += 4; houseNote(W, `${h.name} made peace with the ${o.name}.`); logEvent(W, `Peace: ${h.name} of the ${t.name} and the ${o.name} lay down the old quarrel.`, t, 'gather');
+      const gf = giftFrom(W, c, 3, true, { food: 1 }), gs = gf.text ? ` We gave ${gf.text}.` : '';
+      if (!yes) { houseNote(W, `The ${o.name} would not make peace.${gs}`); return { title: 'No peace', text: `The ${o.name} keep the gift and their anger. The dead on both sides are too fresh.` }; }
+      t.atWar.delete(o.id); o.atWar.delete(t.id); r.grudge = 0; if (r.op < -8) r.op = -8; r.peaceUntil = W.week + 10 * 52; r.peaceFrom = W.week; r.peaceBy = 'player'; P.renown += 4; houseNote(W, `${h.name} made peace with the ${o.name}.${gs}`); logEvent(W, `Peace: ${h.name} of the ${t.name} and the ${o.name} lay down the old quarrel.`, t, 'gather');
       return { title: 'Peace', text: `Gifts are exchanged and the dead are named aloud one last time. The war and the old grudges between the ${t.name} and the ${o.name} are laid down. They are wary still, but no longer enemies. For ten years neither side will raid the other.` };
     }
     if (id === 'build') {
@@ -3815,8 +3909,8 @@
     }
     if (id === 'trader') {
       const o = A.targets[k] && A.targets[k].ref; if (!o) return null; const r = sendTrader(W, c, o, null);
-      houseNote(W, `${h.name} sent a trader to ${o.village || o.name} with ${Object.keys(r.pack).map(g => GOOD_NAMES[g].toLowerCase()).join(', ') || 'grain'}.`);
-      return { title: 'A trader sets out', text: `A trader leaves for ${o.village || o.name} of the ${o.tribe.name} carrying ${Object.entries(r.pack).map(([g, n]) => `${n} ${GOOD_NAMES[g].toLowerCase()}`).join(', ') || 'grain'}. He will come back with whatever they can spare that you lack — if no one robs him on the way. Watch for him on the roads.` };
+      houseNote(W, `${h.name} sent a trader to ${o.village || o.name} with ${goodsText(r.pack, r.food > 0) || 'nothing'}.`);
+      return { title: 'A trader sets out', text: `A trader leaves for ${o.village || o.name} of the ${o.tribe.name} carrying ${goodsText(r.pack, r.food > 0) || 'nothing'}. He will come back with what they pay for it, about as much in worth as he took — if no one robs him on the way. Watch for him on the roads.` };
     }
     if (id === 'claim') {
       const e = A.targets[k] && A.targets[k].ref; if (!e) return null; P.claims = P.claims || [];
@@ -3877,11 +3971,11 @@
       return { title: 'A great gift', text: `${tr.name[0].toUpperCase() + tr.name.slice(1)} goes to the ${o.name}, with its whole story told over it. Nothing a people can give says more (+30). Renown +4.` }; }
     if (id === 'gifts') {
       const o = A.targets[k] && A.targets[k].ref; if (!o) return null;
-      let n = 0; for (const g of GIFTABLE) while (c.goods[g] > 0 && n < 2) { c.goods[g]--; n++; }
+      const gf = giftFrom(W, c, 4, false); let n = gf.worth > 0 ? Math.round(clamp(gf.worth / 2, 1, 2)) : 0;
       const furs = !n; if (furs) { n = 1; c.store *= 0.5; c.cond = Math.max(0.5, c.cond - 0.05); }
       affect(W, o, t, 12 * n, `Gifts from ${h.name} of the House of ${P.house}`); rel(o, t).trade++; for (const oc of o.clans) affect(W, oc, c, 6 * n);
-      P.renown += n; houseNote(W, `${h.name} sent ${furs ? 'furs and meat' : n + ' valuables'} as gifts to the ${o.name}.`);
-      return { title: 'Gifts received', text: `The ${o.name} accept ${h.name}'s ${furs ? 'gifts of furs and dried meat' : n + (n > 1 ? ' gifts' : ' gift')}. Their goodwill toward the ${t.name} grows${opinion(t, o) > 35 ? ' — an alliance may be within reach at the next gathering' : ''}.` };
+      P.renown += n; houseNote(W, `${h.name} sent ${furs ? 'furs and meat' : gf.text} as gifts to the ${o.name}.`);
+      return { title: 'Gifts received', text: `The ${o.name} accept ${h.name}'s ${furs ? 'gifts of furs and dried meat' : 'gifts of ' + gf.text}. Their goodwill toward the ${t.name} grows${opinion(t, o) > 35 ? ' — an alliance may be within reach at the next gathering' : ''}.` };
     }
     if (id === 'feast') {
       const need = needsWeek(c); c.store *= 0.2; c.grain = Math.max(0, c.grain - need * 3); c.cond = Math.max(0.5, c.cond - 0.08);
@@ -4164,9 +4258,9 @@
     return sr.slice(0, 4).concat(out.filter(r => r.unk > 0.06 && !taken.has(r.dir)).sort((p, q) => q.unk - p.unk)).slice(0, 4);
   }
   function expeditionTargets(W, c) {
-    return W.deposits.filter(d => EXP_GOODS[d.type] && knows(W, d.x, d.y) && Math.hypot(d.x - c.x, d.y - c.y) < 260000 && canReach(W, c, d.x, d.y))
-      .map(d => ({ d, km: Math.round(Math.hypot(d.x - c.x, d.y - c.y) / 1000), guard: nearClans(W, d.x, d.y, 25000).filter(o => o.tribe !== c.tribe) })).filter(sameSpot(c))
-      .sort((a, b) => a.km - b.km).slice(0, 7);
+    const rows = W.deposits.filter(d => EXP_GOODS[d.type] && knows(W, d.x, d.y) && Math.hypot(d.x - c.x, d.y - c.y) < 260000 && canReach(W, c, d.x, d.y))
+      .map(d => ({ d, km: Math.round(Math.hypot(d.x - c.x, d.y - c.y) / 1000), guard: nearClans(W, d.x, d.y, 25000).filter(o => o.tribe !== c.tribe) })).filter(sameSpot(c));
+    return bySource(rows, e => { const room = Math.max(0, capOf(e.d.type) - (c.goods[e.d.type] || 0)); e.yr = Math.min(EXP_GOODS[e.d.type], room); e.full = room <= 0; return worth(W, c.tribe, e.d.type) * e.yr; }); // the haul is held under what a clan keeps
   }
   function expeditionRisk(W, c, h, leader, others, risk) {
     // the head himself goes if he is able; otherwise young men go for him
@@ -4206,15 +4300,16 @@
       else { if (W.rand() < 0.5) { c.store *= 0.6; note2 = ` The ${gt.name} demanded food as the price of passage.`; } else { note2 = ` The ${gt.name} grumbled at strangers taking from their land.`; affect(W, gt, t, -5, 'Took from our land'); } }
     }
     const R = expeditionRisk(W, c, h, leader, hostile, risk);
+    amount = Math.min(amount, Math.max(0, capOf(d.type) - (c.goods[d.type] || 0))); // a clan keeps no more than its store holds
     c.goods[d.type] = (c.goods[d.type] || 0) + amount;
     if (d.type === 'flint') c.tool = Math.max(c.tool, d.q); if (d.type === 'axe') c.tool = Math.max(c.tool, 0.95 * d.q);
     if (!t.seen.has(d.type)) { t.seen.add(d.type); t.sources = t.sources || new Set(); t.sources.add(d.type); }
     wear(W, c.x, c.y, d.x, d.y, 1.2); reveal(W, d.x, d.y, 18000);
     P.renown += 1;
     const who = leader ? h.name : `Young men sent by ${h.name}`;
-    houseNote(W, `${who} brought back ${amount} ${GOOD_NAMES[d.type].toLowerCase()} from ${tg.km} km away.`);
+    houseNote(W, amount ? `${who} brought back ${amount} ${GOOD_NAMES[d.type].toLowerCase()} from ${tg.km} km away.` : `${who} found the ${GOOD_NAMES[d.type].toLowerCase()} ${tg.km} km away, but the store of it was full, and brought back none.`);
     const sm = smokeSeen(W, c, [[c.x, c.y], [(c.x + d.x) / 2, (c.y + d.y) / 2], [d.x, d.y]], d.x, d.y); if (sm) houseNote(W, sm.replace('From the high ground they saw', 'On the road to the ' + DEPOSITS[d.type].name.toLowerCase() + ' they saw'));
-    return { title: 'The expedition returns', text: `${who} ${leader ? 'leads' : 'make'} the ${tg.km} km journey to the ${DEPOSITS[d.type].name.toLowerCase()} (${d.note}) and bring${leader ? 's' : ''} back <b>${amount} ${GOOD_NAMES[d.type].toLowerCase()}</b>.${note2}${R.lost ? ` ${R.lost === 1 ? 'One of our men was' : R.lost + ' of our men were'} lost.` : ''}${R.headFell ? ` <b>${h.name} was killed.</b>` : ''}${sm ? ' ' + sm : ''}${d.type === 'copper' || d.type === 'tin' ? ' Ore is only worked by settled peoples who know the smith\'s craft — or it can be traded to them.' : ''}` };
+    return { title: 'The expedition returns', text: `${who} ${leader ? 'leads' : 'make'} the ${tg.km} km journey to the ${DEPOSITS[d.type].name.toLowerCase()} (${d.note}) and bring${leader ? 's' : ''} back ${amount ? `<b>${amount} ${GOOD_NAMES[d.type].toLowerCase()}</b>` : `<b>none</b>: the store of ${GOOD_NAMES[d.type].toLowerCase()} was full`}.${note2}${R.lost ? ` ${R.lost === 1 ? 'One of our men was' : R.lost + ' of our men were'} lost.` : ''}${R.headFell ? ` <b>${h.name} was killed.</b>` : ''}${sm ? ' ' + sm : ''}${d.type === 'copper' || d.type === 'tin' ? ' Ore is only worked by settled peoples who know the smith\'s craft — or it can be traded to them.' : ''}` };
   }
 
   // =====================================================================
@@ -4292,11 +4387,23 @@
 
   // ---- claimed sources: the house's household works a quarry, salt pan or ore vein it has claimed ----
   const CLAIM_YIELD = { flint: 2, axe: 1, amber: 1, ochre: 1, salt: 1, copper: 1, tin: 1, clay: 2 }, CLAIM_CAP = { flint: 10, axe: 5, amber: 6, ochre: 6, salt: 6, copper: 8, tin: 5, clay: 6 };
+  const GOOD_CAP = { flint: 8, axe: 4, tin: 4 }, capOf = g => GOOD_CAP[g] || 6; // what acquireGoods holds a clan to
+  // one row for each kind of source (the nearest), then a second of a kind while there are fewer than 7 rows; the dearest to the clan first, then the nearest
+  function bySource(rows, valueOf) {
+    const seen = new Map(), out = [], more = [];
+    for (const e of rows.slice().sort((a, b) => a.km - b.km)) { const n = seen.get(e.d.type) || 0; seen.set(e.d.type, n + 1); if (!n) out.push(e); else if (n === 1) more.push(e); }
+    for (const e of more) if (out.length < 7) out.push(e);
+    for (const e of out) e.worthYr = valueOf(e);
+    return out.sort((a, b) => b.worthYr - a.worthYr || a.km - b.km);
+  }
   const sameSpot = c => (e, i, a) => !a.some((f, j) => f !== e && f.d.type === e.d.type && f.km === e.km && compass(f.d.x - c.x, f.d.y - c.y) === compass(e.d.x - c.x, e.d.y - c.y) && (f.d.q > e.d.q || f.d.q === e.d.q && j < i));
   function claimTargets(W, c) {
     const P = W.player, have = new Set((P.claims || []).map(k => k.d));
-    return W.deposits.filter(d => CLAIM_YIELD[d.type] && !have.has(d) && knows(W, d.x, d.y) && Math.hypot(d.x - c.x, d.y - c.y) < 180000 && canReach(W, c, d.x, d.y))
-      .map(d => ({ d, km: Math.round(Math.hypot(d.x - c.x, d.y - c.y) / 1000), guard: nearClans(W, d.x, d.y, 20000).filter(o => o.tribe !== c.tribe) })).filter(sameSpot(c)).sort((a, b) => a.km - b.km).slice(0, 7);
+    const rows = W.deposits.filter(d => CLAIM_YIELD[d.type] && !have.has(d) && knows(W, d.x, d.y) && Math.hypot(d.x - c.x, d.y - c.y) < 180000 && canReach(W, c, d.x, d.y))
+      .map(d => ({ d, km: Math.round(Math.hypot(d.x - c.x, d.y - c.y) / 1000), guard: nearClans(W, d.x, d.y, 20000).filter(o => o.tribe !== c.tribe) })).filter(sameSpot(c));
+    return bySource(rows, e => { // the yield a year as the trips will give it (rivals at the source take their share), held under the cap; its worth here
+      const rv = W.clans.filter(o => o.claim === e.d && o !== c), shared = rv.every(o => dealWith(W, o) === 'share'), y0 = rv.length ? Math.max(1, Math.round(CLAIM_YIELD[e.d.type] / (1 + rv.length * (shared ? 0.4 : 0.8)))) : CLAIM_YIELD[e.d.type], room = Math.max(0, CLAIM_CAP[e.d.type] - (c.goods[e.d.type] || 0));
+      e.yr = Math.min(y0 * 4, room); e.full = room <= 0; return worth(W, c.tribe, e.d.type) * e.yr; });
   }
   function claimsYear(W) {} // (kept for save compatibility)
   function claimsTrips(W) {
@@ -4485,8 +4592,10 @@
       if (c === pc || c.people.length < 8) continue;
       if (c.claim && (Math.hypot(c.claim.x - c.x, c.claim.y - c.y) > 80000 || !canReach(W, c, c.claim.x, c.claim.y))) c.claim = null;
       if (!c.claim && W.rand() < 0.3) { // take up a source near the camp
-        let best = null, bd = 50000; for (const d of W.deposits) { if (!CLAIM_YIELD[d.type] || (c.barred && c.barred.d === d && c.barred.until > W.week)) continue; const dd = Math.hypot(d.x - c.x, d.y - c.y); if (dd < bd && canReach(W, c, d.x, d.y) && (c.goods[d.type] || 0) < 3) { bd = dd; best = d; } }
-        if (best) c.claim = best;
+        let best = null, bd = 50000, dear = null, bw = 0, dw = 0; for (const d of W.deposits) { if (!CLAIM_YIELD[d.type] || (c.barred && c.barred.d === d && c.barred.until > W.week)) continue; const dd = Math.hypot(d.x - c.x, d.y - c.y); if (dd >= 50000 || !canReach(W, c, d.x, d.y)) continue;
+          if (dd < bd && (c.goods[d.type] || 0) < 3) { bd = dd; best = d; }
+          if ((c.goods[d.type] || 0) < 2) { const w = worth(W, c.tribe, d.type); if (w > bw || (w === bw && dear && dd < dw)) { bw = w; dear = d; dw = dd; } } } // within 50 km: the dearest of what it holds under 2 of, else the nearest
+        if (dear) best = dear; if (best) c.claim = best;
       }
       const d = c.claim; if (!d) continue;
       // others working the same source: the stronger clan gets the better of it
@@ -4660,7 +4769,7 @@
     }
   }
   // the deeds under Act: plot, strike, court, confront
-  function courtCost(c) { for (let i = GIFTABLE.length - 1; i >= 0; i--) if (c.goods[GIFTABLE[i]] > 0) return { good: GIFTABLE[i] }; return needsWeek(c) * 2 <= c.store ? { food: true } : null; }
+  function courtCost(W, c) { const gf = giftFrom(W, c, 2, false, { dry: true, food: 2 }); return gf.met >= 0.999 ? gf : null; } // a gift worth two, in goods and (if short) food
   function plotDeeds(W, h, c, t, ready, yl) {
     const P = W.player, out = [], pl = P.plot;
     if (!pl) {
@@ -4677,9 +4786,9 @@
     }
     const wp = (W.plots || []).find(q => q.target === h && q.tribe === t && q.found != null);
     if (wp && h.alive && wp.cand.alive && wp.cand.clan && wp.cand.clan.head === wp.cand && t.headman === h) out.push({ id: 'confront', icon: '🤺', label: `Make ${wp.cand.name} show ${hisHer(wp.cand)} hand`, hint: `The clans choose now, as they would if ${wp.cand.name} struck. Your chance of keeping the seat is about ${Math.round(keepChance(W, t, h, wp.cand) * 100)}%`, ok: true, why: '' });
-    const others = t.clans.filter(o => o !== c && o.alive), cost = courtCost(c), cr = P.courted || {}, fresh = o => cr[o.id] == null || W.week - cr[o.id] >= 52;
+    const others = t.clans.filter(o => o !== c && o.alive), cost = courtCost(W, c), cr = P.courted || {}, fresh = o => cr[o.id] == null || W.week - cr[o.id] >= 52;
     if (others.length) {
-      const si = seatInfo(W), lean = o => { const r = si && si.rows.find(x => x.clan === o); return r ? r.leanWord + (r.lean === 'them' ? ', whatever gifts come' : ' today') : ''; }, what = cost ? (cost.good ? `a gift of ${GOOD_NAMES[cost.good].toLowerCase()}` : 'two weeks of the clan\'s food') : '';
+      const si = seatInfo(W), lean = o => { const r = si && si.rows.find(x => x.clan === o); return r ? r.leanWord + (r.lean === 'them' ? ', whatever gifts come' : ' today') : ''; }, what = cost ? cost.text : '';
       out.push({ id: 'court', icon: '🎁', label: 'Court a clan', hint: `Gifts and fair words, one clan at a time, once a year for each. They think better of your clan (+8). It costs ${cost ? what : 'a gift or two weeks of food'}`, ok: !!cost && others.some(fresh), why: !cost ? 'You have nothing to give, and too little food to spare' : 'You have courted every clan this year',
         targets: others.filter(fresh).map(o => ({ ref: o, label: `Court the ${o.name} clan`, hint: `${lean(o) ? lean(o)[0].toUpperCase() + lean(o).slice(1) + '. ' : ''}${cost ? 'Costs ' + what : 'You cannot pay'}` })) });
     }
@@ -4698,10 +4807,10 @@
     if (id === 'court') {
       const o = A.targets[k] && A.targets[k].ref; if (!o || !o.alive || o.tribe !== t) return null; const cr = P.courted || (P.courted = {});
       if (cr[o.id] != null && W.week - cr[o.id] < 52) return { title: 'Not possible', text: `You courted the ${o.name} clan not long ago. They will take no more gifts this year.` };
-      const cost = courtCost(c); if (!cost) return { title: 'Not possible', text: 'You have nothing to give, and too little food to spare.' };
-      let gift; if (cost.good) { c.goods[cost.good]--; gift = GOOD_NAMES[cost.good].toLowerCase(); } else { eatStore(c, needsWeek(c) * 2); gift = 'two weeks of food'; }
+      const cost = courtCost(W, c); if (!cost) return { title: 'Not possible', text: 'You have nothing to give, and too little food to spare.' };
+      const gf2 = giftFrom(W, c, 2, false, { food: 2 }), gift = gf2.text;
       affect(W, o, c, 8, `Gifts from ${h.name}`); cr[o.id] = W.week; houseNote(W, `${h.name} courted the ${o.name} clan with ${gift}.`);
-      return { title: `The ${o.name} are courted`, text: `${gift[0].toUpperCase() + gift.slice(1)} goes to ${o.head ? o.head.name : 'the elders'} of the ${o.name} clan, with fair words. They think better of your clan (+8).` };
+      return { title: `The ${o.name} are courted`, text: `${gift[0].toUpperCase() + gift.slice(1)} ${gf2.one ? 'goes' : 'go'} to ${o.head ? o.head.name : 'the elders'} of the ${o.name} clan, with fair words. They think better of your clan (+8).` };
     }
     if (id === 'confront') {
       const wp = (W.plots || []).find(q => q.target === h && q.tribe === t && q.found != null); if (!wp || t.headman !== h || !wp.cand.clan || wp.cand.clan.head !== wp.cand) return null; const rv = wp.cand.clan; // faceRival weighs rv.head: the one the hint named
@@ -4820,23 +4929,74 @@
   // =====================================================================
   //  TRADERS — once there are villages and craft goods, men make a living carrying goods between them
   // =====================================================================
+  // ---- traders: a load by worth, a fair return, roads that speed the walk ----
+  const spareOf = (W, c, list) => list.filter(g => (c.goods[g] || 0) >= 2 && !isKept(W, c, g)); // goods held 2 or more of (one stays at home), not Kept
+  // how well two villages suit: what each has to spare that the other finds dearer
+  function tradeGain(W, a, b) {
+    const wa = worthMap(W, a.tribe), wb = worthMap(W, b.tribe); let s = 0;
+    for (const g of LOAD_GOODS) { const bw = BASE_WORTH[g] || 1; if ((a.goods[g] || 0) >= 2 && !isKept(W, a, g)) s += Math.max(0, bw * (wb[g] - wa[g])); if ((b.goods[g] || 0) >= 2 && !isKept(W, b, g)) s += Math.max(0, bw * (wa[g] - wb[g])); }
+    return s;
+  }
+  const tradeScore = (W, a, b, km) => tradeGain(W, a, b) / (1 + km / 80);
+  // what home would put in a trader's pack for dest: the goods dearest there first, then any spare, up to LOAD_WORTH (in home's worth); grain units (up to 4, keeping 20 weeks) if food is dearer there
+  function traderLoad(W, home, dest) {
+    const wh = worthMap(W, home.tribe), wd = worthMap(W, dest.tribe), pack = {}; let lw = 0;
+    const sp = spareOf(W, home, LOAD_GOODS).filter(g => room(dest, g) >= 1).map(g => { const bw = BASE_WORTH[g] || 1; return { g, gain: bw * (wd[g] - wh[g]), w: bw * wh[g] }; }).sort((p, q) => q.gain - p.gain);
+    for (const s of sp) for (let n = Math.min(home.goods[s.g] - 1, room(dest, s.g)); n > 0; n--) { if (lw > 0 && lw + s.w > LOAD_WORTH + 1e-9) break; pack[s.g] = (pack[s.g] || 0) + 1; lw += s.w; }
+    const units = foodTotal(home) > needsWeek(home) * 20 && wd.grain > wh.grain ? Math.min(4, grainSpare(home)) : 0;
+    return { pack, units, food: units * GRAIN_UNIT, worth: lw + units * wh.grain };
+  }
+  // what the partner pays back for a load, from its own stocks as they stand: goods held 2 or more of (one stays), those dearest at the trader's home first, then grain units over 20 weeks,
+  // until 0.85 of the load's worth (in the partner's terms) is met, never above the whole of it
+  function payPlan(W, home, dest, pack, foodKcal) {
+    const wh = worthMap(W, home.tribe), wd = worthMap(W, dest.tribe), back = {}; let L = (foodKcal / GRAIN_UNIT) * wd.grain, got = 0, units = 0;
+    for (const g in pack) L += pack[g] * (BASE_WORTH[g] || 1) * wd[g];
+    const tgt = 0.85 * L, sp = spareOf(W, dest, LOAD_GOODS).filter(g => room(home, g) >= 1).map(g => { const bw = BASE_WORTH[g] || 1; return { g, gain: bw * (wh[g] - wd[g]), w: bw * wd[g] }; }).sort((p, q) => q.gain - p.gain);
+    for (const s of sp) for (let n = Math.min(dest.goods[s.g] - 1, room(home, s.g)); n > 0 && got < tgt - 1e-9; n--) { if (got + s.w > L + 1e-9) break; back[s.g] = (back[s.g] || 0) + 1; got += s.w; }
+    const spare = grainSpare(dest); while (units < spare && got < tgt - 1e-9 && got + wd.grain <= L + 1e-9) { units++; got += wd.grain; }
+    let hw = units * wh.grain; for (const g in back) hw += back[g] * (BASE_WORTH[g] || 1) * wh[g];
+    return { back, units, food: units * GRAIN_UNIT, got, L, unpaid: Math.max(0, L - got), homeWorth: hw };
+  }
+  // the level of the way at a point: the best of the tracks, paths and roads leaving its cell (0 none, 1 track, 2 path, 3 road)
+  function roadLevelAt(W, x, y) {
+    const R = W.roads; if (!R || !R.size) return 0; const i = cellAt(x, y), cx = i % N, cy = (i / N) | 0; let best = 0;
+    for (const [dx, dy] of NB8) { const x2 = cx + dx, y2 = cy + dy; if (x2 < 0 || y2 < 0 || x2 >= N || y2 >= N) continue; const j = y2 * N + x2, v = R.get(i < j ? i * 40000 + j : j * 40000 + i); if (v) { const l = roadLevel(v); if (l > best) best = l; } }
+    return best;
+  }
+  const traderStep = (W, x, y) => { const l = roadLevelAt(W, x, y); return l >= 3 ? 160000 : l === 2 ? 130000 : 100000; }; // metres a month: a path or road quickens the walk
+  // the places a trader stands after each month of the walk there and back (the same steps traderMonth takes)
+  function walkSteps(W, home, dest) {
+    const pts = [];
+    for (const [fx, fy, to] of [[home.x, home.y, dest], [dest.x, dest.y, home]]) { let x = fx, y = fy; for (let it = 0; it < 120; it++) { const dx = to.x - x, dy = to.y - y, d = Math.hypot(dx, dy), st = traderStep(W, x, y); if (d <= st) break; x += dx / d * st; y += dy / d * st; pts.push([x, y]); } }
+    return pts;
+  }
+  const robbersAt = (W, home, dest, x, y) => { let n = 0; for (const o of nearClans(W, x, y, 12000)) if (o.tribe !== home.tribe && o.tribe !== dest.tribe && opinion(o.tribe, home.tribe) < -25) n++; return n; };
+  // the chance the trader is robbed somewhere on the way there or back, as things stand now
+  function robberChance(W, home, dest) { let keep = 1; for (const [x, y] of walkSteps(W, home, dest)) { const n = robbersAt(W, home, dest, x, y); if (n) keep *= Math.pow(0.85, n); } return 1 - keep; }
+  // the rows of the trader deed: each village the clan could send to, the load, what would come back, the robbers' chance
+  function traderRows(W, c) {
+    const t = c.tribe;
+    return W.clans.filter(o => o !== c && o.settled && knows(W, o.x, o.y) && canReach(W, c, o.x, o.y) && Math.hypot(o.x - c.x, o.y - c.y) < 260000 && Math.hypot(o.x - c.x, o.y - c.y) > 10000 && !(o.tribe !== t && opinion(o.tribe, t) < -20))
+      .map(o => { const km = Math.round(Math.hypot(o.x - c.x, o.y - c.y) / 1000); return { o, km, score: tradeScore(W, c, o, km) }; })
+      .sort((a, b) => b.score - a.score).slice(0, 6)
+      .map(e => { const load = traderLoad(W, c, e.o), plan = payPlan(W, c, e.o, load.pack, load.food), wd = worthMap(W, e.o.tribe); let theirs = load.units * wd.grain; for (const g in load.pack) theirs += load.pack[g] * (BASE_WORTH[g] || 1) * wd[g];
+        return { o: e.o, km: e.km, score: e.score, load, loadText: goodsText(load.pack, load.units > 0), loadWorthThem: theirs, back: plan.back, backUnits: plan.units, backText: goodsText(plan.back, plan.units > 0), backWorthHere: plan.homeWorth, robber: robberChance(W, c, e.o) }; });
+  }
   function traderMonth(W) {
     W.traders = W.traders || []; const P = W.player;
-    // set out: a settled clan with a surplus sends a trader to a village that lacks it
+    // set out: a settled clan with a surplus sends a trader to a village that finds it dear
     if (W.settlements && W.settlements.length >= 2) for (const c of W.clans) {
       if (!c.settled || c.people.length < 15 || W.rand() > 0.05) continue;
       if (W.traders.filter(r => r.home === c).length >= 2) continue;
-      const surplus = TRADEABLE.concat(['copper', 'tin', 'bronze']).filter(g => (c.goods[g] || 0) >= 3); if (!surplus.length && c.grain < needsWeek(c) * 20) continue;
+      const surplus = LOAD_GOODS.filter(g => (c.goods[g] || 0) >= 3 && !isKept(W, c, g)); if (!surplus.length && c.grain < needsWeek(c) * 20) continue;
       let best = null, bs = 0;
       for (const o of W.clans) {
         if (o === c || !o.settled) continue; const km = Math.hypot(o.x - c.x, o.y - c.y) / 1000; if (km > 260 || km < 15 || !canReach(W, c, o.x, o.y)) continue; // the near-enough test first (it is cheap)
         if (o.tribe !== c.tribe && opinion(o.tribe, c.tribe) < -20) continue;
-        const want = surplus.filter(g => !(o.goods[g] > 0)).length + (o.cond < 0.8 && c.grain > 0 ? 1 : 0), offer = TRADEABLE.concat(['copper', 'tin', 'bronze']).filter(g => (o.goods[g] || 0) >= 2 && !(c.goods[g] > 0)).length;
-        const sc = (want + offer) / (1 + km / 80); if (sc > bs) { bs = sc; best = o; }
+        const sc = tradeScore(W, c, o, km); if (sc > bs) { bs = sc; best = o; }
       }
       if (!best || bs < 0.5) continue;
-      const pack = {}; for (const g of surplus) { if (best.goods[g] > 0) continue; const n = Math.min(2, c.goods[g] - 1); if (n > 0) { pack[g] = n; c.goods[g] -= n; } }
-      const food = c.grain > needsWeek(c) * 20 ? needsWeek(c) * 2 : 0; c.grain -= food;
+      const ld = traderLoad(W, c, best), pack = ld.pack, food = ld.food; for (const g in pack) c.goods[g] -= pack[g]; if (food) takeFood(c, food);
       if (!Object.keys(pack).length && !food) continue;
       const by = W.comp[cellAt(best.x, best.y)] !== W.comp[cellAt(c.x, c.y)];
       W.traders.push({ id: (W.trId = (W.trId || 0) + 1), home: c, to: best, x: c.x, y: c.y, pack, food, back: null, leg: 0, by, name: nameIn(c.tribe.kult, W.rand, 2) });
@@ -4846,7 +5006,7 @@
     for (const r of [...W.traders]) {
       const dest = r.leg === 0 ? r.to : r.home;
       if (!dest.alive) { W.traders.splice(W.traders.indexOf(r), 1); continue; }
-      const dx = dest.x - r.x, dy = dest.y - r.y, d = Math.hypot(dx, dy), step = 100000; // about 25 km a week
+      const dx = dest.x - r.x, dy = dest.y - r.y, d = Math.hypot(dx, dy), step = traderStep(W, r.x, r.y); // 100 km a month, more on a path or a road
       if (d > step) { const nx = r.x + dx / d * step, ny = r.y + dy / d * step; wear(W, r.x, r.y, nx, ny, 0.6); r.x = nx; r.y = ny;
         // bandits: hostile camps along the way
         for (const o of nearClans(W, r.x, r.y, 12000)) if (o.tribe !== r.home.tribe && o.tribe !== r.to.tribe && opinion(o.tribe, r.home.tribe) < -25 && W.rand() < 0.15) {
@@ -4856,26 +5016,24 @@
         if (P && P.known && P.head.clan && (r.home.tribe === P.head.clan.tribe || r.to.tribe === P.head.clan.tribe)) reveal(W, r.x, r.y, 8000);
         continue; }
       r.x = dest.x; r.y = dest.y;
-      if (r.leg === 0) { // at the market
-        const o = r.to; for (const g in r.pack) o.goods[g] = (o.goods[g] || 0) + r.pack[g]; o.grain += r.food;
-        const back = {}; for (const g of TRADEABLE.concat(['copper', 'tin', 'bronze'])) if ((o.goods[g] || 0) >= 2 && !(r.home.goods[g] > 0)) { back[g] = 1; o.goods[g]--; }
-        if (!Object.keys(back).length && o.grain > needsWeek(o) * 4) { r.food = needsWeek(r.home); o.grain -= r.food; } else r.food = 0;
-        r.gave = r.pack; r.pack = back; r.leg = 1;
-        affect(W, o, r.home, 5, `Traders came from ${r.home.village || r.home.name}`); if (o.tribe !== r.home.tribe) { affect(W, o.tribe, r.home.tribe, 4, 'Trade'); rel(o.tribe, r.home.tribe).trade++; }
+      if (r.leg === 0) { // at the market: the partner pays about 0.85 of the load's worth, in what it can spare
+        const o = r.to, plan = payPlan(W, r.home, o, r.pack, r.food);
+        for (const g in r.pack) o.goods[g] = (o.goods[g] || 0) + r.pack[g]; o.grain = (o.grain || 0) + r.food;
+        for (const g in plan.back) o.goods[g] -= plan.back[g]; if (plan.food) takeFood(o, plan.food);
+        r.gave = r.pack; r.gaveFood = r.food; r.pack = plan.back; r.food = plan.food; r.leg = 1; W._tradeGrain = (W._tradeGrain || 0) + r.gaveFood + plan.food;
+        affect(W, o, r.home, 5 + Math.round(plan.unpaid / 2), `Traders came from ${r.home.village || r.home.name}`); if (o.tribe !== r.home.tribe) { affect(W, o.tribe, r.home.tribe, 4, 'Trade'); rel(o.tribe, r.home.tribe).trade++; }
         traderTale(W, r);
         // crafts travel with the goods
         if (r.home.tribe.metal >= 0.3 && o.tribe.metal < 0.3 && o.settled && W.rand() < 0.1) o.tribe.metal = Math.max(o.tribe.metal, 0.12);
       } else { // home again
-        for (const g in r.pack) r.home.goods[g] = (r.home.goods[g] || 0) + r.pack[g]; r.home.grain += r.food;
+        for (const g in r.pack) r.home.goods[g] = (r.home.goods[g] || 0) + r.pack[g]; r.home.grain = (r.home.grain || 0) + r.food;
         W.traders.splice(W.traders.indexOf(r), 1);
-        if (P && P.head.clan === r.home) { const got = Object.keys(r.pack).map(g => GOOD_NAMES[g].toLowerCase()); if (got.length) houseNote(W, `${r.player ? 'Our trader' : 'A trader sent out by the clan,'} ${r.name} came back from ${r.to.village || r.to.name} with ${got.join(', ')}.`); }
+        if (P && P.head.clan === r.home) houseNote(W, `${r.player ? 'Our trader' : 'A trader sent out by the clan,'} ${r.name} took ${goodsText(r.gave, r.gaveFood > 0) || 'goods'} to ${r.to.village || r.to.name} and came back with ${goodsText(r.pack, r.food > 0) || 'nothing'}.`);
       }
     }
   }
   function sendTrader(W, c, o, h) {
-    const surplus = TRADEABLE.concat(['copper', 'tin', 'bronze']).filter(g => (c.goods[g] || 0) >= 2);
-    const pack = {}; for (const g of surplus) { const n = Math.min(2, c.goods[g] - 1); if (n > 0) { pack[g] = n; c.goods[g] -= n; } }
-    const food = c.grain > needsWeek(c) * 6 ? needsWeek(c) * 2 : 0; c.grain -= food;
+    const ld = traderLoad(W, c, o), pack = ld.pack, food = ld.food; for (const g in pack) c.goods[g] -= pack[g]; if (food) takeFood(c, food);
     W.traders = W.traders || []; W.traders.push({ id: (W.trId = (W.trId || 0) + 1), home: c, to: o, x: c.x, y: c.y, pack, food, leg: 0, name: h ? h.name : makeName(W.rand, 2), player: true });
     return { pack, food };
   }
@@ -4884,10 +5042,10 @@
   //  DEALINGS — standing orders. The house says once how it answers a killing, a sworn vengeance, raiders,
   //  and who may share its sources; the game then acts on that by itself and reports what happened.
   // =====================================================================
-  function pol(W) { const P = W.player; if (!P.pol) P.pol = { blood: 'comp', threat: 'guard', raid: 'ask', quarrel: 'ask', deal: {} }; if (!P.pol.quarrel) P.pol.quarrel = 'ask'; for (const k of ROUTINE_KEYS) if (!P.pol[k]) P.pol[k] = 'ask'; for (const k of ORDER_KEYS) if (!P.pol[k]) P.pol[k] = 'ask'; return P.pol; }
+  function pol(W) { const P = W.player; if (!P.pol) P.pol = { blood: 'comp', threat: 'guard', raid: 'ask', quarrel: 'ask', trader: 'ask', deal: {} }; if (!P.pol.quarrel) P.pol.quarrel = 'ask'; if (!P.pol.trader) P.pol.trader = 'ask'; for (const k of ROUTINE_KEYS) if (!P.pol[k]) P.pol[k] = 'ask'; for (const k of ORDER_KEYS) if (!P.pol[k]) P.pol[k] = 'ask'; return P.pol; }
   const AUTOKEY = { blood: 'blood', vengeance: 'threat', raided: 'raid', quarrel: 'quarrel', gathering: 'gather', omen: 'omen', toobig: 'split', friendneed: 'friend', sickness: 'sick', exiles: 'exiles', oath: 'oath', foundling: 'found', rivalry: 'seat', slight: 'slight', oathback: 'oathback', exilesback: 'exback', foundback: 'foundback' }, AUTOIX = { blood: { revenge: 0, comp: 1, forgive: 2 }, threat: { comp: 0, guard: 1, ignore: 2 }, raid: { fight: 0, pay: 1, flee: 2 }, quarrel: { peace: 0, stand: 1, fight: 2 },
     gather: { gifts: 0, trade: 1, keep: 2 }, omen: { offer: 0, quiet: 1, sign: 2 }, split: { letgo: 0, hold: 1 }, friend: { give: 0, send: 1 }, sick: { scatter: 0, tend: 1 }, exiles: { place: 0, feed: 1, turn: 2 }, oath: { swear: 0, friendship: 1, refuse: 2 }, found: { take: 0, other: 1, refuse: 2 },
-    seat: { face: 0, buy: 1, step: 2 }, slight: { gift: 0, kind: 1, pass: 2 }, oathback: { keep: 0, food: 1, break: 2 }, exback: { refuse: 0, pay: 1, hand: 2 }, foundback: { choose: 0, send: 1, keep: 2 } };
+    seat: { face: 0, buy: 1, step: 2 }, slight: { gift: 0, kind: 1, pass: 2 }, trader: { send: 0 }, oathback: { keep: 0, food: 1, break: 2 }, exback: { refuse: 0, pay: 1, hand: 2 }, foundback: { choose: 0, send: 1, keep: 2 } };
   const ORDER_KEYS = ['seat', 'slight', 'oathback', 'exback', 'foundback'];
   // routine matters the house may answer by standing order; they are answered quietly (a house note, no notice) so skipping ahead runs on
   const ROUTINE_KEYS = ['gather', 'omen', 'split', 'friend', 'sick', 'exiles', 'oath', 'found'], ROUTINE = new Set(['gathering', 'omen', 'toobig', 'friendneed', 'sickness', 'exiles', 'oath', 'foundling', 'slight']);
@@ -5086,7 +5244,7 @@
   const nearDeposit = (W, c, type, r) => W.deposits.some(d => d.type === type && Math.abs(d.x - c.x) <= r && Math.hypot(d.x - c.x, d.y - c.y) <= r);
   const hasClay = (W, c) => (c.goods.clay || 0) > 0 || nearDeposit(W, c, 'clay', 15000);
   const potF = c => Math.min(1, (c.goods.pots || 0) / Math.max(3, c.people.length / 6));
-  const keepG = c => 0.995 + (c.works && c.works.gran ? 0.003 : 0) + 0.001 * potF(c);
+  const keepG = c => Math.min(0.9995, 0.995 + (c.works && c.works.gran ? 0.003 : 0) + 0.001 * potF(c) + 0.001 * Math.min(3, c.goods.salt || 0));
   const jobsOf = c => { const m = {}; for (const q of c.people) if (q.job) m[q.job] = (m[q.job] || 0) + 1; return m; };
   const RANKS = ['Camp', 'Hamlet', 'Village', 'Large village', 'Town'];
   function rankOf(c) {
@@ -5109,7 +5267,7 @@
     }
     for (const c of W.clans) {
       const g = c.goods; for (const k of ['clay', 'pots', 'leather', 'art']) if (!(g[k] >= 0)) g[k] = 0;
-      g.pots = Math.max(0, g.pots - chance(g.pots * 0.22, rand)); g.leather = Math.max(0, g.leather - chance(g.leather * 0.15, rand)); if (g.art > 0 && rand() < 0.06) g.art--; // pots break, leather wears, treasures go into graves
+      if (g.salt >= 2) g.salt--; /* a measure of salt a year goes into the stores, from a clan holding two or more (one is kept) */ g.pots = Math.max(0, g.pots - chance(g.pots * 0.22, rand)); g.leather = Math.max(0, g.leather - chance(g.leather * 0.15, rand)); if (g.art > 0 && rand() < 0.06) g.art--; // pots break, leather wears, treasures go into graves
       checkWorks(W, c);
       if (!c.settled) { for (const q of c.people) if (q.job) q.job = null; c.rank = 0; continue; }
       const t = c.tribe, cr = t.craft || (t.craft = { pot: 0, tan: 0, art: 0 }), ys = (W.week - (c.settledAt || W.week)) / 52, wk = c.works || {};
@@ -5506,7 +5664,7 @@
         else { let n = 0; for (const ca of a.clans) { const cb = b.clans.slice().sort((x, y) => Math.hypot(x.x - ca.x, x.y - ca.y) - Math.hypot(y.x - ca.x, y.y - ca.y))[0]; if (cb && Math.hypot(cb.x - ca.x, cb.y - ca.y) < 200000 && n < 3 && exchange(W, ca, cb)) n++; } r.trade += 1; if (r.op < 40) r.op += 1.5; } }
       if (r.tribute) { const to = W.ents.get(r.tribute.to), from = to === a ? b : a;
         if (!to || W.week > r.tribute.until || warriors(from) > warriors(to) * 1.1) { r.tribute = null; if (to) { note(W, from, `We pay the ${to.name} no more tribute.`); note(W, to, `The ${from.name} pay us tribute no longer.`); const P = W.player; if (P && !P.over && P.head.alive && P.head.clan && P.head.clan.tribe === to) { { if (P.told) { delete P.told['trib' + from.id]; } houseNote(W, `The ${from.name} stopped paying tribute.`); } notice(W, 'The tribute ends', `The ${from.name} pay your people tribute no longer. ${warriors(from) > warriors(to) * 1.1 ? 'They have grown too strong to be made to.' : 'The ten years are over.'}`); } } }
-        else { const rc = to.headman && to.headman.clan ? to.headman.clan : to.clans[0], gv = from.clans.slice().sort((x, y) => y.store + y.grain - x.store - x.grain)[0]; if (rc && gv) { const amt = Math.min(gv.store * 0.25, needsWeek(rc) * 4); gv.store -= amt; rc.store += amt; const tr = GIFTABLE.find(g => gv.goods[g] > 1); if (tr) { gv.goods[tr]--; rc.goods[tr] = (rc.goods[tr] || 0) + 1; } const P = W.player; if (P && !P.over && P.head.alive && P.head.clan && P.head.clan.tribe === to) { const dd = Math.round(amt / Math.max(1, needsWeek(rc) / 7)); houseNoteChanged(W, 'trib' + from.id, amt > 0 || tr ? dd : -1, amt > 0 || tr ? `The ${from.name} sent tribute to the ${rc.name} clan: ${dd > 0 ? 'food for ' + dd + ' days' : amt > 0 ? 'a little food' : ''}${amt > 0 && tr ? ' and ' : ''}${tr ? 'some ' + GOOD_NAMES[tr].toLowerCase() : ''}.` : `The ${from.name} sent no tribute this year; they had nothing to spare.`); } } r.op -= 2; } }
+        else { const rc = to.headman && to.headman.clan ? to.headman.clan : to.clans[0], gv = from.clans.slice().sort((x, y) => y.store + y.grain - x.store - x.grain)[0]; if (rc && gv) { const amt = Math.min(gv.store * 0.25, needsWeek(rc) * 4); gv.store -= amt; rc.store += amt; const tgf = giftFrom(W, gv, 3, true, { to: rc, keep: 1 }), tr = tgf.any ? tgf.text : ''; const P = W.player; if (P && !P.over && P.head.alive && P.head.clan && P.head.clan.tribe === to) { const dd = Math.round(amt / Math.max(1, needsWeek(rc) / 7)); houseNoteChanged(W, 'trib' + from.id, amt > 0 || tr ? dd : -1, amt > 0 || tr ? `The ${from.name} sent tribute to the ${rc.name} clan: ${dd > 0 ? 'food for ' + dd + ' days' : amt > 0 ? 'a little food' : ''}${amt > 0 && tr ? ' and ' : ''}${tr}.` : `The ${from.name} sent no tribute this year; they had nothing to spare.`); } } r.op -= 2; } }
     }
   }
   // =====================================================================
@@ -5535,9 +5693,9 @@
     if (cast.friend && (cast.friend.clan.cond < 0.9 || W.rand() < 0.4)) { P.lastTale = W.week; const q = cast.friend;
       pushEvent(W, { type: 'friendneed', key: q.id, title: `${q.name} comes to your fire`, text: `${q.name} of the ${q.clan.name} clan, your friend ${(n => n < 2 ? 'this past year' : 'these ' + n + ' years')(Math.floor(W.week / 52) - Math.floor((cast.friendSince || W.week) / 52))}, sits down at your fire and will not meet your eye. ${(F => q.clan.cond < 0.9 ? `${F ? 'Her' : 'His'} people are hungry, and ${F ? 'her' : 'his'} children thin.` : `${F ? 'She' : 'He'} must give a bride-gift for ${F ? 'her' : 'his'} son and has nothing worthy to give.`)(q.sex === 'F')} ${q.sex === 'F' ? 'She' : 'He'} does not ask. ${q.sex === 'F' ? 'She' : 'He'} does not need to.`, data: { q },
         options: [{ label: `Give ${q.sex === 'F' ? 'her what she' : 'him what he'} needs`, hint: q.clan.cond < 0.9 ? `About ${Math.round(7 * 1.5)} days of your clan's food. ${q.sex === 'F' ? 'She' : 'He'} will not forget it` : `Something of value, or food if you have none. ${q.sex === 'F' ? 'She' : 'He'} will not forget it` }, { label: `Send ${q.sex === 'F' ? 'her' : 'him'} away with kind words`, hint: 'It costs nothing, and the friendship will cool' }] }); return; }
-    if (cast.rival) { P.lastTale = W.week; const q = cast.rival, tr = GIFTABLE.find(g => c.goods[g] > 0);
+    if (cast.rival) { P.lastTale = W.week; const q = cast.rival, tr = giftFrom(W, c, 2, false, { dry: true, food: 1 }).text;
       pushEvent(W, { type: 'slight', key: q.id, title: `${q.name} mocks you before the clans`, text: `At the evening fire, with half the tribe listening, ${q.name} of the ${q.clan.name} clan asks loudly whether the house of ${P.house} still remembers how to hunt, or only how to talk. People laugh, and wait to see what ${h.name} will do.`, data: { q },
-        options: [{ label: 'Shame him with open hands', hint: tr ? `Give ${GOOD_NAMES[tr].toLowerCase()} to the poorest house there. Your standing rises and his laughter dies` : 'You have nothing of value to give: a feast from your stores instead' }, { label: 'Answer him in kind', hint: `A contest of words${h.age < 50 ? ', then of wrestling' : ''}: skill and a cool head win it. The winner gains renown, the loser is laughed at` }, { label: 'Let it pass', hint: 'No risk. Some will call it weakness' }] }); }
+        options: [{ label: 'Shame him with open hands', hint: tr ? `Give ${tr} to the poorest house there. Your standing rises and his laughter dies` : 'You have nothing of value to give: a feast from your stores instead' }, { label: 'Answer him in kind', hint: `A contest of words${h.age < 50 ? ', then of wrestling' : ''}: skill and a cool head win it. The winner gains renown, the loser is laughed at` }, { label: 'Let it pass', hint: 'No risk. Some will call it weakness' }] }); }
   }
   // =====================================================================
   //  MYTH — what a people believes about itself. Nothing here is true; all of it is acted on.
@@ -5649,9 +5807,9 @@
     // the blood of a legend stands higher among those who tell the legend
     if (pt) { const n = (pt.myths || []).filter(m => m.kind === 'hero' && m.dyn).length, b = Math.min(0.45, n * 0.15); for (const c of W.clans) for (const q of c.people) if (q.dyn) q.lineage = c.tribe === pt ? b : 0; P.lineage = b; P.lineageOf = (pt.myths || []).filter(m => m.kind === 'hero' && m.dyn).map(m => m.title); }
     // a sign, and what the elders make of it
-    if (pt && !W.pending.length && W.week - (P.lastOmen || -9999) > 52 * 11 && rand() < 0.25) { P.lastOmen = W.week; const h = P.head, c = h.clan, f = faithOf(pt), seen = P.omensSeen || (P.omensSeen = []), fresh = OMENS.map((_, i) => i).filter(i => !seen.includes(i)), oi = pick(fresh.length ? fresh : (seen.length = 0, OMENS.map((_, i) => i)), rand), om = c.settled ? OMENS[oi].replace(/\bcamp\b/g, 'village') : OMENS[oi], tr = GIFTABLE.find(g => c.goods[g] > 0); seen.push(oi);
+    if (pt && !W.pending.length && W.week - (P.lastOmen || -9999) > 52 * 11 && rand() < 0.25) { P.lastOmen = W.week; const h = P.head, c = h.clan, f = faithOf(pt), seen = P.omensSeen || (P.omensSeen = []), fresh = OMENS.map((_, i) => i).filter(i => !seen.includes(i)), oi = pick(fresh.length ? fresh : (seen.length = 0, OMENS.map((_, i) => i)), rand), om = c.settled ? OMENS[oi].replace(/\bcamp\b/g, 'village') : OMENS[oi], tr = giftFrom(W, c, 3, false, { dry: true, food: 1 }).text; seen.push(oi);
       pushEvent(W, { type: 'omen', key: W.week, title: 'A sign', text: `${om} ${READING[f]} The whole clan is talking of nothing else, and looking at ${h.name}.`, data: { om },
-        options: [{ label: 'Make the offering', hint: `${tr ? 'Something of value (' + GOOD_NAMES[tr].toLowerCase() + ')' : 'A week of the clan\'s food'} is given up. The people are reassured, and nothing more is said` }, { label: 'Keep the quiet', hint: 'For two years no raid, expedition, voyage, trading journey, migration or new claim. It costs nothing but time, and the other clans approve (+2)' }, { label: 'Say it is only a sign', hint: 'Nothing is given up. If a bad year follows within three years (many deaths, hunger or killings in the clan), they will blame you: −10 with the other clans, and standing lost. If three years pass quietly: renown +4' }] }); }
+        options: [{ label: 'Make the offering', hint: `${tr ? 'Something of value (' + tr + ')' : 'A week of the clan\'s food'} is given up. The people are reassured, and nothing more is said` }, { label: 'Keep the quiet', hint: 'For two years no raid, expedition, voyage, trading journey, migration or new claim. It costs nothing but time, and the other clans approve (+2)' }, { label: 'Say it is only a sign', hint: 'Nothing is given up. If a bad year follows within three years (many deaths, hunger or killings in the clan), they will blame you: −10 with the other clans, and standing lost. If three years pass quietly: renown +4' }] }); }
     if (pt && P.omenIgnored) { const c = P.head.clan, o = P.omenIgnored;
       if (W.week - (o.at != null ? o.at : o.until - 156) >= 52 && c.last && (c.last.deaths >= Math.max(4, Math.ceil(c.people.length * 0.08)) || c.last.starv >= 2 || c.last.killed >= 2)) { for (const x of pt.clans) if (x !== c) affect(W, x, c, -10, `${o.by} scoffed at a sign, and it came true`); for (const fm of familiesOf(c)) if (P.head.fam && fm !== P.head.fam) affect(W, fm, P.head.fam, -8, `${o.by} scoffed at a sign`); P.head.giftPrestige = Math.max(0, (P.head.giftPrestige || 0) - 0.06); P.renown -= 3; P.omenIgnored = null;
         houseNote(W, `The clan suffered, and people say it is because ${o.by} scoffed at the sign.`); notice(W, 'They say it was the sign', `${c.last.deaths} of the clan died this year${c.last.starv >= 2 ? ', some of hunger' : c.last.killed >= 2 ? ', some by the spear' : ''}. Nobody can show it had anything to do with the sign ${o.by} waved away, and everybody believes it did. The other clans think less of yours (−10), and the house's standing falls.`); }
@@ -6224,7 +6382,7 @@
         return R('Turned away', 'They go without a word. It is a cold night for it.'); }
       case 'exilesback': { const f = d.f, O = d.O, mem = exileMem(c, f, d.ids, h);
         if (k === 0) { affect(W, O, t, -30, `${h.name} would not give up ${d.name}`); affect(W, f, h.fam || c, 60, 'Stood between us and the spears'); P.renown += 6; t.threat = Math.max(t.threat || 0, 0.3); houseNote(W, `${h.name} refused to hand ${d.name} over to the ${O.name}.`); return R('Under our roof', `"They are under our roof," ${h.name} says, and that is the end of the talk. The ${O.name} go (−30). ${d.name}'s household would die for yours now. Renown +6.`); }
-        if (k === 1) { eatStore(c, needsWeek(c) * 4); const g = GIFTABLE.find(x => c.goods[x] > 0); if (g) c.goods[g]--; affect(W, O, t, 12, `${h.name} paid the blood-price for ${d.name}`); affect(W, f, h.fam || c, 40, 'Paid our blood-price'); P.renown += 3; houseNote(W, `${h.name} paid the blood-price for ${d.name}.`); return R('The price is paid', `Food${g ? ' and ' + GOOD_NAMES[g].toLowerCase() : ''} change hands, and the ${O.name} say the matter is closed (+12). ${d.name} owes your house everything. Renown +3.`); }
+        if (k === 1) { eatStore(c, needsWeek(c) * 4); const g = giftFrom(W, c, 4, true).text; affect(W, O, t, 12, `${h.name} paid the blood-price for ${d.name}`); affect(W, f, h.fam || c, 40, 'Paid our blood-price'); P.renown += 3; houseNote(W, `${h.name} paid the blood-price for ${d.name}.`); return R('The price is paid', `Food${g ? ' and ' + g : ''} change hands, and the ${O.name} say the matter is closed (+12). ${d.name} owes your house everything. Renown +3.`); }
         const oc = O.clans[0], nf = mem.length ? newFamily(W, oc, mem.slice().sort((a, b) => b.age - a.age)[0]) : null;
         for (const q of mem) { // those of the clan who married them stay, and the marriage is ended
           if (q.sex === 'M') { let kept = null; for (const w2 of c.people) if (w2.spouse === q) { if (mem.includes(w2)) kept = kept || w2; else { w2.spouse = null; w2.widowed = W.week; } } q.spouse = kept; q.wives = kept ? 1 : 0; }
@@ -6329,7 +6487,7 @@
     if (P) { PROF.win.ticks++; if (PROF.win.ticks >= PROF.every) profFlush(W); }
   }
 
-  return { freshCard, canTakeFarming, soilWarn, groundAt, bondWord, tribeKnown, liveSigns, walkWord, SIGN_R, N, CELL, WORLD, HA, FORAGE_R, TRIBE_MAX, tribeMax, BIOMES, GROVES, DEPOSITS, GOOD_NAMES, createWorld, seedFirstPop, step, clanSize, tribeSize, battleOdds, warSides, warBegin, realmWarcall, familiesOf, famMembers, needsWeek, opinion, prestige, isAllied, sameConfed, tribeCenter, roadLevel, pactRoute, playerActions, doAction, seatInfo, dealings, settleFeud, policy: W => pol(W), setPolicy: (W, k, v) => { const p = pol(W); if (k === 'deal' || !(k in p) || (v !== 'ask' && !(AUTOIX[k] && v in AUTOIX[k]))) return; p[k] = v; }, setDeal: (W, id, v) => { if (v === 'auto') delete pol(W).deal[id]; else pol(W).deal[id] = v; }, dealMode: (W, o) => dealWith(W, o), clanHeir, FAITHS, isMatri, faithOf, cultureName, MON, checkPlace, und, speechWord, kultInfo, grainInfo, clanFlow, HOME_R, CREATION, claimsYear, foreignHeld, landLive, landScan, landYear, driveOutOdds, leaveOdds, landTargets, ring, ringSay, BEASTS, beastNm, beastTale, beastOdds, beastWhere, beastToll, beastNear, saveGame, loadGame, saveInfo, ruleInfo, advice, legacy, legacyHTML, TRAITS, epithet, hasTrait, leadWeight, standingWhy, villageInfo, RANKS, SOCIETY, societyOf, rankOf, WORKS, JOBS, walls, canBuild, releaseClaim: (W, i) => { const P = W.player; if (P && P.claims && P.claims[i]) { houseNote(W, `The house gave up its claim to the ${DEPOSITS[P.claims[i].d.type].name.toLowerCase()}.`); P.claims.splice(i, 1); } }, weaponsName, houseSlaves, slaveCount, freeCount, knows, knowsTribe, foodDays, GIFTABLE, STAGES, BOAT_STAGES, METAL_STAGES, boatStage, metalStage, arms, canReach, houseCandidates, choosePlayer, resolve, dynMembers, bloodCount, titlesOf, relWord, vigor, tribeVigor, statureCm, farmSuit, fieldInfo, potential, cellFood, foodBreakdown, kingshipBid, warriors, tribeWealth, confedTribes, confedPeople, newConfed, joinConfed, leaveConfed, formAlliance, kinOf, rulerWord, realmWord, realmInfo, realmHeir, realmRisk, realmPutDown, realmWarList, realmRiseOdds, realmStay, realmNext, realmKingdomNeeds, succession, confedYear,
+  return { worth, worthWord, worthMap, giftFrom, traderRows, traderLoad, payPlan, robberChance, goodUse, GOOD_USE, BASE_WORTH, GRAIN_UNIT, LOAD_WORTH, kept: keptNow, setKeep, goodsText, tradeGain, roadLevelAt, freshCard, canTakeFarming, soilWarn, groundAt, bondWord, tribeKnown, liveSigns, walkWord, SIGN_R, N, CELL, WORLD, HA, FORAGE_R, TRIBE_MAX, tribeMax, BIOMES, GROVES, DEPOSITS, GOOD_NAMES, createWorld, seedFirstPop, step, clanSize, tribeSize, battleOdds, warSides, warBegin, realmWarcall, familiesOf, famMembers, needsWeek, opinion, prestige, isAllied, sameConfed, tribeCenter, roadLevel, pactRoute, playerActions, doAction, seatInfo, dealings, settleFeud, policy: W => pol(W), setPolicy: (W, k, v) => { const p = pol(W); if (k === 'deal' || !(k in p) || (v !== 'ask' && !(AUTOIX[k] && v in AUTOIX[k]))) return; p[k] = v; }, setDeal: (W, id, v) => { if (v === 'auto') delete pol(W).deal[id]; else pol(W).deal[id] = v; }, dealMode: (W, o) => dealWith(W, o), clanHeir, FAITHS, isMatri, faithOf, cultureName, MON, checkPlace, und, speechWord, kultInfo, grainInfo, clanFlow, HOME_R, CREATION, claimsYear, foreignHeld, landLive, landScan, landYear, driveOutOdds, leaveOdds, landTargets, ring, ringSay, BEASTS, beastNm, beastTale, beastOdds, beastWhere, beastToll, beastNear, saveGame, loadGame, saveInfo, ruleInfo, advice, legacy, legacyHTML, TRAITS, epithet, hasTrait, leadWeight, standingWhy, villageInfo, RANKS, SOCIETY, societyOf, rankOf, WORKS, JOBS, walls, canBuild, releaseClaim: (W, i) => { const P = W.player; if (P && P.claims && P.claims[i]) { houseNote(W, `The house gave up its claim to the ${DEPOSITS[P.claims[i].d.type].name.toLowerCase()}.`); P.claims.splice(i, 1); } }, weaponsName, houseSlaves, slaveCount, freeCount, knows, knowsTribe, foodDays, GIFTABLE, STAGES, BOAT_STAGES, METAL_STAGES, boatStage, metalStage, arms, canReach, houseCandidates, choosePlayer, resolve, dynMembers, bloodCount, titlesOf, relWord, vigor, tribeVigor, statureCm, farmSuit, fieldInfo, potential, cellFood, foodBreakdown, kingshipBid, warriors, tribeWealth, confedTribes, confedPeople, newConfed, joinConfed, leaveConfed, formAlliance, kinOf, rulerWord, realmWord, realmInfo, realmHeir, realmRisk, realmPutDown, realmWarList, realmRiseOdds, realmStay, realmNext, realmKingdomNeeds, succession, confedYear,
     foodWhy, foodLimits,
     seasonOf, seasonName, tempOffset, cellAt, lifeStage, siler, fecund, makePerson, stepPop, prof: PROF };
 })();
