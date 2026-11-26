@@ -327,6 +327,20 @@ Still open or worth doing next:
 - A tribe's leader-for-life can be replaced in one edge case (a woman who led only because no eligible man existed).
 - Late-game population runs higher than before, partly from richer fields.
 
+## Trade round (issue #39, simulation half; the screens are a separate piece)
+
+Goods have a worth, set by scarcity near the tribe, and trade is a swap by worth. All in `src/soc.js`, section "goods and worth" (before `acquireGoods`), then `exchange`, the trader block before DEALINGS, `claimTargets`/`expeditionTargets`/`aiClaims`.
+
+- **Worth** (`BASE_WORTH`, `worthMap`, `worth(W, t, g)`, `worthWord`): base worth times `clamp(0.6 / (0.1 + share), 0.5, 4)`, where share is the part of the living clans within 150 km of the tribe's centre that hold 2 or more of the good (for grain: more than 8 weeks of their own need). The brief gave `1.6 / (0.4 + share)`; that never falls to 0.8 (share would have to be 1.6), so "plenty" could never show. `0.6 / (0.1 + share)` gives the base worth at half the clans, "scarce" (2 or more) under a fifth and "plenty" (0.8 or less) from two thirds. Cached in `W._worth` (not saved), each tribe's entry rebuilt once a year; no `W.rand`. Cold cost for all 98 tribes of `after_real7`: 21 ms.
+- **Grain** is traded in units, `GRAIN_UNIT` = 20 x 7 x 2,700 kcal (a week of food for 20 grown people).
+- **Gifts**: `giftFrom(W, c, need, forced, {food, to, keep, dry})` spends the cheapest goods by the giver's worth until the need is met (2 a small gift, 3 an offering or an envoy, 4 a blood-price), tops up with food as each site did, and returns `{spent, worth, food, met, text}`. Every `GIFTABLE.find` site uses it. The player's Kept goods are skipped unless `forced` and nothing else is held. `realmPay`/`realmShare` (the realm's chance-per-good tribute) were left as they were.
+- **Keep**: `P.keep` (absent = bronze, copper tools, amber, axes kept); `SIM.kept(W, g)`, `SIM.setKeep(W, g, on)`. `P.pol.trader` is `'ask'` or `'send'` (`springTrader`, first month of spring, same test as the deed, a house note and no card).
+- **Swaps** (`exchange`): between tribes up to two swaps a call at 50% each (`swapOffer`), a hungry clan buys grain (`buyGrain`); the same-tribe kin rule is as it was. `interTribe` falls back to the gift exchange when no swap is worth making, so neighbours still meet.
+- **Traders**: `traderLoad` (up to `LOAD_WORTH` 10, dearest-there first, grain units), `payPlan` (the partner pays 0.85 of the load, from stock as it stands; the deed shows this same function's answer), `tradeScore`/`tradeGain` (partner choice, also used by `aiPact`), `roadLevelAt` and `traderStep` (130 km a month on a path, 160 on a road), `robberChance` (the deed hint). `SIM.traderRows(W, c)` gives the deed's rows.
+- **Uses**: flint (or an axe) sharpens a tool under 0.6 in `acquireGoods`; salt cuts the store's weekly loss by 5% a measure up to three and adds to `keepG`, and a measure is used a year (`craftsYear`). `SIM.goodUse(g)` is the one-line use.
+- **Sources**: one row per kind of source, dearest a year first; claim and expedition hints show the yield that will be given (under the cap) and its worth; expeditions clamp at the deed.
+- **Coveting**: `covets` (a good the other's tribe finds scarce and holds none of) in `interTribe`; raid wealth is the sum of goods by the raider's worth; `tribeWealth` stays on fixed numbers.
+
 ## Testing a change
 Do all of these before committing:
 
