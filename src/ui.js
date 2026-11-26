@@ -1124,10 +1124,17 @@
   const histList = (e, n = 10) => e.hist.length ? e.hist.slice(-n).reverse().map(h => `<div class="ev"><span class="yr">Y${yr(h.w)}</span>${iconize(esc(h.t))}</div>`).join('') : '<div class="muted">Nothing remembered yet.</div>';
   const counts = ps => { let m = 0, f = 0, k = 0, e = 0, sl = 0; for (const q of ps) { if (q.slave) { sl++; continue; } if (q.age < 15) k++; else if (q.age >= 55) e++; else if (q.sex === 'M') m++; else f++; } return `${m} m${m === 1 ? 'a' : 'e'}n · ${f} wom${f === 1 ? 'a' : 'e'}n · ${k} child${k === 1 ? '' : 'ren'}${e ? ` · ${e} elders` : ''}${sl ? ` · <span style="color:#8a4a1a">${sl} slaves</span>` : ''}`; };
   // standing orders and who may share your sources: set once, and the game acts on them without stopping
+  // Our goods: what the clan holds, what it is worth here, what it is for, and a switch to keep it out of trade and small gifts
+  function goodsList() {
+    const c = W.player && W.player.head && W.player.head.clan; if (!c) return '';
+    const rows = Object.keys(c.goods).filter(k => c.goods[k] > 0).map(k => { const w = SIM.worthWord(W, c.tribe, k), on = SIM.kept(W, k), nm = GOOD_NAMES[k] || k;
+      return `<div class="grow"><span class="gi">${ART.img(k === 'shells' ? 'beads' : k, 22)}</span><span class="gt"><b>${esc(nm)}</b> <b class="gn">${c.goods[k]}</b>${w ? ` <i class="gw ${w}">${w}</i>` : ''}<br><span class="muted">${esc(SIM.goodUse(k))}</span></span><button class="keepsw${on ? ' on' : ''}" data-keep="${k}" role="switch" aria-checked="${on}" aria-label="Keep ${esc(nm.toLowerCase())}">${on ? 'Kept' : 'Keep'}</button></div>`; }).join('');
+    return `<div class="k sec" id="ourGoods" style="margin-top:4px">Our goods</div>${rows || '<div class="muted">The clan holds no goods.</div>'}${rows ? '<div class="muted" style="margin:2px 0 8px">Kept goods are not traded or given in small gifts.</div>' : ''}`;
+  }
   function dealingsTab() {
     const D = SIM.dealings(W), pol = SIM.policy(W); if (!D) return '';
     const seg = (key, opts) => `<div class="seg">${opts.map(([v, l]) => `<button data-pol="${key}" data-v="${v}" class="${pol[key] === v ? 'on' : ''}">${l}</button>`).join('')}</div>`;
-    let html = `<div class="lede">Give your orders once. The game follows them by itself and tells you what happened in a short note, so it only stops for what you ask it to.</div>
+    let html = goodsList() + `<div class="lede">Give your orders once. The game follows them by itself and tells you what happened in a short note, so it only stops for what you ask it to.</div>
       <div class="k sec" style="margin-top:4px">Standing orders</div>
       <div class="ord"><div class="k">When one of your blood is killed</div>${seg('blood', [['revenge', 'Take revenge'], ['comp', 'Ask compensation'], ['forgive', 'Let it go'], ['ask', 'Ask me']])}</div>
       <div class="ord"><div class="k">When a clan swears vengeance on you</div>${seg('threat', [['comp', 'Pay them'], ['guard', 'Post guards'], ['ignore', 'Do nothing'], ['ask', 'Ask me']])}</div>
@@ -1145,6 +1152,7 @@
       <div class="ord"><div class="k">When someone mocks you before the clans</div>${seg('slight', [['gift', 'Open hands'], ['kind', 'Answer in kind'], ['pass', 'Let it pass'], ['ask', 'Ask me']])}</div>
       <div class="ord"><div class="k">When an oath you swore is called in</div>${seg('oathback', [['keep', 'Keep it'], ['food', 'Send food'], ['break', 'Break it'], ['ask', 'Ask me']])}</div>
       <div class="ord"><div class="k">When a people ask for their exiles back</div>${seg('exback', [['refuse', 'Refuse'], ['pay', 'Pay the price'], ['hand', 'Hand them over'], ['ask', 'Ask me']])}</div>
+      <div class="ord"><div class="k">Each spring, send a trader to the best village</div>${seg('trader', [['send', 'Send'], ['ask', 'Ask']])}</div>
       <div class="ord"><div class="k">When a lost child is claimed</div>${seg('foundback', [['choose', 'Let the child choose'], ['send', 'Send the child home'], ['keep', 'Keep the child'], ['ask', 'Ask me']])}</div>
       <div class="k sec">Clans you deal with</div>
       <div class="muted" style="margin-bottom:2px">Choose who may work the sources your house has claimed. On automatic, your house shares with its own tribe and with any people who are not its enemies, and keeps enemies out.</div>`;
@@ -1276,7 +1284,13 @@
     for (let b = 0; b < bins; b++) { const y = h - (b + 1) * bh, lw = M[b] / mx * (mid - 40), rw = F[b] / mx * (mid - 40); g.fillStyle = '#6a9fe0'; g.fillRect(mid - 22 - lw, y + 1, lw, bh - 2); g.fillStyle = '#e07fa6'; g.fillRect(mid + 22, y + 1, rw, bh - 2); if (b % 2 === 0) { g.fillStyle = '#6c563c'; g.fillText(b * 5, mid, y + bh - 1); } }
   }
   function demoStats(people) { let k = 0, a = 0, e = 0, m = 0, f = 0; for (const q of people) { if (q.age < 15) k++; else if (q.age < 60) a++; else e++; q.sex === 'F' ? f++ : m++; } return `${k} children · ${a} adults · ${e} elders · ${m}♂ ${f}♀`; }
-  const goodsChips = g => Object.entries(g).filter(([, v]) => v > 0).map(([k, v]) => `<span class="chip">${ART.img(k === 'shells' ? 'beads' : k, 17)}${GOOD_NAMES[k] || k}<b>${v}</b></span>`).join('') || '<span class="muted">none</span>';
+  // a goods chip; with a tribe it also says plenty or scarce there (SIM.worthWord); own = a tap on it opens the house's goods list under Dealings
+  const goodsChips = (g, t, own) => Object.entries(g).filter(([, v]) => v > 0).map(([k, v]) => { const w = t ? SIM.worthWord(W, t, k) : ''; return `<span class="chip${own ? ' tap' : ''}"${own ? ' data-goods role="button" tabindex="0"' : ''}>${ART.img(k === 'shells' ? 'beads' : k, 17)}${GOOD_NAMES[k] || k}<b>${v}</b>${w ? `<i class="gw ${w}">${w}</i>` : ''}</span>`; }).join('') || '<span class="muted">none</span>';
+  // what another people lack (goods they hold none of that are scarce for them) and what they have plenty of
+  function theyLack(t, goods) {
+    const lack = Object.keys(SIM.BASE_WORTH).filter(k => !(goods[k] > 0) && SIM.worthWord(W, t, k) === 'scarce').map(k => (GOOD_NAMES[k] || k).toLowerCase()), plenty = Object.keys(SIM.BASE_WORTH).filter(k => goods[k] > 0 && SIM.worthWord(W, t, k) === 'plenty').map(k => (GOOD_NAMES[k] || k).toLowerCase());
+    return lack.length || plenty.length ? `<div class="muted" style="margin-top:4px">${[lack.length ? 'They lack: ' + lack.join(', ') : '', plenty.length ? 'Plenty: ' + plenty.join(', ') : ''].filter(Boolean).join(' · ')}</div>` : '';
+  }
   function dietBar(c) {
     const b = SIM.foodBreakdown(W, c.x, c.y, c.tool, c.tribe.boats), tot = Object.values(b).reduce((s, v) => s + v, 0) || 1;
     const cols = { plants: '#8fbf5a', groves: '#d7af3c', game: '#c0764a', fish: '#4ac0d0', shellfish: '#f08cc8', seals: '#b9a07a' }, names = { plants: 'wild plants', groves: 'fruit & nuts', game: 'game', fish: 'fish', shellfish: 'shellfish', seals: 'seals & seabirds' };
@@ -1350,7 +1364,7 @@
           <div><div class="k">Allies</div>${allies.length ? allies.map(o => link(o, o.name)).join(', ') : '—'}</div>
           <div><div class="k">Enemies</div>${foes.length ? foes.map(o => link(o, o.name) + (t.atWar.has(o.id) ? ' ⚔' : '')).join(', ') : '—'}</div></div>
         <div class="k sec">Resources in our lands</div><div>${[...srcs].map(k => `<span class="chip">${depIc(k)}${DEPOSITS[k].name}</span>`).join('') || '<span class="muted">no stone, amber or salt sources — must trade</span>'}</div>
-        <div class="k sec">Goods held</div><div>${goodsChips(goods)}</div>`;
+        <div class="k sec">Goods held</div><div>${goodsChips(goods, t)}</div>${theyLack(t, goods)}`;
       } else if (tribeTab === 'clans') {
         html += t.clans.slice().sort((a, b) => b.people.length - a.people.length).map(c => `<div class="card">
           <div class="rh">${link(c, c.name + ' clan')}<span class="muted">${c.people.length} people · ${SIM.familiesOf(c).length} households</span></div>
@@ -1376,7 +1390,7 @@
           <div class="tile"><div class="k">Crafts</div><div class="v">${S.metal === 2 ? 'Bronze' : S.metal === 1 ? 'Copper' : 'Stone'}</div><div class="muted">${S.metal === 2 ? 'bronze-casting' : S.metal === 1 ? 'copper-smelting' : 'no metalworking yet'}</div></div>
         </div>
         <div class="k sec">Clans living here</div>${cl.map(c => `<div class="row2">${link(c, c.name + ' clan')} <span class="muted">${c.people.length} people · ${c.live === 'fishing' ? 'fishers' : 'farmers'} · fed ${pct(c.cond)}</span></div>`).join('') || '<div class="muted">No one lives here now.</div>'}
-        <div class="k sec">Goods in the village</div><div>${goodsChips(g)}</div>
+        <div class="k sec">Goods in the village</div><div>${goodsChips(g, c.tribe)}</div>
         <div class="k sec">History of ${esc(S.name)}</div>${histList(S, 12)}
         ${cl[0] ? `<div class="k sec">From the clans' memory</div>${cl.flatMap(c => c.hist).sort((a, b) => b.w - a.w).slice(0, 10).map(h => `<div class="ev"><span class="yr">Y${yr(h.w)}</span>${esc(h.t)}</div>`).join('')}` : ''}`;
     } else if (panel === 'house') {
@@ -1431,7 +1445,7 @@
                 <div class="tile"><div class="k">Food</div><div class="v" style="color:${foodCol}">${fd} day${fd === 1 ? '' : 's'}</div><div class="muted">${c.grain > 0 ? (() => { const gw = Math.round(c.grain / Math.max(1, SIM.needsWeek(c))); return gw < 1 ? 'less than a week of grain, ' : `${gw} week${gw === 1 ? '' : 's'} of grain, `; })() : ''}${pct(c.cond)} fed</div>${bar(c.cond, foodCol)}</div>
                 <div class="tile"><div class="k">Tools</div><div class="v">${c.tool >= 1.15 ? 'Bronze' : c.tool >= 1 ? 'Copper' : c.tool > 0.8 ? 'Good flint' : c.tool > 0.55 ? 'Fair stone' : 'Poor stone'}</div><div class="muted">${pct(c.tool)} as good as fine flint</div>${bar(c.tool / 1.2, '#cfd6e0')}</div>
               </div>
-              <div style="margin-top:8px">${goodsChips(c.goods)}</div>
+              <div style="margin-top:8px">${goodsChips(c.goods, t, true)}</div>
               ${(P.claims || []).length ? `<div class="k sec">Sources your house works</div>` + P.claims.map((k, i) => `<div class="row2">${depIc(k.d.type)}<b>${DEPOSITS[k.d.type].name}</b> <span class="muted">${esc(k.d.note)}, ${Math.round(Math.hypot(k.d.x - c.x, k.d.y - c.y) / 1000)} km away. ${k.got || 0} brought back since year ${yr(k.since)}${k.trouble ? `, <span style="color:#a83a22">${k.trouble} trips driven off</span>` : ''}</span> <a data-release="${i}" style="margin-left:auto;cursor:pointer;color:#a03a20">give up</a></div>`).join('') : ''}
               <div class="k sec">Standing</div><div class="tiles">
                 <div class="tile"><div class="k">Heir</div><div class="v">${heir ? esc(heir.name) : 'None'}</div><div class="muted">${heir ? `${SIM.relWord(heir, h)}, ${Math.floor(heir.age)}` : 'the line is at risk'}</div></div>
@@ -1499,7 +1513,7 @@
           </div>`; })() : ''}
         <div class="k sec">Leadership</div>${ruleTile(c)}
         <div class="k sec">Food in range right now</div>${dietBar(c)}
-        <div class="k sec">Goods held</div><div>${goodsChips(c.goods)}</div>
+        <div class="k sec">Goods held</div><div>${goodsChips(c.goods, c.tribe)}</div>
         ${last ? `<div class="muted" style="margin-top:6px">Last year: ${last.births} born · ${last.deaths} died${last.starv ? ` (${last.starv} hunger)` : ''}${last.killed ? ` (${last.killed} killed)` : ''} · ${pct(last.fed)} of food needs met</div>` : ''}
         <div class="k sec">Households (${fams.length})</div>` +
         fams.map(f => { const mem = c.people.filter(q => q.fam === f); return `<div class="row2">${link(f, famLabel(f))} <span class="muted">${mem.length} people${f.head ? ` · head ${esc(f.head.name)}` : ''}</span></div>`; }).join('') +
@@ -1586,6 +1600,8 @@
     el.querySelectorAll('[data-release]').forEach(a => a.onclick = ev => { ev.stopPropagation(); SIM.releaseClaim(W, +a.dataset.release); renderPanel(); });
     { const cb = el.querySelector('#askAll'); if (cb) cb.onchange = () => { W.player.askAll = cb.checked; }; }
     el.querySelectorAll('[data-pol]').forEach(b => b.onclick = () => { SIM.setPolicy(W, b.dataset.pol, b.dataset.v); const st = el.scrollTop; renderPanel(); el.scrollTop = st; });
+    el.querySelectorAll('[data-keep]').forEach(b => b.onclick = () => { SIM.setKeep(W, b.dataset.keep, !SIM.kept(W, b.dataset.keep)); const st = el.scrollTop; renderPanel(); el.scrollTop = st; });
+    el.querySelectorAll('[data-goods]').forEach(b => { const go = () => { houseTab = 'deal'; renderPanel(); const g = el.querySelector('#ourGoods'); if (g) g.scrollIntoView({ block: 'start' }); }; b.onclick = go; b.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } }; });
     el.querySelectorAll('[data-deal]').forEach(b => b.onclick = () => { SIM.setDeal(W, +b.dataset.deal, b.dataset.v); const st = el.scrollTop; renderPanel(); el.scrollTop = st; });
     el.querySelectorAll('[data-kult]').forEach(b => b.onclick = () => { show.kult = !show.kult; const tb = document.querySelector('#togs button[data-s="kult"]'); if (tb) tb.classList.toggle('on', show.kult); renderPanel(); });
     el.querySelectorAll('[data-settle],[data-forgive]').forEach(b => b.onclick = () => { const r = SIM.settleFeud(W, +(b.dataset.settle || b.dataset.forgive), !!b.dataset.forgive); if (r) toast(r); const st = el.scrollTop; renderPanel(); el.scrollTop = st; });
@@ -1862,13 +1878,13 @@
   }
   // ---- player actions (⚑ Act) ----
   // ---- the deeds, in groups. One table: every deed id and the group it is listed under; an id not in it goes under Your house ----
-  const GROUPS = ['Your house', 'Your clan', 'Your tribe', 'Other peoples', 'Faith and lore', 'Land and villages'];
+  const GROUPS = ['Your house', 'Your clan', 'Your tribe', 'Trade', 'Other peoples', 'Faith and lore', 'Land and villages'];
   const DEED_GROUP = {
-    adopt: 'Your house', recall: 'Your house', claim: 'Your house', treasure: 'Your house', free: 'Your house',
-    invite: 'Your clan', challengeClan: 'Your clan', feast: 'Your clan', expedition: 'Your clan', hunt: 'Your clan',
+    adopt: 'Your house', recall: 'Your house', claim: 'Trade', treasure: 'Your house', free: 'Your house',
+    invite: 'Your clan', challengeClan: 'Your clan', feast: 'Your clan', expedition: 'Trade', hunt: 'Your clan',
     clanlife: 'Your clan', clanblood: 'Your clan', tribelife: 'Your tribe', tribeblood: 'Your tribe', bindseat: 'Your tribe',
     challenge: 'Your tribe', crown: 'Your tribe', kingdom: 'Your tribe', leaverealm: 'Your tribe', bloodseat: 'Your tribe', plot: 'Your tribe', strike: 'Your tribe', court: 'Your tribe', confront: 'Your tribe',
-    raid: 'Other peoples', landask: 'Other peoples', landdrive: 'Other peoples', explore: 'Other peoples', voyage: 'Other peoples', trader: 'Other peoples', ally: 'Other peoples', pact: 'Other peoples', tribute: 'Other peoples', peace: 'Other peoples', gifts: 'Other peoples', war: 'Other peoples', endwar: 'Other peoples',
+    raid: 'Other peoples', landask: 'Other peoples', landdrive: 'Other peoples', explore: 'Other peoples', voyage: 'Other peoples', trader: 'Trade', ally: 'Other peoples', pact: 'Trade', tribute: 'Other peoples', peace: 'Other peoples', gifts: 'Other peoples', war: 'Other peoples', endwar: 'Other peoples',
     rite: 'Faith and lore', walk: 'Faith and lore',
     movecamp: 'Land and villages', movevillage: 'Land and villages', foundvillage: 'Land and villages', settle: 'Land and villages', takefarming: 'Land and villages', fields: 'Land and villages', build: 'Land and villages', migrate: 'Land and villages', canoes: 'Land and villages', monument: 'Land and villages',
   };
@@ -1998,7 +2014,7 @@
                 showResult(SIM.doAction(W, a.id, j, f));
               });
             }
-            showResult(SIM.doAction(W, a.id, j, 0));
+            { const r = SIM.doAction(W, a.id, j, 0); if (phone() && a.id === 'trader' && r) { W.lastResult = null; closeCard(); toast(r); } else showResult(r); } // a trader's setting out is a notice on the phone: the house note keeps it
           });
           const r0 = a.targets[0] && a.targets[0].ref; if (r0) { const x = r0.x != null ? r0.x : r0.clans && r0.clans[0] && r0.clans[0].x, y = r0.y != null ? r0.y : r0.clans && r0.clans[0] && r0.clans[0].y; if (x != null) centerOn(x, y); }
         } else showResult(SIM.doAction(W, a.id, 0));
