@@ -2254,7 +2254,6 @@ const SIM = (() => {
       const ta = a.tribe, tb = b.tribe, op = opinion(ta, tb), allied = isAllied(ta, tb);
       const hunger = Math.max(0, 0.9 - a.cond) + Math.max(0, 0.9 - b.cond);
       const temper = ((a.head ? a.head.temper : .5) + (b.head ? b.head.temper : .5)) / 2;
-      // covet: one side holds stone or amber the other lacks
       // covet: one side holds goods the other's people find scarce and have none of; or grain in plenty
       const covet = op < -35 ? (covets(W, a, b) || covets(W, b, a) ? 0.08 : 0) + (a.grain > needsWeek(a) * 6 || b.grain > needsWeek(b) * 6 ? 0.06 : 0) : 0;
       if (!allied && !sameConfed(ta, tb) && !peaceHeld(W, ta, tb) && op < -35 && rand() < 0.04 + temper * 0.08 + hunger * 0.3 + covet) { raid(W, hunger > 0 && a.cond < b.cond ? a : rand() < 0.5 ? a : b, a, b); continue; }
