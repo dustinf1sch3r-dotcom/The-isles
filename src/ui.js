@@ -1128,13 +1128,13 @@
   function goodsList() {
     const c = W.player && W.player.head && W.player.head.clan; if (!c) return '';
     const rows = Object.keys(c.goods).filter(k => c.goods[k] > 0).map(k => { const w = SIM.worthWord(W, c.tribe, k), on = SIM.kept(W, k), nm = GOOD_NAMES[k] || k;
-      return `<div class="grow"><span class="gi">${ART.img(k === 'shells' ? 'beads' : k, 22)}</span><span class="gt"><b>${esc(nm)}</b> <b class="gn">${c.goods[k]}</b>${w ? ` <i class="gw ${w}">${w}</i>` : ''}<br><span class="muted">${esc(SIM.goodUse(k))}</span></span><button class="keepsw${on ? ' on' : ''}" data-keep="${k}" role="switch" aria-checked="${on}" aria-label="Keep ${esc(nm.toLowerCase())}">${on ? 'Kept' : 'Keep'}</button></div>`; }).join('');
-    return `<div class="k sec" id="ourGoods" style="margin-top:4px">Our goods</div>${rows || '<div class="muted">The clan holds no goods.</div>'}${rows ? '<div class="muted" style="margin:2px 0 8px">Kept goods are not traded or given in small gifts.</div>' : ''}`;
+      return `<div class="grow"><span class="gi">${ART.img(k === 'shells' ? 'beads' : k, 22)}</span><span class="gt"><b>${esc(nm)}</b> <b class="gn">${c.goods[k]}</b>${w ? ` <i class="gw ${w}">${w}</i>` : ''}<br><span class="muted">${esc(SIM.goodUse(k))}</span></span><button class="keepsw${on ? ' on' : ''}" data-keep="${k}" role="switch" aria-checked="${on}" aria-label="Keep ${esc(nm.toLowerCase())}">${on ? 'Kept' : 'Spare'}</button></div>`; }).join('');
+    return `<div class="k sec" id="ourGoods" style="margin-top:4px">Our goods</div>${rows || '<div class="muted">The clan holds no goods.</div>'}${rows ? '<div class="muted" style="margin:2px 0 8px">Kept goods are not traded or given in small gifts; spare ones may be.</div>' : ''}`;
   }
   function dealingsTab() {
     const D = SIM.dealings(W), pol = SIM.policy(W); if (!D) return '';
     const seg = (key, opts) => `<div class="seg">${opts.map(([v, l]) => `<button data-pol="${key}" data-v="${v}" class="${pol[key] === v ? 'on' : ''}">${l}</button>`).join('')}</div>`;
-    let html = goodsList() + `<div class="lede">Give your orders once. The game follows them by itself and tells you what happened in a short note, so it only stops for what you ask it to.</div>
+    let html = goodsList() + `<div class="ord" style="margin-top:6px"><div class="k">Each spring, send a trader to the best village</div>${seg('trader', [['send', 'Send'], ['ask', 'Ask me']])}</div><div class="lede">Give your orders once. The game follows them by itself and tells you what happened in a short note, so it only stops for what you ask it to.</div>
       <div class="k sec" style="margin-top:4px">Standing orders</div>
       <div class="ord"><div class="k">When one of your blood is killed</div>${seg('blood', [['revenge', 'Take revenge'], ['comp', 'Ask compensation'], ['forgive', 'Let it go'], ['ask', 'Ask me']])}</div>
       <div class="ord"><div class="k">When a clan swears vengeance on you</div>${seg('threat', [['comp', 'Pay them'], ['guard', 'Post guards'], ['ignore', 'Do nothing'], ['ask', 'Ask me']])}</div>
@@ -1152,7 +1152,6 @@
       <div class="ord"><div class="k">When someone mocks you before the clans</div>${seg('slight', [['gift', 'Open hands'], ['kind', 'Answer in kind'], ['pass', 'Let it pass'], ['ask', 'Ask me']])}</div>
       <div class="ord"><div class="k">When an oath you swore is called in</div>${seg('oathback', [['keep', 'Keep it'], ['food', 'Send food'], ['break', 'Break it'], ['ask', 'Ask me']])}</div>
       <div class="ord"><div class="k">When a people ask for their exiles back</div>${seg('exback', [['refuse', 'Refuse'], ['pay', 'Pay the price'], ['hand', 'Hand them over'], ['ask', 'Ask me']])}</div>
-      <div class="ord"><div class="k">Each spring, send a trader to the best village</div>${seg('trader', [['send', 'Send'], ['ask', 'Ask']])}</div>
       <div class="ord"><div class="k">When a lost child is claimed</div>${seg('foundback', [['choose', 'Let the child choose'], ['send', 'Send the child home'], ['keep', 'Keep the child'], ['ask', 'Ask me']])}</div>
       <div class="k sec">Clans you deal with</div>
       <div class="muted" style="margin-bottom:2px">Choose who may work the sources your house has claimed. On automatic, your house shares with its own tribe and with any people who are not its enemies, and keeps enemies out.</div>`;
